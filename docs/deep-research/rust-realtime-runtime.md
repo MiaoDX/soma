@@ -36,7 +36,7 @@ MotorId vs JointId
 Robot monotonic time vs UTC
 position vs velocity vs torque
 sensor frame vs body frame
-requested vs accepted vs applied command
+requested vs admitted vs safety-output vs applied command
 ```
 
 Rust makes it practical to encode these distinctions into types instead of relying on naming conventions around raw integers and floats.
@@ -144,7 +144,7 @@ Rust's normal heap allocator is not inherently bounded for RT use.
 Allocation is acceptable before activation:
 
 - discover/configure devices;
-- load RobotManifest;
+- load validated, fixed-layout RT tables from the composed activation set;
 - construct controller objects;
 - allocate telemetry rings;
 - allocate working memory;

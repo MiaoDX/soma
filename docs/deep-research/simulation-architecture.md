@@ -89,12 +89,16 @@ Python / ROS2 / App
         |
   robot-runtime
         |
+ bounded RT/runtime IPC
+        |
+     robot-rt
+        |
  Simulated Plant
         |
       MuJoCo
 ```
 
-The application should be able to connect to a simulated endpoint with nearly the same public API as a real robot. This validates lease, actions, events, lifecycle, reconnect behavior, and SDK compatibility.
+The application should be able to connect to a simulated endpoint with nearly the same public API and the same `robot-runtime` → `robot-rt` → Plant authority path as a real robot. This validates lease, actions, events, lifecycle, reconnect behavior, SDK compatibility, and `SA-3` integration. A lightweight API facsimile may omit those production processes for application mocking, but it is a `SIM` test double and cannot claim runtime, IPC, controller, or Soma safety-path coverage.
 
 Unitree's simulation tools are a useful reference: simulation reuses important low-level SDK/DDS semantics so software can move between simulated and physical robots without replacing the application contract.
 
@@ -165,29 +169,29 @@ Cyclic data should carry, where applicable:
 
 ```text
 time_domain
-epoch_id
+plant_timeline_id
 tick
 capture_time
 publish_time
-target_apply_time
-valid_until
+timing_mode and target (immediate / scheduled / tick-targeted)
+robot-local derived deadline
 sequence_number
 ```
 
-`epoch_id` changes when simulation resets or a runtime session is recreated. Commands from an old epoch are invalid even if they arrive late.
+`plant_timeline_id` changes when simulation resets, restores a snapshot, seeks replay, or recreates the Plant/control timeline. Restarting only `robot-runtime` changes `runtime_generation`, not the Plant timeline. Commands from an old timeline are invalid even if they arrive late; historical recordings remain segmented and replayable.
 
 ### Lockstep
 
 A robust controller-in-the-loop semantic is:
 
 ```text
-Simulator: State(epoch=3, tick=120)
+Simulator: State(plant_timeline=P, tick=120)
        |
 Controller: Command(target_tick=120)
        |
 Simulator applies command and advances physics
        |
-Simulator: State(epoch=3, tick=121)
+Simulator: State(plant_timeline=P, tick=121)
 ```
 
 This borrows an important lesson from PX4/ArduPilot SITL: simulation compatibility is fundamentally a **time/step contract**, not only a sensor/actuator API.
@@ -199,8 +203,11 @@ Every physical or simulated endpoint should expose stable identity:
 ```text
 robot_model_id
 hardware_revision
-model_bundle_id
-calibration_id
+product_model_bundle_id / hash
+robot_instance_manifest_hash where a physical instance is represented
+calibration_set_hash
+control_profile_hash
+safety_profile_hash
 joint_schema_hash
 frame_schema_hash
 sensor_schema_hash
@@ -216,10 +223,10 @@ URDF, MJCF, and USD have different expressive capabilities. Soma should not assu
 Recommended model pipeline:
 
 ```text
-RobotManifest / canonical engineering model
+ProductModelManifest / canonical shared engineering model
         |
         +-- common physical parameters
-        +-- calibration overlay
+        +-- Hardware Variant Overlay
         +-- MuJoCo overlay
         +-- Isaac/USD overlay
         +-- Genesis overlay
@@ -227,9 +234,14 @@ RobotManifest / canonical engineering model
         +--> generated/validated URDF
         +--> generated/validated MJCF
         +--> generated/validated USD
+
+RobotInstanceManifest + DeviceInventory
+CalibrationSet + ControlProfile + SafetyProfile
+        |
+        +--> composed runtime RobotManifest and Plant configuration
 ```
 
-The model compiler should produce hashes used by runtime, logs, policies, and tests.
+The model compiler should produce hashes used by runtime, logs, policies, and tests. A simulator can load the signed deployable `SafetyProfile` and add a separately identified `TestConstraintSet` for stricter scenario bounds; it cannot mutate or relax the profile while retaining its identity.
 
 ## MuJoCo role
 
@@ -319,15 +331,17 @@ Every significant run should capture enough metadata to reproduce the environmen
 ```text
 release_id
 runtime/controller build IDs
-model_bundle_id
+product_model_bundle_id
+robot_instance / device inventory hash where applicable
+calibration / control / safety profile hashes
 policy_bundle_id
 simulator + version
 scenario_id
 seed
 physics parameters
-epoch/tick
+Plant timeline/tick
 external inputs
-requested/accepted/applied commands
+requested/admitted/safety-output/applied commands
 safety events
 periodic snapshots where supported
 ```
@@ -342,7 +356,7 @@ Every simulator backend should pass a shared suite:
 - joint direction/order/units;
 - static pose and gravity checks;
 - command semantics;
-- reset/epoch behavior;
+- reset/Plant-timeline behavior;
 - action/state lifecycle;
 - safety limits;
 - sensor timestamps;
@@ -371,7 +385,7 @@ These may begin as directories in one repository and split later if dependency/C
 
 1. Exact Plant trait shape and sync/async boundary.
 2. Whether MuJoCo runs in-process with `robot-rt` for CI or as a separate process for stronger production parity; likely support both.
-3. Canonical RobotManifest/model representation.
+3. Canonical `ProductModelManifest` source and composed runtime `RobotManifest` representation.
 4. GPU tensor interchange for policy/runtime and batch simulation.
 5. Required fidelity tiers: controller regression vs perception vs HIL.
 6. Snapshot portability/versioning.

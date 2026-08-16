@@ -1,46 +1,53 @@
-# L0, HAL, and Fieldbus
+# Below the Plant: Firmware, HAL, and Fieldbus
 
 > Status: Deep Research baseline. This document preserves the design space and evidence behind Soma's hardware boundary; it is not yet an ADR.
 
 ## Question
 
-Where should Soma draw the boundary between physical hardware and the software robot, and how should EtherCAT, CAN/CAN-FD, device drivers, transmissions, real-time scheduling, and simulation fit beneath that boundary?
+Where should Soma draw the boundary between physical hardware and the software robot, and how should board firmware, EtherCAT, CAN/CAN-FD, device drivers, transmissions, real-time scheduling, independent safety, and simulation fit beneath that boundary?
 
 ## Working thesis
 
-Soma should distinguish **HAL** from the more general **Plant contract**.
+Soma should distinguish **board/device firmware**, the host **HAL**, and the more general **Plant contract**. These responsibilities map to the canonical layers in [Layering and Trust Boundaries](../architecture/layering-and-trust-boundaries.md):
 
-- The **HAL** represents real hardware: buses, drives, sensors, power devices, transmissions, calibration, and hardware health.
-- The **Plant contract** represents the controlled system seen by estimators/controllers. A plant may be backed by real hardware, MuJoCo, Isaac Sim, Genesis, or HIL.
+- **L-2** owns independent E-stop/STO/energy isolation and trust anchors that ordinary host software cannot bypass.
+- **L-1** owns bootloaders, board/drive firmware, FOC, sensor acquisition, BMS behavior, local watchdogs, and device faults.
+- The **L0 HAL** represents host-side integration with real hardware: fieldbus masters, device drivers, discovery, transmission mapping, calibration application, and hardware health.
+- The **Plant contract** is the bounded control-facing boundary consumed at L1. A Plant may be backed by real hardware, MuJoCo, an external simulator through an RT-safe proxy, or HIL.
 - Control algorithms should depend on the Plant contract, not on EtherCAT PDOs, CAN identifiers, ROS messages, or vendor SDK types.
 
 ```text
-Controller / Estimator / Safety
+L1 Controller / Estimator / SA-3
              |
         Plant Contract
        /              \
 Hardware Plant      Simulated Plant
       |             /     |      \
-     HAL        MuJoCo   Isaac  Genesis
+   L0 HAL       MuJoCo   RT-safe external proxy
       |
 Bus + Device + Transmission
       |
-EtherCAT / CAN-FD / SPI / MCU
+EtherCAT / CAN-FD / SPI
+      |
+L-1 board / drive / sensor / BMS firmware
+
+L-2 independent safety and trust constrains the physical path
 ```
 
-## The L0 stack is not one layer
+## Below the Plant spans multiple layers
 
 A useful decomposition is:
 
-1. **Power electronics and motor control** — PWM, current sensing, FOC, encoder sampling. Usually runs on an MCU or dedicated servo drive at tens of kHz.
-2. **Servo abstraction** — turns motor electronics into a controlled actuator with position, velocity, torque/current, gains, fault state, and thermal limits.
-3. **Fieldbus** — moves bounded cyclic command/state data between many devices and the robot computer.
-4. **Device drivers** — understand a specific drive, IMU, force sensor, hand, BMS, or power controller.
-5. **Transmission** — maps motor-space to joint-space; gearbox, differential, tendon, SEA, coupled wrist, etc.
-6. **Robot HAL** — aggregates physical devices into a coherent hardware state and command surface.
-7. **Plant contract** — removes the distinction between real and simulated controlled systems for the controller.
+1. **Independent safety and trust (L-2)** — distinct stop, torque-inhibition, braking and energy-control final elements; independent enable/watchdog paths; hardware identity and recovery authority.
+2. **Power electronics and motor control (L-1)** — PWM, current sensing, FOC, encoder sampling. Usually runs on an MCU or dedicated servo drive at tens of kHz.
+3. **Servo/device firmware abstraction (L-1)** — turns electronics into a controlled device with commands, state, local faults, watchdogs, update/recovery, and thermal/electrical protection.
+4. **Fieldbus transport and master (L0)** — moves bounded cyclic command/state data between many devices and the robot computer.
+5. **Device drivers and inventory (L0)** — understand a specific drive, IMU, force sensor, hand, BMS, or power controller and report the actual hardware/firmware identities present.
+6. **Transmission and calibration application (L0)** — maps motor-space to joint-space; gearbox, differential, tendon, SEA, coupled wrist, and serial-specific corrections.
+7. **Robot HAL / HardwarePlant (L0)** — aggregates physical devices into a coherent hardware state, command, lifecycle, capability, and health surface.
+8. **Plant contract (L0/L1 boundary)** — removes the distinction between real and simulated controlled systems for the controller without claiming that their lower implementations are equivalent.
 
-This decomposition avoids the common error `motor[i] == joint[i]`. A physical joint can contain multiple encoders, brakes, torque sensors, or coupled motors, while one motor can participate in multiple generalized coordinates.
+This decomposition avoids both the common error `motor[i] == joint[i]` and the claim that a host joint-command API implies an open lower stack. A physical joint can contain multiple encoders, brakes, torque sensors, or coupled motors, while one motor can participate in multiple generalized coordinates. Access to `q/dq/tau/kp/kd` does not by itself establish access to drive firmware, boot keys, BMS, raw bus diagnostics, or the independent safety path.
 
 ## Canonical RT data
 
@@ -68,13 +75,29 @@ pub struct RtJointCommand {
 
 The exact command model is embodiment/device dependent, but the system contract also needs fields that are often omitted by research SDKs:
 
-- epoch and sequence;
+- Plant timeline and sequence;
 - target/apply tick;
 - validity/deadline;
 - control mode;
 - command source/authority;
 - validity masks;
-- applied vs requested command where safety modifies output.
+- requested, admitted, safety-output, and applied command correlation.
+
+## Device lifecycle and safe-output contract
+
+Every physical HAL/device adapter must expose a uniform, testable lifecycle rather than only cyclic reads and writes:
+
+```text
+discover / inventory / configure
+enable / disable / safe_output
+fault_latch / fault_readback / authorized_fault_reset
+firmware and bootloader identity
+calibration identity and readback
+device/bus time-sync health
+watchdog configuration and observed state
+```
+
+`safe_output` is a product/device-specific inhibited command state, not a synonym for E-stop, STO, braking, or power isolation. After process restart, bus recovery, device reboot, ABI/generation mismatch, or fault reset, the adapter remains disabled/latched until the explicit lifecycle and re-arm conditions pass. HIL conformance injects Working Counter/DC loss, PDO/CAN loss, bus-off, slave-state fallback, drive reboot, and stale/corrupt inventory.
 
 ## EtherCAT
 
@@ -118,11 +141,11 @@ Actuator Driver
 CAN controller
 ```
 
-Projects such as **mjbots/moteus** are valuable because they expose the entire actuator boundary: servo electronics, FOC firmware, CAN-FD protocol, host client, and robot-level use. This makes moteus a better L0 reference than SDKs that expose only host-side joint commands.
+Projects such as **mjbots/moteus** are valuable because they expose the entire actuator boundary: servo electronics, FOC firmware, CAN-FD protocol, host client, and robot-level use. This makes moteus a better L-1/L0 reference than SDKs that expose only host-side joint commands.
 
 ## Reference implementation: Open Dynamic Robot Initiative
 
-The Open Dynamic Robot Initiative is one of the strongest public references for studying L0 end-to-end. Its ecosystem exposes motor driver electronics/firmware, master board, power board, host-side interfaces, and dynamic robot examples.
+The Open Dynamic Robot Initiative is one of the strongest public references for studying L-1/L0 end-to-end. Its ecosystem exposes motor driver electronics/firmware, master board, power board, host-side interfaces, and dynamic robot examples.
 
 The important lesson is architectural rather than component-specific: high-frequency electrical control remains local to the actuator, while the host receives a bounded actuator abstraction at a lower cyclic rate.
 
@@ -164,7 +187,7 @@ The RT/runtime IPC contract should define overload behavior explicitly:
 
 - stale states may be dropped in favor of latest state;
 - RT must never block because runtime is slow;
-- commands must carry deadline/epoch;
+- commands must carry robot-local deadline and Plant-timeline identity;
 - loss of runtime must trigger a locally defined safe behavior;
 - ring overflow and command age are observable metrics.
 
@@ -175,11 +198,17 @@ Software safety belongs between requested commands and the plant, but hardware e
 ```text
 Requested command
       |
-Lease/mode validation
+SA-4 lease/mode/timing admission
       |
-Dynamic safety envelope
+Admitted command
       |
-Accepted/applied command
+SA-3 dynamic safety envelope
+      |
+Safety-output command
+      |
+Plant/HAL and lower-authority constraints
+      |
+Applied evidence
       |
 Plant
 ```

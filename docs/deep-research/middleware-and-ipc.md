@@ -55,7 +55,7 @@ Required properties:
 - fixed capacity;
 - no heap allocation in the cyclic path;
 - SPSC where possible;
-- sequence and epoch numbers;
+- sequence, Plant-timeline, and producer/consumer generation identifiers;
 - cache-line aware layout;
 - explicit overwrite/drop policy;
 - command TTL/deadline;
@@ -63,6 +63,10 @@ Required properties:
 - observable overflow and age.
 
 The IPC is an **internal implementation ABI**, not a public SDK contract. This allows it to evolve more aggressively than the Robot Protocol.
+
+Each shared region begins with a non-payload handshake header containing at least `magic`, layout/ABI hash, release ID, producer generation, consumer generation, Plant timeline ID, capacity, and monotonic overflow/drop counters. Both sides validate the header before motion enable, publish their generation with defined acquire/release memory ordering, and discard mailboxes from a previous generation. A restart never interprets residual bytes as a fresh command.
+
+The baseline OTA unit upgrades `robot-rt`, `robot-runtime`, and their IPC ABI atomically; rolling interoperability across different internal ABI hashes is not promised unless a separately tested compatibility profile says otherwise. Generation mismatch, corrupt header, or unsupported ABI leaves the system motion-inhibited and requires the explicit lifecycle/re-arm path.
 
 ## Large local payloads
 
@@ -180,7 +184,7 @@ Examples: joint state, IMU, odometry, health, sensor streams.
 
 ### Command stream
 
-Continuous control intent. Commands require authority, epoch, sequence, and validity/deadline.
+Continuous control intent. Commands require authority, Plant timeline, sequence, and robot-local validity/deadline.
 
 ### RPC
 

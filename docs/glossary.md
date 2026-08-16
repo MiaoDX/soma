@@ -30,6 +30,10 @@ The real-time Soma process responsible for deterministic scheduling, Plant I/O, 
 
 The non-real-time Soma process responsible for the public protocol, leases, actions, capability discovery, diagnostics, recording, policy lifecycle, communication, and operations integration.
 
+## robotd
+
+The supervised on-robot deployment unit and service identity that contains `robot-rt`, `robot-runtime`, and their lifecycle supervision. It is not a requirement for one monolithic process.
+
 ## Robot Protocol
 
 The ROS-independent public contract used by SDKs, adapters, tools, and external systems. It includes state streams, command streams, RPCs, actions, events, leases, capabilities, and version negotiation.
@@ -38,13 +42,45 @@ The ROS-independent public contract used by SDKs, adapters, tools, and external 
 
 An explicit control-ownership token for a robot capability or control domain. Leases prevent multiple control sources from implicitly competing for authority.
 
+## Plant timeline identity
+
+An opaque identifier for a continuous control or simulation timeline. A reset, restore, replay seek, `robot-rt`/Plant restart, or other discontinuous Plant-state change creates a new identity so stale commands cannot cross timelines. It is distinct from `boot_id`, `runtime_generation`, and resource-scoped `lease_generation`.
+
 ## Epoch
 
-A unique identifier for a continuous robot or simulation timeline. Reset, restart, or equivalent discontinuities create a new epoch so stale commands from previous timelines can be rejected.
+Deprecated shorthand for Plant timeline identity. New contracts should use `plant_timeline_id` and must not use "epoch" to mean robot boot, runtime process generation, replay segment, or lease generation.
+
+## ProductModelManifest
+
+The shared canonical description of a robot product/variant, including topology, joints, actuators, sensors, frames, transmissions, nominal parameters, required capabilities, and model asset references. It excludes serial-specific inventory, calibration, live health, and safety-authoritative configuration.
+
+## RobotInstanceManifest
+
+The provisioned identity/configuration of one physical robot, including its serial number, product-model compatibility, installed options, authorized component-set or inventory policy, and provisioning identity references. Live `DeviceInventory` revisions are compared with it but are not embedded in its hash.
+
+## DeviceInventory
+
+The observed installed boards, actuators, sensors, safety controllers, bus mappings, serial numbers, and hardware/firmware revisions of one robot at a particular inventory revision.
+
+## CalibrationSet
+
+A serial-scoped, versioned set of measured offsets, transforms, gains, uncertainty, provenance, and validity constraints. It is activated only against compatible product-model and device-inventory identities.
+
+## ControlProfile
+
+A separately versioned artifact containing tunable controller parameters and non-safety-authoritative operating limits. It cannot relax `SafetyProfile` or lower-authority device and safety-controller limits.
 
 ## RobotManifest
 
-The canonical description of a robot product/variant, including identity, joints, actuators, sensors, frames, transmissions, limits, calibration schema, optional modules, and supported control modes.
+The composed runtime view exposed to SDKs and tools. It references the active product model, instance inventory, calibration, control, and safety artifacts rather than acting as another writable source of truth.
+
+## SafetyProfile
+
+An independently governed artifact containing safety-authoritative limits, required safety inputs/devices, derating rules, and fault-to-safe-behavior mappings. It has its own review, signature, activation, audit, and rollback policy.
+
+## RuntimeCapabilitySnapshot
+
+An ephemeral, timestamped view of capabilities that are currently available, degraded, unavailable, or authorization-restricted after considering installed hardware, calibration, active profiles, mode, and faults.
 
 ## PolicyBundle
 

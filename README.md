@@ -22,7 +22,12 @@ Soma is currently in the **research and architecture** phase. The repository wil
 
 ## Documentation
 
-The initial architecture, implementation plan, and deep research will be added under [`docs/`](docs/).
+- [Reference architecture](docs/architecture/reference-architecture.md)
+- [Layering and trust boundaries](docs/architecture/layering-and-trust-boundaries.md)
+- [Glossary](docs/glossary.md)
+- [Architecture decisions](docs/decisions/README.md)
+- [Bootstrap plan](docs/plans/bootstrap-plan.md)
+- [Deep research index](docs/deep-research/README.md)
 
 ---
 

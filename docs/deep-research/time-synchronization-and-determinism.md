@@ -64,7 +64,7 @@ Conceptually:
 TimePoint {
   domain
   nanoseconds
-  epoch_id
+  plant_timeline_id where the value is tied to Plant state
   clock_id / source where relevant
   uncertainty_ns optional
 }
@@ -88,29 +88,31 @@ Do not replace all of these with one generic `timestamp`.
 
 For control/state estimation, **capture time** is usually more important than network receive time.
 
-## Epoch
+## Lifecycle and Plant-timeline identities
 
-A monotonic numeric timestamp alone does not protect against timeline discontinuities such as:
-
-- simulator reset;
-- runtime restart;
-- robot reboot;
-- replay seek;
-- restore from simulation snapshot.
-
-Soma should attach an `epoch_id` to control/session timelines.
+A monotonic numeric timestamp alone does not protect against lifecycle changes and Plant-state discontinuities. Soma keeps their identifiers separate:
 
 ```text
-(epoch=12, tick=980)
+boot_id             changes on robot boot
+runtime_generation  changes whenever robot-runtime starts
+plant_timeline_id   changes on reset, restore, replay seek, robot-rt/Plant restart,
+                    or any discontinuous change to controlled Plant state
+lease_generation    changes when authority for a resource set is reissued/preempted
+```
+
+`plant_timeline_id` should be an opaque random identifier rather than a small counter that can be reused after reboot. A `robot-runtime` restart does not change it when `robot-rt` and the Plant continue uninterrupted; it changes `runtime_generation`, and lease/re-admission policy determines which client authority survives. A robot reboot changes `boot_id` and starts a new Plant timeline.
+
+```text
+(plant_timeline=4e7c..., tick=980)
 ```
 
 is not comparable to:
 
 ```text
-(epoch=13, tick=3)
+(plant_timeline=93a1..., tick=3)
 ```
 
-A command from an old epoch is rejected even if its numeric timestamp would otherwise appear fresh.
+A command from an old Plant timeline is rejected even if its numeric timestamp would otherwise appear fresh. Recorded history remains valid evidence and is segmented by timeline rather than deleted on reset.
 
 ## Tick vs time
 
@@ -122,6 +124,17 @@ sample_time  clock-domain timestamp
 ```
 
 `tick` makes duplicate/missed cycle reasoning explicit and is useful for deterministic simulation/replay. Time handles physical durations and cross-rate sensors.
+
+### Canonical tick phase
+
+V0 defines one unambiguous cycle order:
+
+1. at boundary `k`, latch Plant inputs and create `State(k)` / `CycleContext(k)`;
+2. estimate, control, and apply `SA-3` using that snapshot;
+3. latch `SafetyOutputCommand(k)` to the Plant/HAL for interval `[k, k+1)`;
+4. collect applied/readback evidence and advance to boundary `k+1`.
+
+A tick-targeted command with `target_tick=k` therefore targets the output-latch phase of cycle `k`, not the next state sample. V0 exposes only `OUTPUT_LATCH`; `apply_phase` is explicit so a future multi-phase profile cannot silently change this meaning. Commands arriving after the cycle's declared admission cutoff are rejected rather than shifted to `k+1`.
 
 ## EtherCAT Distributed Clocks
 
@@ -232,14 +245,14 @@ Simulation time is intentionally unlike wall clock:
 - can restore snapshots;
 - can run many parallel environments.
 
-Therefore simulation uses its own time domain and epoch.
+Therefore simulation uses its own time domain and Plant-timeline identity.
 
 ### Lockstep contract
 
 Recommended controller-in-the-loop semantic:
 
 ```text
-Simulator emits State(epoch=5, tick=100, sim_time=T)
+Simulator emits State(plant_timeline=P, tick=100, sim_time=T)
 Controller computes Command(target_tick=100)
 Simulator applies command
 Simulator advances physics
@@ -256,7 +269,7 @@ Provide `CycleContext`:
 
 ```text
 CycleContext {
-  epoch_id
+  plant_timeline_id
   tick
   cycle_start
   nominal_period
@@ -298,16 +311,17 @@ Command envelopes should support different timing modes explicitly.
 ### Immediate/latest command
 
 ```text
-apply as soon as accepted
-valid_until required
+apply as soon as admitted and passed through safety
+expires_after_receive -> robot-local deadline, starting before admission queueing
+optional hold_for
 ```
 
-Useful for joystick/base velocity streams.
+Useful for joystick/base velocity streams. The runtime records trusted robot-local receive time before admission queueing, so overload consumes rather than renews the validity budget. An unsynchronized client's monotonic creation timestamp is evidence only, not an expiry clock.
 
 ### Scheduled command
 
 ```text
-target_apply_time + clock domain + valid window
+target_time + not_after + synchronized clock domain + required sync quality
 ```
 
 Useful for synchronized multi-component execution when supported.
@@ -315,12 +329,12 @@ Useful for synchronized multi-component execution when supported.
 ### Tick-targeted command
 
 ```text
-epoch + target_tick
+plant_timeline_id + target_tick + apply_phase
 ```
 
 Useful inside deterministic controller/simulation paths.
 
-A recipient must reject scheduled commands if it cannot interpret or meet the requested clock semantics.
+A recipient must reject scheduled commands if it cannot interpret or meet the requested clock semantics. Admission converts every admitted timing mode to robot-local execution/deadline state; later safety and application stages do not compare foreign monotonic clocks.
 
 ## Deterministic replay
 
@@ -347,12 +361,12 @@ Generally unrealistic. MuJoCo, Isaac/PhysX, and Genesis should be compared via b
 MCAP/incident recording should capture:
 
 ```text
-epoch/tick
+Plant timeline/tick
 capture and receive times
 time domains
 clock health/offset
-release/model/policy identity
-requested/accepted/applied commands
+release/product-model/instance/calibration/control/SafetyProfile/policy identity
+requested/admitted/safety-output/applied commands
 simulator/version/seed where applicable
 ```
 
@@ -368,7 +382,7 @@ Soma tests should inject:
 - sensor timestamp freeze;
 - device clock drift;
 - out-of-order samples;
-- old epoch commands;
+- old-Plant-timeline commands;
 - scheduled command after deadline;
 - simulator reset with in-flight commands;
 - network client with badly skewed clock.
@@ -377,9 +391,9 @@ Safety logic should use local age/deadline calculations robustly even when wall-
 
 ## Proposed V0 time rules
 
-1. `robot-rt` physical cycle uses local monotonic time plus epoch/tick.
+1. `robot-rt` physical cycle uses local monotonic time plus Plant timeline/tick.
 2. Public samples identify their time domain and capture semantics.
-3. Public commands always have sequence + epoch and use a local-validity TTL/deadline model.
+3. Public commands always have sequence + Plant timeline and use a robot-local validity/expiry model.
 4. Simulation has a distinct resettable domain and explicit lockstep tick.
 5. UTC is metadata/human/fleet time, not the hard control deadline source.
 6. PTP is an optional production profile for multi-compute/high-quality sensor correlation, with health telemetry.
@@ -388,7 +402,7 @@ Safety logic should use local age/deadline calculations robustly even when wall-
 
 This research supports decisions roughly equivalent to:
 
-- Soma defines explicit time domains and epoch/tick semantics.
+- Soma defines explicit time domains, lifecycle generations, and Plant-timeline/tick semantics.
 - Control deadlines use monotonic local time.
 - Simulation time is first-class and never masquerades as physical wall clock.
 - PTP/PHC is the primary candidate for synchronized multi-computer/sensor time.
@@ -402,8 +416,8 @@ This research supports decisions roughly equivalent to:
 3. Bring up linuxptp between two reference computers with hardware timestamping.
 4. Measure camera/IMU correlation under software vs hardware/PTP timestamps.
 5. Measure and record EtherCAT DC offset/jitter.
-6. Reset MuJoCo mid-stream and verify old-epoch command rejection.
-7. MCAP replay preserving epoch/tick and time-domain metadata.
+6. Reset MuJoCo mid-stream and verify old-Plant-timeline command rejection.
+7. MCAP replay preserving Plant-timeline/tick and time-domain metadata.
 
 ## Primary references
 
