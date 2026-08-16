@@ -4,7 +4,18 @@ This directory preserves the evidence base behind Soma.
 
 Architecture documents should stay concise and opinionated. Deep Research is intentionally broader: it captures competing approaches, implementation references, failure modes, adjacent-industry practices, and unresolved questions so that architectural decisions remain traceable.
 
-## Suggested structure
+## Current research notes
+
+- [`physical-ai-system-landscape.md`](physical-ai-system-landscape.md) — robotics vendors, SDK exposure levels, and recurring industry patterns.
+- [`reference-system-design-space.md`](reference-system-design-space.md) — the broad system design space and current Soma hypotheses.
+- [`l0-hal-fieldbus.md`](l0-hal-fieldbus.md) — L0 decomposition, HAL vs Plant, EtherCAT/CAN-FD, RT host, safety, and public reference implementations.
+- [`middleware-and-ipc.md`](middleware-and-ipc.md) — RT IPC, shared memory, Zenoh, Cyclone DDS, gRPC, public protocol semantics, and benchmark plan.
+- [`simulation-architecture.md`](simulation-architecture.md) — MuJoCo, Isaac, Genesis, SIL/HIL, simulation time, model identity, PolicyBundle, and conformance testing.
+- [`ota-and-observability.md`](ota-and-observability.md) — release/OTA lifecycle, multi-ECU recovery, health gates, fleet rollout, OTel, MCAP flight recording, crash evidence, and supply-chain concerns.
+
+## Suggested long-term structure
+
+As the evidence base grows, these notes may be split into topic directories:
 
 ```text
 deep-research/
@@ -18,7 +29,7 @@ deep-research/
 └── case-studies/    # focused analysis of specific projects/vendors
 ```
 
-The directory will grow gradually. We prefer a small number of high-signal documents over many empty placeholders.
+We prefer a small number of high-signal documents over many empty placeholders. Split a note only when its scope becomes difficult to review or cite.
 
 ## Research template
 
