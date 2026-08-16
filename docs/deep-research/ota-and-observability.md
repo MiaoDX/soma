@@ -66,11 +66,18 @@ artifacts:
     version: walk-37
     digest: sha256:...
 
+  - id: safety-profile
+    type: safety-profile
+    version: reference-wheeled-safe-12
+    digest: sha256:...
+    activation: controlled-safe-state
+
 compatibility:
   protocol_min: 5
   protocol_max: 7
-  model_bundle: model-42
+  product_model_bundle: model-42
   calibration_schema: 3
+  safety_profile_policy: safety-policy-2
 ```
 
 The ReleaseManifest should eventually cover dependency/compatibility relationships rather than merely list artifacts.
@@ -87,8 +94,9 @@ The ReleaseManifest should eventually cover dependency/compatibility relationshi
 | Policy/model | content-addressed signed bundle | atomic manifest switch |
 | Configuration | versioned/schema-validated | restore previous |
 | Calibration | device-owned, separately backed up/migrated | explicit recovery; never silently overwrite |
+| SafetyProfile | independent safety signing/approval and controlled-safe activation | retain previous authorized profile; fail closed on incompatibility |
 
-Model/policy/calibration should not be treated as generic firmware: their compatibility is often semantic and tied to sensor/joint schemas.
+Model/policy/calibration/SafetyProfile should not be treated as generic firmware: their compatibility is often semantic and tied to sensor/joint schemas. Packaging several artifacts in one ReleaseManifest does not merge their signing roles or activation authority; an ordinary model, controller, policy, or simulator update must not implicitly change the active `SafetyProfile`.
 
 ## Linux A/B baseline
 
@@ -180,6 +188,7 @@ external power available when required
 sufficient disk space
 no current rollback/recovery operation
 hardware inventory matches release
+required SafetyProfile approval/signatures and compatibility are valid
 ```
 
 Download may occur during operation with strict resource limits. Installation/activation of critical components normally should not.
@@ -217,7 +226,8 @@ Health checks should include:
 
 ### Robot
 
-- RobotManifest/calibration compatibility;
+- active product model, robot instance/device inventory, control profile, and SafetyProfile identities/signatures are compatible;
+- safety-controller/drive configuration readback matches the product-specific activation policy where supported;
 - protocol self-test;
 - safety self-test;
 - optional product-specific controlled motion test.
@@ -441,13 +451,13 @@ Triggers include:
 Capture:
 
 ```text
-requested / accepted / applied commands
+requested / admitted / safety-output / applied commands
 joint/IMU/base/contact/estimator state
 bus health
 safety events
 mode/lease changes
 runtime events
-release/model/calibration/policy identity
+release/product-model/instance/calibration/control/SafetyProfile/policy identity
 selected sensors where privacy/storage allows
 ```
 
@@ -577,7 +587,8 @@ artifact-installers/{rauc,mcuboot,runtime,policy}
 7. OpenTelemetry Collector on robot vs lightweight OTLP exporter + site gateway.
 8. How release health automatically pauses rollout without creating rollback oscillation.
 9. Calibration migration/backup rules.
-10. Recovery/factory image and physical service workflow.
+10. SafetyProfile signing roles, activation/readback evidence, and rollback rules.
+11. Recovery/factory image and physical service workflow.
 
 ## Reference projects and sources
 

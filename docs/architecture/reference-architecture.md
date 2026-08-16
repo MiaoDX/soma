@@ -8,6 +8,8 @@ The central architectural idea is simple:
 
 > Above the plant boundary, a robot should become a software-defined system with explicit contracts for state, command, time, lifecycle, safety, communication, deployment, and observability.
 
+The canonical assignment of responsibilities is defined in [Layering and Trust Boundaries](layering-and-trust-boundaries.md). Product-stack layers use `L-2` through `L5`; the independent safety-authority chain uses `SA-0` through `SA-5`. These namespaces must not be mixed.
+
 ## Architectural principles
 
 1. **Embodiment-independent above the plant boundary**  
@@ -23,7 +25,7 @@ The central architectural idea is simple:
    The real-time control loop must not depend on async runtimes, Python, ROS 2, DDS, Zenoh, file I/O, or unbounded allocation.
 
 5. **Simulation is a first-class execution environment**  
-   Real hardware and simulators share control and lifecycle contracts, while simulators also expose simulation-only operations such as reset, step, snapshot, and randomization.
+   Real hardware and controller-in-the-loop/SIL share the `ControlCore` and Plant contract, while simulators also expose simulation-only operations such as reset, step, snapshot, and randomization. Batch RL shares semantic contracts without being forced through the production process or transport topology.
 
 6. **Production concerns are first-class architecture**  
    Safety, identity, security, OTA, observability, crash evidence, compatibility, and recovery are designed with the runtime rather than added later.
@@ -31,37 +33,40 @@ The central architectural idea is simple:
 ## High-level system
 
 ```text
-Applications / Physical AI
+L5  Fleet / cloud operations
+L4  Applications, Python/C++ SDKs, ROS 2 adapter, teleoperation
+L3  Locomotion, manipulation, perception, navigation, reusable policies
         │
-        ├── Python SDK
-        ├── ROS 2 Adapter
-        ├── C/C++ SDK
-        └── Fleet / Cloud
+        │ Public Robot Protocol
+        │ State | Command | RPC | Action | Event | Lease | Capability
+        ▼
+robotd supervised deployment unit (spans L2 and L1)
+L2  robot-runtime (Rust, non-RT)
+      Auth | Arbitration | Actions | Diagnostics | Recorder | OTA
+        │ fixed-layout shared memory / SPSC mailboxes
+        ▼
+L1  robot-rt (Rust, RT)
+      ControlCore | Estimator | Controller | SA-3 | Watchdog
         │
-Public Robot Protocol
-State | Command | RPC | Action | Event | Lease | Capability
-        │
-robot-runtime (Rust, non-RT)
-Auth | Arbitration | Actions | Diagnostics | Recorder | Policy
-        │
-fixed-layout shared memory / SPSC mailboxes
-        │
-robot-rt (Rust, RT)
-Estimator | Controller | Safety | Watchdog | Plant Interface
-        │
-        ├── Hardware Plant
-        │     HAL → EtherCAT / CAN-FD / devices
-        │
-        ├── MuJoCo Plant
-        └── External Simulation Plant
-              Isaac Sim / Isaac Lab / Genesis
+        │ bounded Plant Interface
+        ▼
+L0  ├── physical: HardwarePlant → HAL → EtherCAT / CAN-FD / devices
+    │                │
+    │                ▼
+    │   L-1 Board firmware | bootloaders | FOC | sensors | BMS
+    ├── local SIL: deterministic physics Plant, initially MuJoCo
+    └── external SIL: ShmPlantProxy → non-RT SimGateway → Isaac / Genesis
+
+L-2 Independent stop / torque / brake / energy-control path,
+     safety controller, and trust anchors constrain the physical system
+     without depending on robotd
 ```
 
 ## Core boundaries
 
 ### 1. Hardware Abstraction Layer
 
-The HAL describes real hardware only. It owns the transport and device-specific details that higher layers should not see.
+The HAL is an `L0` boundary and describes real hardware only. It owns the host-side transport and device-specific details that higher layers should not see. Board bootloaders, motor-control loops, sensor firmware, and BMS firmware remain at `L-1`; a low-level host API does not make that firmware open or replaceable.
 
 ```text
 Bus
@@ -88,7 +93,7 @@ The HAL should not depend on ROS 2 types.
 
 ### 2. Plant Interface
 
-The Plant Interface is the stable boundary seen by the real-time control system. Both hardware and physics simulators implement it.
+The Plant Interface is the stable boundary seen by the real-time control system. Hardware and physics simulators implement the same bounded contract so the same `ControlCore`, controller, and `SA-3` Safety Supervisor can execute against them.
 
 Representative data:
 
@@ -100,7 +105,7 @@ PlantHealth
 LifecycleState
 ```
 
-A controller should not need to know whether the plant is EtherCAT hardware or MuJoCo.
+A controller should not need to know whether the plant is EtherCAT hardware or MuJoCo. A local simulator may implement the Plant in process when its timing and allocation behavior are bounded. An external simulator must be reached through an RT-safe shared-memory proxy and a non-RT gateway; Python, network RPC, simulator callbacks, and unbounded engine work must not execute on the periodic `robot-rt` path.
 
 ### 3. Simulation Control Interface
 
@@ -121,6 +126,8 @@ fault injection
 This separation prevents simulation-only capabilities from leaking into deployable application code.
 
 ## Runtime separation
+
+`robotd` is the supervised deployment unit and on-robot service identity, not a monolithic-process requirement. Its baseline deployment consists of `robot-rt`, `robot-runtime`, and supervision that owns startup order, health monitoring, restart policy, and coordinated lifecycle transitions. The supervisor may be an init-system configuration or a dedicated process, but it must preserve the same externally visible failure and recovery semantics.
 
 ### `robot-rt`
 
@@ -156,7 +163,7 @@ Responsibilities:
 - external communication;
 - OTA and observability coordination.
 
-The two processes communicate through bounded shared-memory mailboxes. State publication may drop stale samples rather than block the real-time producer. Commands must carry validity, sequence, epoch, and ownership metadata.
+The two processes communicate through bounded shared-memory mailboxes. State publication may drop stale samples rather than block the real-time producer. Commands must carry timing-mode/local-deadline, sequence, Plant-timeline, runtime-generation, and ownership metadata. Loss or restart of `robot-runtime` must be handled by local `robot-rt` and lower safety authorities without unexpected motion.
 
 ## Communication planes
 
@@ -206,18 +213,19 @@ Commands should include at least:
 
 ```text
 robot_id
-epoch_id
+plant_timeline_id
 sequence
 lease_id
 source_id
-target_tick / target_apply_time
-created_time
-valid_until
+timing target: immediate / synchronized time / Plant-timeline tick + phase
+required clock domain and sync quality where scheduled
+client_created_time (evidence only)
+server_receive_time and derived local deadline
 control_mode
 payload
 ```
 
-The system should distinguish **requested**, **accepted**, and **applied** commands so that safety modifications are observable.
+The system should distinguish **requested**, **admitted**, **safety-output**, and **applied** commands. Admission records `SA-4` protocol/identity/lease/mode/timing decisions; safety output records `SA-3` validation, clipping, or substitution; applied evidence records what reached the Plant/HAL and any observable lower-authority constraint.
 
 ## Time model
 
@@ -229,7 +237,7 @@ Soma distinguishes:
 - `SIMULATION` — lockstep, pause, accelerated simulation, reset;
 - `UTC/PTP` — multi-computer logs, fleet correlation, external sensors.
 
-Every reset or runtime restart should create a new `epoch_id` so stale commands from a previous timeline can be rejected.
+A reset, snapshot restore, replay seek, `robot-rt`/Plant restart, or other discontinuous Plant-state change creates a new opaque `plant_timeline_id` so stale commands cannot cross timelines. Robot boot, `robot-runtime` restart, and lease succession use separate `boot_id`, `runtime_generation`, and resource-scoped `lease_generation`; restarting only `robot-runtime` does not imply that the Plant timeline changed.
 
 ## Simulation architecture
 
@@ -245,7 +253,7 @@ The production control stack runs against a physics plant under simulation time 
 
 ### Batch RL / synthetic data
 
-Isaac Lab, Genesis, MJWarp/MJX-style environments may use direct tensor/native APIs for throughput. They reuse observation/action contracts and model metadata, not necessarily the production network path.
+Isaac Lab, Genesis, MJWarp/MJX-style environments may use direct tensor/native APIs for throughput. They reuse observation/action schemas, model identity and coordinate conventions, control semantics, normalization/clipping, latency assumptions, and policy-bundle compatibility. They are not required to instantiate `robotd`, Zenoh, or one production IPC graph per environment.
 
 ### HIL
 
@@ -253,35 +261,35 @@ Real host software communicates with emulated or physical bus/device interfaces 
 
 ## Robot model and identity
 
-URDF, MJCF, and USD should not be the sole source of truth. Soma should define a canonical `RobotManifest` containing:
+URDF, MJCF, and USD should not be the sole source of truth. Soma should define a shared canonical `ProductModelManifest` and compose it with artifacts that have different owners and trust domains:
 
 ```text
-identity
-hardware revision
-joint table
-actuator table
-sensor table
-frame graph
-transmissions
-limits
-calibration schema
-optional modules
-supported control modes
-model asset references
+ProductModelManifest       topology, nominal parameters, frames, transmissions, assets
+RobotInstanceManifest      one robot's provisioned identity/configuration
+DeviceInventory            observed installed boards/devices and firmware revisions
+CalibrationSet             serial-specific measured corrections
+ControlProfile             controller tuning and ordinary operational limits
+SafetyProfile              independently governed safety-authoritative limits/behavior
 ```
 
-A model compiler can generate or validate URDF/Xacro, MJCF, USD, ROS descriptions, RT joint maps, and policy schemas.
+A model compiler can generate or validate URDF/Xacro, MJCF, USD, ROS descriptions, RT joint maps, and policy schemas from the applicable persistent artifacts. The public `RobotManifest` is a composed runtime projection for SDK discovery, not another writable source of truth. Separately, L0 reports inventory and health while L2 produces an ephemeral `RuntimeCapabilitySnapshot`; that snapshot references the activation-set hashes but does not enter the product-model or `RobotManifest` hash.
 
 All relevant artifacts should carry stable identifiers such as:
 
 ```text
 robot_model_id
 hardware_revision
-model_bundle_id
-calibration_id
+product_model_bundle_id / hash
+robot_instance_manifest_hash
+device_inventory_hash
+calibration_set_hash
+control_profile_hash
+safety_profile_hash
 joint_schema_hash
 frame_schema_hash
 ```
+
+Instance identifiers such as `robot_serial` must not change the shared product-model hash. A model, controller, policy, or simulator update cannot implicitly change the active `SafetyProfile`.
 
 ## Policy deployment
 
@@ -297,6 +305,8 @@ A bundle includes:
 - required robot model and capabilities;
 - runtime compatibility;
 - checksum and signature.
+
+Policy compatibility does not authorize a safety change. `SafetyProfile` remains a separately reviewed, signed, activated, audited, and rolled-back artifact.
 
 ## ROS 2 boundary
 
@@ -322,12 +332,13 @@ The runtime participates in a broader operations plane that includes:
 - OS A/B update and rollback;
 - MCU/FPGA firmware lifecycle;
 - model and policy bundles;
+- robot-instance inventory, calibration, control, and independently governed safety profiles;
 - compatibility checks;
 - local health gates;
 - staged fleet rollout;
 - crash evidence and rollback correlation.
 
-A release should represent a tested combination of OS, robot core, device firmware, robot model, configuration schema, and policy compatibility.
+A release should represent a tested compatibility set across OS, robot core, device firmware, product model, robot instance/device inventory, calibration, control profile, SafetyProfile, configuration schema, and policy. Transporting these artifacts in one release does not merge their signing roles or activation authority.
 
 ## Observability
 
@@ -345,6 +356,8 @@ Crash evidence should include userspace coredumps, kernel pstore/ramoops, and MC
 ## Security and safety
 
 Safety is an independent authority, not just command clamping.
+
+Safety mechanisms use the `SA-0` through `SA-5` namespace defined by [Layering and Trust Boundaries](layering-and-trust-boundaries.md). The `SA-0` independent stop/torque/brake/energy-control path and `SA-1` independent safety control remain outside the normal Linux control path; `SA-3` is the `robot-rt` Safety Supervisor and `SA-4` is runtime authority/mode policy.
 
 The software safety path should validate:
 

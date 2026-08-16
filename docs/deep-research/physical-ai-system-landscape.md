@@ -8,25 +8,66 @@ How do current robotics platforms expose hardware, control, simulation, SDK, and
 
 Soma is intended to sit below application intelligence and above hardware-specific implementation details. The most useful references are therefore not only robot SDKs, but complete system boundaries: what vendors expose, what they keep internal, how simulation maps to real hardware, and where ROS 2 sits.
 
-## A useful abstraction: L0–L4
+## Canonical stack: L-2–L5
 
-| Layer | Meaning | Representative interfaces |
+Soma uses the layer vocabulary defined in [Layering and Trust Boundaries](../architecture/layering-and-trust-boundaries.md) across architecture, implementation, platform comparison, and qualification. Safety authorities use the separate `SA-0` through `SA-5` namespace; they must not reuse these layer numbers.
+
+| Layer | Responsibility | Representative components and interfaces |
 |---|---|---|
-| L0 | device, fieldbus, firmware, hardware abstraction | EtherCAT/CAN-FD, motor/IMU/BMS drivers, calibration |
-| L1 | joint-level control | position, velocity, torque, stiffness/damping |
-| L2 | whole-robot motion | base velocity, gait, trajectory, end-effector control |
-| L3 | robot capabilities | navigation, perception, manipulation, teleoperation, recording |
-| L4 | application and operations | task orchestration, fleet, OTA, diagnostics, cloud integration |
+| L-2 | independent safety and trust | independent stop, torque-inhibition, braking and energy-control path, safety MCU/relay, hardware root of trust, recovery authority |
+| L-1 | board and device firmware | device BSP/RTOS, bootloader, secure boot measurement, actuator firmware and FOC, sensor firmware, BMS firmware, signed device update |
+| L0 | host BSP, HAL, and Plant adaptation | host kernel/platform BSP, fieldbus masters, device discovery/drivers, hardware timestamps, calibration plumbing, hardware and simulation Plant adapters |
+| L1 | deterministic control | `robot-rt`, scheduling, state estimation, joint/whole-body control loops, command validation, software safety envelope |
+| L2 | robot runtime | `robot-runtime`, lifecycle, identity/authentication, ownership/leases, arbitration, protocol, diagnostics, OTA and recording coordination |
+| L3 | reusable capabilities | locomotion, navigation, perception, manipulation, whole-body skills, approved policy execution |
+| L4 | SDK and applications | public Python/C++ APIs, ROS 2 gateway, teleoperation, task composition, developer tools, product applications |
+| L5 | fleet and cloud operations | provisioning, rollout policy, fleet identity, service observability, incident/data operations, remote administration |
 
-The important distinction is that an SDK may expose L1 or L2 while the implementation below that boundary remains closed.
+The Plant contract is the control-facing boundary between L1 and the controlled system. A real Plant reaches L0 and the physical layers below it; a simulation Plant replaces that physical path without pretending that simulator RPCs are fieldbus devices. HIL may deliberately emulate L0/L-1 behavior when the driver, bus, firmware, or watchdog path is the subject under test.
 
-## Patterns observed across vendors
+The most important distinction is that an SDK may expose an L1-shaped command while the implementation, authority, and recovery path below that boundary remain closed.
 
-### Unitree
+## Component-level openness and assurance
 
-Unitree is a strong example of keeping the robot SDK protocol relatively independent from ROS 2. Its modern SDK uses DDS directly and exposes low-level and high-level robot interfaces. ROS 2 interoperability is possible because ROS 2 also uses DDS-compatible infrastructure, but the robot runtime itself is not conceptually organized around ROS nodes.
+"Open robot" and "low-level SDK" are too coarse to guide a bottom-up reference implementation. Openness must be recorded per component, and assurance must describe the evidence actually produced rather than inherit a label from the platform.
 
-The low-level control model commonly exposes fields equivalent to:
+A platform comparison should include at least these component rows:
+
+- independent E-stop, STO, safety controller, and power isolation;
+- compute boot chain, root keys, recovery, and debug policy;
+- power distribution, battery, charger, and BMS;
+- actuator electronics, encoder path, and sensor electronics;
+- actuator bootloader, FOC/control firmware, and device update path;
+- fieldbus protocol, master implementation, device profiles, and diagnostics;
+- host HAL, device graph, timestamps, and calibration access;
+- RT control, runtime, public SDK, robot model, and simulator assets.
+
+For every row, record evidence instead of a single marketing-derived score:
+
+| Field | Question answered |
+|---|---|
+| Interface access | Can Soma observe, command, configure, diagnose, or only consume a high-level service? |
+| Design access | Are protocol definitions, source, schematics, manufacturing files, and calibration procedures available under usable terms? |
+| Build reproducibility | Can the exact running artifact be rebuilt and matched to its provenance? |
+| Update authority | Can the team safely flash, roll back, and recover the component without a vendor-only tool or service? |
+| Trust ownership | Who controls signing keys, identity provisioning, anti-rollback policy, recovery keys, and debug enablement? |
+| Replaceability | Can the component or implementation be replaced without bypassing an undocumented safety or commissioning dependency? |
+| Assurance evidence | Which claims have [HOST, SIM, SIL, HIL, or PHYSICAL evidence](../plans/bootstrap-plan.md#evidence-model), with traceable manifests, logs, and test reports? |
+
+Each cell should distinguish `verified`, `documented`, `vendor_asserted`, `unknown`, and `not_applicable`, and attach the source artifact or test ID. These states are not collapsed into one platform score: a component can have public source but no reproducible build, an open protocol but vendor-only update authority, or physical test evidence without trust-key ownership.
+
+Do not collapse qualification evidence, installed hardware, live health, caller authorization, and trust-key ownership into one public boolean manifest. Soma uses four related views:
+
+- an offline `EvidenceMatrix` records sources, build/update authority, trust ownership, and qualification evidence;
+- `RobotInstanceManifest` and the Product Profile record provisioned/authorized component policy, while revisioned `DeviceInventory` carries L0/device read-back and attestation without exposing sensitive key material;
+- `RuntimeCapabilitySnapshot` reports what is currently available or degraded, with source inventory/profile hashes, timestamp, sequence, and validity;
+- request-time authorization decides whether a particular caller may exercise an otherwise available capability.
+
+Unknown or unverified evidence cannot support an openness or assurance claim. It does not prove that a component is physically absent or non-functional. Sensitive facts such as recovery-key custody belong in access-controlled evidence and provisioning records, not an ordinary SDK capability boolean.
+
+### Low-level commands are not lower-stack openness
+
+A command containing fields such as:
 
 ```text
 q
@@ -36,7 +77,33 @@ kp
 kd
 ```
 
-This maps naturally to joint impedance control and creates a stable research boundary above the servo-drive implementation.
+is a useful joint-control boundary, but it proves only that the caller can request a joint state or impedance-like action. It does **not** establish access to or authority over:
+
+- actuator electronics, encoder processing, current loops, or FOC firmware;
+- device bootloaders, firmware signing keys, anti-rollback, or recovery;
+- bus master implementation, device state machines, or raw diagnostics;
+- BMS, power sequencing, contactors, STO, or the independent E-stop path;
+- calibration provenance or the exact requested-to-admitted-to-safety-output-to-applied command path, including attributable runtime and safety decisions.
+
+Soma should therefore describe this as **privileged joint command access**, not as an open L-1/L0 stack. It is still valuable as a compatibility boundary, but it cannot validate firmware, trust-root, fieldbus, or independent-safety work.
+
+## Patterns observed across vendors
+
+### Unitree
+
+Unitree is a strong example of keeping the robot SDK protocol relatively independent from ROS 2. Its modern SDK uses DDS directly and exposes low-level and high-level robot interfaces. ROS 2 interoperability is possible because ROS 2 also uses DDS-compatible infrastructure, but the robot runtime itself is not conceptually organized around ROS nodes.
+
+The privileged joint-control model commonly exposes fields equivalent to:
+
+```text
+q
+dq
+tau
+kp
+kd
+```
+
+This maps naturally to joint impedance control and creates a stable research boundary above the servo-drive implementation. Under the component matrix above, it is not evidence that the drive firmware, boot chain, power system, or independent safety implementation is open.
 
 Unitree's MuJoCo and Isaac-oriented tooling is also instructive: simulation aims to reproduce the externally visible robot control/state semantics rather than duplicating every piece of real hardware transport. This is a useful precedent for Soma's Plant Interface.
 
@@ -64,7 +131,7 @@ Deep Robotics demonstrates a multi-product approach where research platforms may
 
 ### Fourier and other actuator-centric ecosystems
 
-Several vendors expose not only robot SDKs but actuator, hand, or peripheral SDKs. These are useful reminders that L0 has two boundaries:
+Several vendors expose not only robot SDKs but actuator, hand, or peripheral SDKs. These are useful reminders that the lower stack has two distinct boundaries:
 
 - a **device boundary**, where a motor controller becomes a programmable actuator;
 - a **robot boundary**, where many actuators and sensors become one coherent Plant.
@@ -95,11 +162,11 @@ These platforms illustrate ROS-centric application ecosystems. They are valuable
 
 Network-first robot APIs using gRPC or similar service interfaces demonstrate that application developers can work effectively with robots without ROS being the primary public interface. This is particularly relevant for Soma's Python SDK and high-level action model.
 
-## Adjacent open-source projects for L0/HAL
+## Adjacent open-source projects for L-1/L0 and HAL
 
 ### Open Dynamic Robot Initiative
 
-ODRI is one of the clearest references for the full lower stack:
+ODRI is one of the clearest references for a substantial open actuator-control and L-1/L0 slice:
 
 ```text
 motor / encoder / FOC
@@ -113,11 +180,11 @@ robot driver
 controller
 ```
 
-It demonstrates how much system design exists below a joint-level SDK and is therefore a useful reference for Soma's hardware backend work.
+It demonstrates how much system design exists below a joint-level SDK and is therefore a useful reference for Soma's L-1/L0 hardware backend work.
 
 ### mjbots / moteus
 
-moteus is a strong actuator-level reference. It combines BLDC servo hardware, FOC firmware, encoder handling, CAN-FD communication, and a host-side API. It shows how a complicated electromechanical subsystem can become a clean programmable actuator boundary.
+moteus is a strong actuator-level reference. It combines BLDC servo hardware, FOC firmware, encoder handling, CAN-FD communication, and a host-side API. It shows how a complicated electromechanical subsystem can become a clean programmable actuator boundary and provides a practical target for exercising L-1/L0 ownership rather than only consuming an L1 command API.
 
 ### SOEM / IgH EtherCAT
 
@@ -173,3 +240,16 @@ Lease, command validity, progress, cancellation, safety intervention, and explic
 - How much DDS compatibility is required for interoperability with existing robot ecosystems?
 - Which vendor patterns remain valid when scaling from a single research robot to a managed fleet?
 - How should a Product Profile restrict the common Soma protocol for different robot classes?
+
+## Primary references
+
+- Unitree SDK2 — https://github.com/unitreerobotics/unitree_sdk2
+- Unitree MuJoCo — https://github.com/unitreerobotics/unitree_mujoco
+- AgiBot X1 host-to-DCU controller source — https://github.com/AgibotTech/agibot_x1_infer/tree/main/src/module/dcu_driver_module/xyber_controller/xyber_api
+- Open Dynamic Robot Initiative — https://open-dynamic-robot-initiative.github.io/
+- ODRI master board — https://github.com/open-dynamic-robot-initiative/master-board
+- mjbots moteus — https://github.com/mjbots/moteus
+- Berkeley Humanoid Lite — https://github.com/HybridRobotics/Berkeley-Humanoid-Lite
+- Reachy 2 core — https://github.com/pollen-robotics/reachy2_core
+- Poulpe actuator firmware — https://github.com/pollen-robotics/firmware_Poulpe
+- Poulpe EtherCAT controller — https://github.com/pollen-robotics/poulpe_ethercat_controller

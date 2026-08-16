@@ -35,10 +35,12 @@ What evidence, benchmark, or test supports the decision?
 
 ## Candidate early ADRs
 
+- canonical L-2 through L5 platform layers and SA-0 through SA-5 safety-authority namespace;
 - RT/runtime process separation;
 - Zenoh-first distributed protocol;
 - ROS 2 as an external adapter;
-- canonical RobotManifest;
+- canonical ProductModelManifest and composed runtime RobotManifest;
+- product-model, robot-instance, calibration, control, and SafetyProfile artifact boundaries;
 - MuJoCo as the first reference simulation backend;
 - OTA trust/update stack;
 - observability data planes.

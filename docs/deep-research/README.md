@@ -13,17 +13,17 @@ Architecture documents should stay concise and opinionated. Deep Research is int
 
 ### Hardware, runtime, and communication
 
-- [`l0-hal-fieldbus.md`](l0-hal-fieldbus.md) — L0 decomposition, HAL vs Plant, EtherCAT/CAN-FD, RT host, safety, and public reference implementations.
+- [`l0-hal-fieldbus.md`](l0-hal-fieldbus.md) — L-2/L-1/L0 decomposition below the Plant, HAL vs Plant, EtherCAT/CAN-FD, RT host, safety, and public reference implementations.
 - [`rust-realtime-runtime.md`](rust-realtime-runtime.md) — Rust production readiness, PREEMPT_RT execution profile, allocation/panic/unsafe/FFI boundaries, ABI strategy, and validation plan.
 - [`middleware-and-ipc.md`](middleware-and-ipc.md) — RT IPC, shared memory, Zenoh, Cyclone DDS, gRPC, public protocol semantics, and benchmark plan.
 - [`robot-protocol-and-data-model.md`](robot-protocol-and-data-model.md) — identity, capabilities, state/command/RPC/action/event/lease semantics, schema evolution, errors, bulk data, and V0 protocol surface.
-- [`time-synchronization-and-determinism.md`](time-synchronization-and-determinism.md) — monotonic/PTP/TAI/device/simulation time, epoch/tick, EtherCAT DC, sensor timestamp provenance, and deterministic replay.
+- [`time-synchronization-and-determinism.md`](time-synchronization-and-determinism.md) — monotonic/PTP/TAI/device/simulation time, lifecycle generations, Plant timeline/tick, EtherCAT DC, sensor timestamp provenance, and deterministic replay.
 
 ### Robot model, simulation, and safety
 
-- [`robot-model-manifest-calibration.md`](robot-model-manifest-calibration.md) — canonical RobotManifest, topology/actuator/transmission/frame modeling, calibration lifecycle, simulator overlays, model hashes, and PolicyBundle compatibility.
+- [`robot-model-manifest-calibration.md`](robot-model-manifest-calibration.md) — product model, instance inventory, calibration, control and SafetyProfile boundaries, simulator overlays, hashes, and PolicyBundle compatibility.
 - [`simulation-architecture.md`](simulation-architecture.md) — MuJoCo, Isaac, Genesis, SIL/HIL, simulation time, model identity, PolicyBundle, and conformance testing.
-- [`safety-and-fault-architecture.md`](safety-and-fault-architecture.md) — layered safety authority, standards landscape, safe behavior, fault lifecycle, degraded operation, watchdog hierarchy, and research-mode controls.
+- [`safety-and-fault-architecture.md`](safety-and-fault-architecture.md) — SA-0 through SA-5 safety authority, SafetyProfile governance, standards landscape, safe behavior, fault lifecycle, watchdog hierarchy, and research-mode controls.
 
 ### Lifecycle and operations
 
@@ -40,7 +40,7 @@ deep-research/
 ├── runtime/         # Rust, RT scheduling, IPC, process boundaries
 ├── middleware/      # Zenoh, DDS, gRPC, shared memory
 ├── protocol/        # public data model, versioning, capability semantics
-├── modeling/        # RobotManifest, calibration, assets, policy compatibility
+├── modeling/        # product/instance manifests, calibration, profiles, assets
 ├── simulation/      # MuJoCo, Isaac, Genesis, SIL/HIL, replay
 ├── safety/          # watchdogs, safety boundaries, fault handling
 ├── deployment/      # OTA, release engineering, security, fleet

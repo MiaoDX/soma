@@ -21,7 +21,7 @@ Public command + lease admission
       |
 robot-runtime policy / mode authority
       |
-robot-rt Safety Supervisor
+robot-rt Safety Supervisor (non-safety-rated protective software by default)
       |
 Drive / actuator protection
       |
@@ -31,6 +31,8 @@ STO / brake / power isolation / physical E-stop
 ```
 
 Higher layers may request motion; lower-trust layers must not be able to bypass the safety functions beneath them.
+
+The safety-authority names in this document use the `SA-*` prefix so they do not collide with Soma's platform/software layers (`L-2` through `L5`). `SA-*` describes authority and independence, not a process placement or a certification claim.
 
 ## Start from hazard analysis, not interface design
 
@@ -88,7 +90,7 @@ The product context determines which Type-C standards and regulatory requirement
 
 ## Safety authority layers
 
-### Layer 0: physical energy isolation
+### SA-0: independent stop and energy-control path
 
 Examples:
 
@@ -99,7 +101,9 @@ Examples:
 
 This path must not depend solely on Linux, Zenoh/DDS, Python, or an application process.
 
-### Layer 1: independent safety controller
+Physical E-stop, STO or equivalent torque inhibition, required energy isolation, and safe brake behavior must remain effective when the main compute is hung, rebooting, compromised, or unpowered. These are distinct functions and final elements: E-stop initiates a stop function, STO prevents drive-generated torque, a brake controls motion, and a contactor may isolate a power path. One does not imply the others or a complete safe state. A Linux GPIO handler is not an independent E-stop chain.
+
+### SA-1: independent safety controller
 
 A separate Safety MCU / safety PLC / certified subsystem may own functions such as:
 
@@ -113,7 +117,9 @@ A separate Safety MCU / safety PLC / certified subsystem may own functions such 
 
 The exact implementation depends on the required safety integrity/performance level; Soma only defines the architectural interface.
 
-### Layer 2: drive/device protection
+The watchdog that removes drive enable or initiates a required safe action after loss of main-compute supervision belongs on this independent path. Its final action must not require `robot-rt`, `robot-runtime`, a network service, or Linux scheduling to run.
+
+### SA-2: drive/device protection
 
 Servo drives and device MCUs should own the fastest local protections:
 
@@ -127,14 +133,14 @@ Servo drives and device MCUs should own the fastest local protections:
 
 Host software should consume these faults but should not reimplement every electrical protection at 1 kHz.
 
-### Layer 3: `robot-rt` Safety Supervisor
+### SA-3: `robot-rt` Safety Supervisor
 
-This is the highest-trust general software safety layer.
+This is the most trusted general-purpose host-software protection layer, but it is **non-safety-rated by default**. Unless a product-specific safety case qualifies the complete hardware/software/toolchain, `robot-rt` must not be treated as the sole implementation of a required safety function.
 
 Responsibilities can include:
 
-- command deadline/epoch validation;
-- joint position/velocity/torque limits;
+- command deadline/Plant-timeline validation;
+- enforcement of active `SafetyProfile` joint position/velocity/torque limits;
 - whole-body power/thermal budget;
 - self-collision envelope;
 - dynamic stability constraints;
@@ -146,7 +152,9 @@ Responsibilities can include:
 
 This layer must execute locally and remain effective if `robot-runtime`, the SDK client, ROS 2, or the network disappears.
 
-### Layer 4: runtime authority and mode policy
+Conversely, loss, deadlock, or corruption of `robot-rt` must be detected below Linux by the SA-1/SA-2 watchdog and enable chain. SA-3 improves protection, control quality, diagnostics, and graceful degradation; it does not replace independently wired E-stop/STO/energy-isolation mechanisms.
+
+### SA-4: runtime authority and mode policy
 
 `robot-runtime` handles lower-integrity operational rules:
 
@@ -159,29 +167,51 @@ This layer must execute locally and remain effective if `robot-runtime`, the SDK
 
 A runtime policy can make the system safer, but failure of runtime must be safely handled below it.
 
-### Layer 5: applications
+### SA-5: applications
 
 Navigation, grasping, AI policies, Python code, ROS applications, and cloud systems are **not safety authorities**. They operate inside constraints provided by lower layers.
 
-## Requested, accepted, and applied commands
+## SafetyProfile governance
+
+Safety-authoritative limits and safe-behavior selection must not be ordinary fields in a shared robot model or a freely replaceable controller/model bundle. Soma should represent them in a separately governed `SafetyProfile` that includes, at minimum:
+
+```text
+safety_profile_id / schema_version
+compatible product, hardware, and safety-controller identities
+authoritative position / velocity / torque / power limits
+mode-specific envelopes and derating rules
+fault-to-safe-behavior mappings
+required safety inputs / devices
+activation and rollback policy
+content checksums
+signatures and signer role
+```
+
+`SafetyProfile` has an independent release, review, signature, authorization, and activation lifecycle. Switching a `ProductModelManifest`, simulator asset, policy, or ordinary `ControlProfile` must never silently change the active safety authority. Simulation may add a separately identified and hashed `TestConstraintSet`; it cannot mutate, relax, or reuse the identity of a deployable `SafetyProfile`.
+
+`robot-rt` consumes a validated profile and reports its ID/hash in decisions and recordings. The effective safety envelope is the intersection of that profile and all applicable independent SA-0/SA-1/SA-2 bounds; host activation can never widen a lower-authority constraint. Accepting a profile in host software is not proof that those mechanisms were updated or that a product safety function is satisfied.
+
+## Requested, admitted, safety-output, and applied commands
 
 Safety intervention must be observable:
 
 ```text
 Requested Command
        |
-Authority/mode validation
+SA-4 authority/mode/timing validation
        |
-Safety envelope
+Admitted Command
        |
-Accepted Command
+SA-3 safety envelope
+       |
+Safety Output Command
        |
 controller/drive constraints
        |
 Applied Command
 ```
 
-A safety modification should produce a structured reason such as:
+Admission rejection, safety modification, and lower-authority constraint should each produce a structured reason such as:
 
 ```text
 JOINT_VELOCITY_LIMIT
@@ -224,6 +254,8 @@ Immediate torque-off can itself cause a dangerous collapse. Depending on the fau
 Holding a payload, gravity, brakes, and tool hazards affect the safe response.
 
 Therefore Soma needs a **SafeBehavior policy interface**, implemented per embodiment/product and approved independently of arbitrary application code.
+
+Deployable SafeBehavior selection and its authoritative bounds belong to the governed `SafetyProfile`; the implementation may reside across SA-0 through SA-3 according to the product safety case.
 
 ## Fault taxonomy
 
@@ -368,6 +400,8 @@ safety controller self-test  -> physical safe output
 
 Timeouts must be chosen according to reaction-time requirements. They should not all be the same generic “1 second heartbeat.”
 
+The final watchdog and disable path must be independent of Linux. A host watchdog process that shares the same kernel, scheduler, power rail, or failure domain as `robot-rt` is useful diagnostics, but it does not satisfy this independence requirement.
+
 ## Low-level SDK / research mode
 
 If Soma exposes joint impedance/torque commands externally, research mode should require explicit gating:
@@ -379,12 +413,12 @@ If Soma exposes joint impedance/torque commands externally, research mode should
 - explicit activation;
 - restricted network/topology if required;
 - command TTL at RT boundary;
-- hard position/velocity/torque/power limits;
+- governed `SafetyProfile` hard position/velocity/torque/power limits;
 - self-collision/stability constraints where feasible;
 - immutable safety authority below external controller;
 - complete audit/flight recording.
 
-External access to L1 must never imply bypassing drive/safety-controller protection.
+External access to host real-time control must never imply bypassing SA-0 through SA-3 protection.
 
 ## Security-safety interaction
 
@@ -406,7 +440,7 @@ Safety behavior must be testable before physical incidents.
 ### SIL fault injection
 
 - stale command;
-- old epoch;
+- old Plant timeline;
 - controller deadline miss;
 - sensor freeze/bias;
 - actuator saturation;
@@ -434,10 +468,10 @@ For every intervention capture:
 what was requested
 what state was observed
 which rule/function triggered
-what was accepted/applied
+what was admitted, emitted by safety, and applied
 which safe behavior ran
-time/epoch/tick
-hardware/model/release identity
+time/Plant-timeline/tick
+hardware, product-model, calibration, safety-profile, and release identity
 ```
 
 This should feed MCAP flight recording plus structured Fault/Event telemetry.
@@ -447,17 +481,18 @@ This should feed MCAP flight recording plus structured Fault/Event telemetry.
 ```text
 SafetyInput
   RobotState
-  RequestedCommand
+  AdmittedCommand
   OperationalMode
   Lease/authority summary
   PlantHealth
 
 SafetyDecision
   disposition: ACCEPT / MODIFY / REJECT / STOP
-  accepted_command
+  safety_output_command
   safety_actions[]
   reasons[]
   resulting_safety_state
+  safety_profile_id / hash
 ```
 
 The detailed implementation remains embodiment-specific, but the decision/audit semantics can be common.
@@ -468,10 +503,12 @@ This research supports decisions roughly equivalent to:
 
 1. Physical E-stop/STO/critical energy isolation must not depend only on Linux.
 2. Device/drive protection, independent safety controller, and RT software safety are distinct authority layers.
-3. Public low-level control cannot bypass safety authority.
-4. Faults and safety interventions use structured lifecycles/codes.
-5. Safe behavior is embodiment/product-specific rather than universally “zero torque.”
-6. Safety requirements are derived from risk assessment and target product standards.
+3. `robot-rt` is non-safety-rated protective software by default and cannot be the sole implementation of a required safety function.
+4. Safety-authoritative limits and SafeBehavior mappings live in an independently governed `SafetyProfile`, not an ordinary model/control bundle.
+5. Public low-level control cannot bypass safety authority.
+6. Faults and safety interventions use structured lifecycles/codes.
+7. Safe behavior is embodiment/product-specific rather than universally “zero torque.”
+8. Safety requirements are derived from risk assessment and target product standards.
 
 ## Experiments / work products required
 

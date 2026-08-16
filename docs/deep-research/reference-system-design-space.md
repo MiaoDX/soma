@@ -111,7 +111,7 @@ Strengths:
 
 Risks:
 
-- requires careful memory layout, epoch, sequence, cache coherence, and crash recovery design;
+- requires careful memory layout, Plant-timeline/runtime generation, sequence, cache coherence, and crash recovery design;
 - internal ABI compatibility must be versioned.
 
 ### iceoryx2 or general zero-copy IPC
@@ -267,7 +267,7 @@ Soma direction:
 - Genesis — research/batch learning backend;
 - HIL — driver, fieldbus, watchdog, and failure testing.
 
-The shared artifact should be control semantics and RobotManifest identity, not one universal simulator execution path.
+The shared artifacts should be control semantics, product-model identity, and the contributing hashes in the composed runtime `RobotManifest`, not one universal simulator execution path.
 
 ## 10. Robot model representation
 
@@ -277,7 +277,7 @@ Useful for ROS and kinematics, but insufficient as the universal representation 
 
 ### Soma direction
 
-Define a canonical RobotManifest and generate/validate ecosystem representations such as URDF, MJCF, and USD.
+Define a canonical shared `ProductModelManifest`, compose it with separately governed robot-instance inventory, calibration, control, and safety artifacts, and generate/validate ecosystem representations such as URDF, MJCF, and USD. The public `RobotManifest` is a runtime projection rather than another writable source file.
 
 This is a major design area requiring dedicated research.
 
@@ -307,7 +307,8 @@ A robot is not a single firmware artifact. Releases can include:
 - OS/kernel/rootfs;
 - robot-rt/runtime;
 - MCU/FPGA firmware;
-- RobotManifest and calibration schema;
+- product model, robot instance/device inventory, calibration and control profiles;
+- independently governed SafetyProfile;
 - models/policies;
 - configuration and skills.
 
@@ -342,7 +343,8 @@ Soma should build where the contract is part of the product's identity, and reus
 - Plant contract;
 - RT state/command model;
 - control authority/lease semantics;
-- RobotManifest;
+- product-model and composed RobotManifest contracts;
+- robot-instance, calibration, control, and SafetyProfile artifact boundaries;
 - public Robot Protocol;
 - SDK ergonomics;
 - safety/runtime integration;
@@ -368,7 +370,7 @@ Soma should build where the contract is part of the product's identity, and reus
 5. Python/PyO3 async ergonomics and packaging.
 6. MuJoCo in-process vs separate-process SIL topology.
 7. iceoryx2 vs custom blob pool for local sensor payloads.
-8. RobotManifest source-of-truth format.
+8. ProductModelManifest source-of-truth format and composed runtime RobotManifest.
 
 ## Architectural invariant to preserve
 

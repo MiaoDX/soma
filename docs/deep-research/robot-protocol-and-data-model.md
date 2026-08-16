@@ -65,8 +65,11 @@ Recommended hierarchy:
 ```text
 organization_id / tenant_id   optional at robot-local layer
 fleet_id                      optional locally
-robot_id                      persistent product identity
-session_id / boot_id          changes with boot/runtime session
+robot_id                      persistent physical-robot identity
+boot_id                       changes on robot boot
+runtime_generation            changes on robot-runtime start
+plant_timeline_id             changes on a Plant-state discontinuity
+lease_generation              changes per resource-set authority succession
 component_id                  stable logical component identity
 instance_id                   dynamic instance if multiple copies exist
 ```
@@ -76,10 +79,13 @@ For hardware inventory also distinguish:
 ```text
 robot_model_id
 hardware_revision
-mainboard_serial
-actuator/sensor device identities
-model_bundle_id
-calibration_id
+robot_instance_manifest_hash
+device_inventory_hash and component identities
+product_model_bundle_id / hash
+calibration_set_hash
+control_profile_hash
+safety_profile_hash
+composed_model_fingerprint
 release_id
 ```
 
@@ -92,14 +98,33 @@ Clients should not infer features only from version numbers.
 Conceptually:
 
 ```proto
-message RobotCapabilities {
+message CapabilityCatalog {
   RobotIdentity identity = 1;
   repeated Capability capabilities = 2;
   repeated ControlDomain control_domains = 3;
   ProtocolCompatibility protocol = 4;
   repeated InterfaceProfile profiles = 5;
+  string catalog_revision = 6;
+}
+
+message RuntimeCapabilitySnapshot {
+  RobotIdentity identity = 1;
+  uint64 snapshot_sequence = 2;
+  TimePoint observed_at = 3;
+  repeated ArtifactIdentity source_artifacts = 4;
+  repeated CapabilityStatus status = 5;
+  TimePoint valid_until = 6;
+}
+
+message CapabilityStatus {
+  string capability_id = 1;
+  Availability availability = 2;  // AVAILABLE / DEGRADED / UNAVAILABLE
+  repeated Restriction restrictions = 3;
+  repeated string reason_codes = 4;
 }
 ```
+
+`CapabilityCatalog` describes what the product/adapter can support. L2 separately composes `RuntimeCapabilitySnapshot` from L0 inventory/health, active artifacts, mode, faults, and authorization policy. The snapshot is runtime output, not a product-model input, and its per-capability status/reasons plus sequence, observation time, source hashes, and validity horizon let clients detect degradation and stale discovery state.
 
 A capability should identify:
 
@@ -120,7 +145,7 @@ Every important state envelope should carry enough provenance to reason about fr
 
 ```proto
 message SampleHeader {
-  uint64 epoch_id = 1;
+  bytes plant_timeline_id = 1;  // 16-byte opaque ID
   uint64 sequence = 2;
   TimePoint capture_time = 3;
   TimePoint publish_time = 4;
@@ -146,72 +171,93 @@ A command is **intent** and must be distinguishable from what the robot actually
 
 ```proto
 message CommandEnvelope {
-  uint64 epoch_id = 1;
+  bytes plant_timeline_id = 1;  // 16-byte opaque ID
   uint64 sequence = 2;
   LeaseToken lease = 3;
-  TimePoint created_at = 4;
-  optional TimePoint target_apply_time = 5;
-  TimePoint valid_until = 6;
-  string source_id = 7;
-  CommandPayload payload = 8;
+  string source_id = 4;
+  oneof timing {
+    ImmediateTiming immediate = 5;
+    ScheduledTiming scheduled = 6;
+    TickTargetTiming tick_target = 7;
+  }
+  optional TimePoint client_created_at = 8;  // evidence only unless clocks are comparable
+  CommandPayload payload = 9;
+}
+
+message ImmediateTiming {
+  Duration expires_after_receive = 1;    // starts at first trusted server_receive_time
+  optional Duration hold_for = 2;
+}
+
+message ScheduledTiming {
+  TimePoint target_time = 1;             // synchronized PTP/TAI or declared domain
+  TimePoint not_after = 2;
+  TimeSyncQuality required_sync_quality = 3;
+}
+
+message TickTargetTiming {
+  uint64 target_tick = 1;                // within CommandEnvelope.plant_timeline_id
+  uint32 apply_phase = 2;
 }
 ```
 
+On ingress, before any admission queue, `robot-runtime` records the first `server_receive_time` in a robot-owned clock domain and converts the selected timing mode into a robot-local deadline/target. Queueing and overload consume `expires_after_receive`; admission never grants a fresh validity window. A client's monotonic `client_created_at` is provenance only and must never be compared directly with robot monotonic time. A scheduled command is rejected when its clock domain cannot be correlated or its measured synchronization quality is worse than requested.
+
 The runtime validates:
 
-- epoch;
+- Plant timeline;
 - lease generation and domain;
 - mode;
-- command age/deadline;
+- timing-mode interpretation and robot-local deadline;
 - capability;
 - shape/units/limits;
-- safety policy.
+- `SA-4` operational/admission policy; `SA-3` safety processing occurs in the next recorded stage.
 
-### Requested / Accepted / Applied
+### Requested / Admitted / Safety Output / Applied
 
-Soma should explicitly model three values:
+Soma should explicitly model four values and keep their authority boundaries stable:
 
 ```text
 RequestedCommand  -> what client asked for
-AcceptedCommand   -> after protocol/mode/safety admission
-AppliedCommand    -> what reached the Plant / controller
+AdmittedCommand   -> after SA-4 protocol, identity, lease, mode, timing, and capability admission
+SafetyOutputCommand -> after SA-3 validation, clipping, substitution, or rejection
+AppliedCommand    -> what reached the Plant/HAL, plus observable lower-authority constraint/readback
 ```
 
-When safety modifies output, tooling should be able to explain the difference.
+Each stage carries the command/correlation ID, source, lease and generation, Plant timeline/tick target, decision-rule ID, and reason. Rejected commands still produce admission or safety-decision evidence. Tooling must not overload "accepted" to mean both runtime admission and safety shaping.
 
 ## Lease and authority
 
 Command-source arbitration must be a first-class protocol concept.
 
 ```text
-Control domains:
-  locomotion
+Resource graph examples:
   whole_body
-  left_arm
-  right_arm
-  left_hand
-  right_hand
-  head
-  navigation
+    ├── locomotion ── navigation
+    ├── left_arm ── left_hand
+    ├── right_arm ── right_hand
+    └── head
   payload:<id>
 ```
+
+The Product Profile defines a stable resource graph and conflict relation rather than treating these names as independent strings. Ancestor/descendant resources conflict, and additional overlaps such as navigation consuming locomotion authority are explicit edges. Acquisition is atomic over a requested resource set, so a client cannot hold `whole_body` while another independently holds `left_arm`; partial acquisition is never silently returned.
 
 A lease token should contain at least:
 
 ```text
 lease_id
 generation
-robot/session identity
-domain
+robot identity / runtime_generation
+resource_set and resource-scoped generation
 holder/source
 issued_at
 expires_at
 priority/policy if applicable
 ```
 
-`generation` prevents a stale client from reusing an older logical lease after authority has been revoked and reacquired.
+`generation` prevents a stale client from reusing an older logical lease after authority has been revoked and reacquired. The contract also defines priority/preemption, deadman and renewal grace, and whether an in-flight Action transitions to `LEASE_LOST`, cancels, or completes under a delegated internal lease.
 
-Safety and local emergency control always outrank public leases.
+Safety, Stop, and local emergency control do not depend on obtaining an ordinary public lease and always outrank it.
 
 ## RPC
 
@@ -276,18 +322,20 @@ Events are ordered asynchronous facts, not log lines.
 
 ```proto
 message EventEnvelope {
-  uint64 epoch_id = 1;
-  uint64 sequence = 2;
-  TimePoint occurrence_time = 3;
-  Severity severity = 4;
-  string event_code = 5;
-  string component_id = 6;
-  map<string, TypedValue> arguments = 7;
-  Correlation correlation = 8;
+  bytes event_stream_id = 1;              // changes when this producer restarts
+  uint64 sequence = 2;                    // scoped to event_stream_id
+  uint64 runtime_generation = 3;
+  optional bytes plant_timeline_id = 4;   // only when correlated to an active timeline
+  TimePoint occurrence_time = 5;
+  Severity severity = 6;
+  string event_code = 7;
+  string component_id = 8;
+  map<string, TypedValue> arguments = 9;
+  Correlation correlation = 10;
 }
 ```
 
-A receiving client can detect missed event sequence ranges and request/recover history if the profile supports it, similar to event-sequence concepts used in MAVLink.
+A receiving client can detect missed sequence ranges within one `event_stream_id` and request/recover history if the profile supports it. Boot, OTA, provisioning, security, and runtime-restart events remain valid when no Plant timeline is active; timeline identity is optional correlation, not the event stream's ordering scope.
 
 A `Fault` is a domain object with lifecycle, not merely severity=error. Recommended state:
 
@@ -310,7 +358,7 @@ Separate:
 
 1. **Transport errors** — disconnected, timeout, authentication failure.
 2. **Protocol errors** — incompatible schema/profile, malformed request.
-3. **Admission errors** — stale epoch, no lease, wrong mode, deadline expired.
+3. **Admission errors** — stale Plant timeline, no lease, wrong mode, deadline expired.
 4. **Robot/domain errors** — actuator fault, path blocked, calibration failed.
 5. **Safety outcomes** — command rejected/modified/stopped.
 
@@ -430,9 +478,9 @@ This research supports decisions along these lines:
 1. Public protocol is ROS-independent and transport-neutral.
 2. Protobuf is the default public structured schema candidate.
 3. State, command, RPC, action, event, and lease are distinct semantics.
-4. Command validity includes epoch/time/authority.
+4. Command validity includes Plant timeline, timing mode, and authority generation.
 5. Capability discovery is preferred over model-specific API assumptions.
-6. Requested/accepted/applied commands are observable separately.
+6. Requested/admitted/safety-output/applied commands are observable separately.
 
 ## Experiments required
 
@@ -441,7 +489,7 @@ This research supports decisions along these lines:
 3. Build ROS 2 adapter for JointState + one Action without changing core schema.
 4. Compatibility CI: old client/new robot and new client/old robot.
 5. Fuzz decode/unknown-field/unknown-enum cases.
-6. Stale epoch, expired command, lost lease, duplicate sequence tests.
+6. Stale Plant timeline, expired command, lost lease, duplicate sequence tests.
 
 ## Primary references
 
