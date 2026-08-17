@@ -383,6 +383,7 @@ The current reference architecture is a working thesis. Important questions stil
 - whether repeated model transformations justify a compiler beyond the V0 manifest validator;
 - which safety responsibilities belong in the host versus dedicated safety hardware;
 - how much low-level control should be exposed to external research users;
-- OTA/recovery strategy across heterogeneous robot electronics.
+- OTA/recovery strategy across heterogeneous robot electronics;
+- the policy/inference-to-RT boundary: timeout policy, interpolation ownership, observation-time alignment, and action chunking — see [`policy-runtime-interface.md`](../deep-research/policy-runtime-interface.md) and `D-19`.
 
 These questions should be resolved through Deep Research, benchmarks, ADRs, SIL/HIL tests, and eventually physical reference robots.

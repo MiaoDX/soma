@@ -1,0 +1,26 @@
+# Rust
+/target/
+**/target/
+Cargo.lock
+!/Cargo.lock
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Local evidence and scratch output (not source of truth)
+/docs/measurements/*.local.*
+*.mcap
+*.log
+.env

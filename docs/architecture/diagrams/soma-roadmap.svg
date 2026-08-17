@@ -1,0 +1,106 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 744" width="1120" height="744" role="img" aria-label="Soma milestone roadmap from M0 architecture convergence through M1a and M1b no-hardware spine to hardware and fleet milestones, showing what triggers each one">
+  <style>
+    .t  { font-family: "Inter", "Helvetica Neue", -apple-system, "Segoe UI", system-ui, sans-serif; fill: #12171D; }
+    .m  { font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace; }
+    .h1 { font-size: 21px; font-weight: 650; letter-spacing: -0.2px; }
+    .h2 { font-size: 12px; fill: #5A646E; }
+    .id { font-size: 13px; font-weight: 700; }
+    .nm { font-size: 14.5px; font-weight: 640; }
+    .gt { font-size: 10.5px; fill: #2A333C; }
+    .rt { font-size: 10.5px; fill: #6B747D; font-style: italic; }
+    .bg { font-size: 9px; font-weight: 700; letter-spacing: 0.9px; }
+    .bnd{ font-size: 9.5px; font-weight: 700; letter-spacing: 1.4px; fill: #8A939B; }
+    .eb { font-size: 9.5px; font-weight: 700; letter-spacing: 1.1px; fill: #79838C; }
+  </style>
+
+  <rect width="1120" height="744" fill="#F5F6F7"/>
+  <rect x="0.5" y="0.5" width="1119" height="743" fill="none" stroke="#D6DBDF"/>
+
+  <text class="t h1" x="44" y="36">Milestones — and what opens each one</text>
+  <text class="t h2" x="44" y="58">Only M0 and M1 are current scope. Later milestones are designed but closed; each names the trigger that reopens it, so scope cannot drift in by ambition.</text>
+
+  <!-- bands -->
+  <g>
+    <path d="M60 106 L52 106 L52 350 L60 350" fill="none" stroke="#2B4B8E" stroke-width="1.25"/>
+    <text class="t bnd" x="46" y="228" transform="rotate(-90 46 228)" text-anchor="middle" fill="#2B4B8E">CURRENT SCOPE</text>
+
+    <path d="M60 362 L52 362 L52 524 L60 524" fill="none" stroke="#97690A" stroke-width="1.25"/>
+    <text class="t bnd" x="46" y="443" transform="rotate(-90 46 443)" text-anchor="middle" fill="#97690A">NEEDS HARDWARE</text>
+
+    <path d="M60 536 L52 536 L52 616 L60 616" fill="none" stroke="#7C868F" stroke-width="1.25"/>
+    <text class="t bnd" x="46" y="576" transform="rotate(-90 46 576)" text-anchor="middle" fill="#7C868F">NEEDS A PRODUCT</text>
+  </g>
+
+  <!-- M0 -->
+  <g>
+    <rect x="72" y="106" width="3" height="72" fill="#2B4B8E"/>
+    <text class="t m id" x="90" y="126" fill="#1E3568">M0</text>
+    <text class="t nm" x="132" y="126">Architecture convergence</text>
+    <rect x="952" y="113" width="118" height="17" rx="2" fill="#E6ECF8" stroke="#2B4B8E" stroke-width="1"/>
+    <text class="t m bg" x="1011" y="125.5" text-anchor="middle" fill="#1E3568">DOCUMENTS</text>
+    <text class="t gt" x="90" y="147">Exit — one meaning per term for Plant, timeline, generation, capability, and safety authority. Every P0 decision is accepted, provisional with a reversal trigger, or assigned an experiment.</text>
+    <text class="t rt" x="90" y="165">Produces the Decision Register, the threat model, the verification matrix, and the Performance Envelope template.</text>
+  </g>
+
+  <!-- M1a -->
+  <g>
+    <rect x="72" y="188" width="3" height="72" fill="#16656E"/>
+    <text class="t m id" x="90" y="208" fill="#0E4A51">M1a</text>
+    <text class="t nm" x="132" y="208" fill="#0E4A51">It runs</text>
+    <rect x="952" y="195" width="118" height="17" rx="2" fill="#DFEFF0" stroke="#16656E" stroke-width="1"/>
+    <text class="t m bg" x="1011" y="207.5" text-anchor="middle" fill="#0E4A51">SIL</text>
+    <text class="t gt" x="90" y="229">Gate — Python acquires a lease and commands MuJoCo through separate <tspan class="m">robot-runtime</tspan> and <tspan class="m">robot-rt</tspan> processes. Reset issues a new Plant timeline and refuses the stale command.</text>
+    <text class="t rt" x="90" y="247">Command lineage stays visible end to end. The first executable proof that the architecture is a system and not a vocabulary.</text>
+  </g>
+
+  <!-- M1b -->
+  <g>
+    <rect x="72" y="270" width="3" height="72" fill="#16656E"/>
+    <text class="t m id" x="90" y="290" fill="#0E4A51">M1b</text>
+    <text class="t nm" x="132" y="290" fill="#0E4A51">It is credible</text>
+    <rect x="952" y="277" width="118" height="17" rx="2" fill="#DFEFF0" stroke="#16656E" stroke-width="1"/>
+    <text class="t m bg" x="1011" y="289.5" text-anchor="middle" fill="#0E4A51">SIL · HOST</text>
+    <text class="t gt" x="90" y="311">Gate — runtime restart and lease reacquisition, bounded IPC under overflow and ABI mismatch, a recorder that cannot silently perturb control, and a signed-artifact verifier.</text>
+    <text class="t rt" x="90" y="329">Plus hardware-free adapter conformance and an installable candidate. Failure has to be visible, not absent.</text>
+  </g>
+
+  <!-- M2 -->
+  <g>
+    <rect x="72" y="362" width="3" height="72" fill="#97690A"/>
+    <text class="t m id" x="90" y="382" fill="#5A3F00">M2</text>
+    <text class="t nm" x="132" y="382" fill="#5A3F00">First accessible robot boundary</text>
+    <rect x="952" y="369" width="118" height="17" rx="2" fill="#FCF1D3" stroke="#97690A" stroke-width="1"/>
+    <text class="t m bg" x="1011" y="381.5" text-anchor="middle" fill="#5A3F00">HIL · PHYSICAL</text>
+    <text class="t gt" x="90" y="403">Trigger — hardware becomes accessible and a real need justifies it. Classify the boundary as a <tspan class="m">NativePlantAdapter</tspan> or a <tspan class="m">ManagedMotionGateway</tspan>, then rerun the M1 scenarios.</text>
+    <text class="t rt" x="90" y="421">A managed vendor motion boundary never inherits Soma SA-3 coverage. Inaccessible layers are published as unknown, not inferred.</text>
+  </g>
+
+  <!-- M3 -->
+  <g>
+    <rect x="72" y="444" width="3" height="72" fill="#97690A"/>
+    <text class="t m id" x="90" y="464" fill="#5A3F00">M3</text>
+    <text class="t nm" x="132" y="464" fill="#5A3F00">Owner-controlled lower stack</text>
+    <rect x="952" y="451" width="118" height="17" rx="2" fill="#FCF1D3" stroke="#97690A" stroke-width="1"/>
+    <text class="t m bg" x="1011" y="463.5" text-anchor="middle" fill="#5A3F00">HIL · PHYSICAL</text>
+    <text class="t gt" x="90" y="485">Trigger — Soma owns hardware or an accessible bench. Constrained single actuator, then a synchronized multi-axis fixture, with firmware and HAL owned for every claimed layer.</text>
+    <text class="t rt" x="90" y="503">Independent stop or energy-control path chosen by hazard analysis. Must not require rewriting the M1 public contracts.</text>
+  </g>
+
+  <!-- M4 -->
+  <g>
+    <rect x="72" y="536" width="3" height="72" fill="#7C868F"/>
+    <text class="t m id" x="90" y="556" fill="#4A545E">M4</text>
+    <text class="t nm" x="132" y="556">Production and fleet qualification</text>
+    <rect x="952" y="543" width="118" height="17" rx="2" fill="#EAEDEF" stroke="#7C868F" stroke-width="1"/>
+    <text class="t m bg" x="1011" y="555.5" text-anchor="middle" fill="#4A545E">DEFERRED</text>
+    <text class="t gt" x="90" y="577">Trigger — something exists that is worth shipping. Provisioning, signing roles, secure boot, anti-rollback, recovery; abuse and fuzz qualification; canary rollout and rollback.</text>
+    <text class="t rt" x="90" y="595">Until then V0 says plainly what it is: architecture reviewed, mechanisms partly implemented, production security not qualified.</text>
+  </g>
+
+  <line x1="72" y1="620" x2="1070" y2="620" stroke="#D6DBDF"/>
+  <text class="t m eb" x="72" y="644">EXPLICITLY OUT OF SCOPE FOR MILESTONE 1</text>
+  <text class="t gt" x="72" y="664">Physical hardware, fieldbus, E-stop, STO, hard-real-time qualification · a universal URDF/MJCF/USD compiler · complete vendor emulators</text>
+  <text class="t gt" x="72" y="681">A mandatory transport bake-off · separate update, health and recorder daemons · Isaac, Genesis, HIL rigs, batch-RL infrastructure, ROS distributions</text>
+  <text class="t gt" x="72" y="698">Fleet rollout, cloud services and UI tooling · plugin ABI and cross-version internal IPC compatibility · any safety-certification claim</text>
+  <text class="t rt" x="72" y="722">All of it is already researched. None of it changes the shape of M1, and each is cheaper to build after the contracts have been measured once.</text>
+</svg>

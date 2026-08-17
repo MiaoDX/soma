@@ -8,6 +8,26 @@ The project focuses on the layers beneath application intelligence: hardware abs
 
 > Many forms. One foundation.
 
+## Architecture at a glance
+
+![Soma layers and safety authority](docs/architecture/diagrams/soma-stack.svg)
+
+Boundaries are the architecture; the boxes are negotiable. Colour encodes
+execution class, not importance: grey is ordinary software, indigo the
+non-real-time runtime, teal the deterministic control path, violet
+simulation, and ochre the independent safety and trust path that must hold
+without Linux, `robotd`, or the network.
+
+![Command lineage](docs/architecture/diagrams/soma-command-lineage.svg)
+
+A policy that behaves oddly is either being constrained or is genuinely bad.
+Without these four observable states — requested, admitted, safety-output,
+applied — you cannot tell which one, or who to hold responsible.
+
+![Milestones](docs/architecture/diagrams/soma-roadmap.svg)
+
+More diagrams and their relationship to the prose: [`docs/architecture/diagrams/`](docs/architecture/diagrams/).
+
 ## Status
 
 Soma is currently in the **research and architecture** phase. The repository will evolve from design documents and comparative research into a working reference implementation validated across simulation and real robot embodiments.
@@ -30,6 +50,10 @@ Soma is currently in the **research and architecture** phase. The repository wil
 - [Decision and research register](docs/plans/decision-register.md)
 - [Bootstrap plan](docs/plans/bootstrap-plan.md)
 - [Deep research index](docs/deep-research/README.md)
+
+## License
+
+[MIT](LICENSE)
 
 ---
 
