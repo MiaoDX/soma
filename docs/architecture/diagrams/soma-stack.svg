@@ -1,0 +1,160 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 742" width="1120" height="742" role="img" aria-label="Soma layer stack from L-2 independent safety up to L5 fleet, with the robotd deployment unit, the Plant contract, and the SA-0 to SA-5 safety authority chain">
+  <style>
+    .t   { font-family: "Inter", "Helvetica Neue", -apple-system, "Segoe UI", system-ui, sans-serif; fill: #12171D; }
+    .m   { font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace; }
+    .h1  { font-size: 21px; font-weight: 650; letter-spacing: -0.2px; }
+    .h2  { font-size: 12px; fill: #5A646E; }
+    .id  { font-size: 12.5px; font-weight: 600; }
+    .nm  { font-size: 14px; font-weight: 620; }
+    .dt  { font-size: 11px; fill: #4A545E; }
+    .bd  { font-size: 10.5px; font-weight: 600; letter-spacing: 0.5px; fill: #56606A; }
+    .eb  { font-size: 9.5px; font-weight: 700; letter-spacing: 1.2px; fill: #79838C; }
+    .box { stroke-width: 1.25; rx: 3; }
+    .rule { stroke: #B9C0C6; stroke-width: 1; stroke-dasharray: 5 4; }
+  </style>
+
+  <rect x="0" y="0" width="1120" height="742" fill="#F5F6F7"/>
+  <rect x="0.5" y="0.5" width="1119" height="741" fill="none" stroke="#D6DBDF"/>
+
+  <text class="t h1" x="44" y="36">Soma — responsibility layers and safety authority</text>
+  <text class="t h2" x="44" y="58">Colour encodes execution class, not importance. Boundaries are the architecture; the boxes are negotiable.</text>
+
+  <!-- ============ L5 / L4 / L3 ============ -->
+  <g>
+    <rect class="box" x="44" y="84" width="812" height="38" fill="#EAEDEF" stroke="#7C868F"/>
+    <text class="t m id" x="58" y="108" fill="#4A545E">L5</text>
+    <text class="t nm" x="96" y="108">Fleet and cloud operations</text>
+    <text class="t dt" x="352" y="108">provisioning · artifact registry · staged rollout · fleet evidence</text>
+
+    <rect class="box" x="44" y="128" width="812" height="38" fill="#EAEDEF" stroke="#7C868F"/>
+    <text class="t m id" x="58" y="152" fill="#4A545E">L4</text>
+    <text class="t nm" x="96" y="152">SDK and applications</text>
+    <text class="t dt" x="352" y="152">Python / C++ SDK · ROS 2 bridge · teleoperation · tasks · external policies</text>
+
+    <rect class="box" x="44" y="172" width="812" height="38" fill="#EAEDEF" stroke="#7C868F"/>
+    <text class="t m id" x="58" y="196" fill="#4A545E">L3</text>
+    <text class="t nm" x="96" y="196">Reusable capabilities</text>
+    <text class="t dt" x="352" y="196">locomotion · manipulation · navigation · perception · approved policies</text>
+  </g>
+
+  <!-- ============ protocol boundary ============ -->
+  <line class="rule" x1="44" y1="228" x2="856" y2="228"/>
+  <rect x="96" y="217" width="330" height="22" fill="#F5F6F7"/>
+  <text class="t m bd" x="104" y="232">PUBLIC ROBOT PROTOCOL — ROS-independent, transport-neutral</text>
+
+  <!-- ============ robotd ============ -->
+  <rect x="44" y="252" width="812" height="180" fill="none" stroke="#2B4B8E" stroke-width="1.25" stroke-dasharray="3 3" rx="4"/>
+  <rect x="60" y="243" width="252" height="18" fill="#F5F6F7"/>
+  <text class="t m bd" x="66" y="256" fill="#2B4B8E">robotd — SUPERVISED DEPLOYMENT UNIT</text>
+
+  <rect class="box" x="62" y="272" width="776" height="54" fill="#E6ECF8" stroke="#2B4B8E"/>
+  <text class="t m id" x="76" y="292" fill="#1E3568">L2</text>
+  <text class="t nm" x="112" y="292" fill="#1E3568">robot-runtime · Rust, non-real-time</text>
+  <text class="t dt" x="112" y="311">identity and auth · leases and arbitration · actions · lifecycle · diagnostics · recorder · OTA coordination</text>
+
+  <line class="rule" x1="62" y1="340" x2="838" y2="340"/>
+  <rect x="112" y="330" width="420" height="20" fill="#E9EDF0"/>
+  <text class="t m bd" x="118" y="344">BOUNDED SHM MAILBOXES — ABI hash + generation handshake, atomic upgrade</text>
+
+  <rect class="box" x="62" y="356" width="776" height="58" fill="#DFEFF0" stroke="#16656E"/>
+  <text class="t m id" x="76" y="376" fill="#0E4A51">L1</text>
+  <text class="t nm" x="112" y="376" fill="#0E4A51">robot-rt · Rust, deterministic 1 kHz</text>
+  <text class="t dt" x="112" y="395">ControlCore · estimator · controller · SA-3 safety supervisor · watchdog · command validation</text>
+  <text class="t dt" x="112" y="409" fill="#0E4A51">no async runtime · no Python · no middleware · no blocking I/O · no allocation in the cyclic path</text>
+
+  <!-- ============ plant boundary ============ -->
+  <line class="rule" x1="44" y1="450" x2="856" y2="450"/>
+  <rect x="96" y="439" width="352" height="22" fill="#F5F6F7"/>
+  <text class="t m bd" x="104" y="454">PLANT CONTRACT — fixed layout, bounded deadline, versioned</text>
+
+  <!-- ============ L0 ============ -->
+  <text class="t m id" x="58" y="490" fill="#4A545E">L0</text>
+
+  <rect class="box" x="86" y="470" width="240" height="94" fill="#E7EAEC" stroke="#4C565F"/>
+  <text class="t nm" x="100" y="492" style="font-size:13px">HardwarePlant → HAL</text>
+  <text class="t dt" x="100" y="511">fieldbus master, device drivers,</text>
+  <text class="t dt" x="100" y="526">transmission mapping, discovery</text>
+  <text class="t m dt" x="100" y="548" fill="#16656E">in the periodic RT path</text>
+
+  <rect class="box" x="342" y="470" width="240" height="94" fill="#EEE9F7" stroke="#674A97"/>
+  <text class="t nm" x="356" y="492" style="font-size:13px" fill="#46316B">Local SIL Plant</text>
+  <text class="t dt" x="356" y="511">deterministic in-process physics,</text>
+  <text class="t dt" x="356" y="526">initially MuJoCo</text>
+  <text class="t m dt" x="356" y="548" fill="#674A97">virtual-time test runner</text>
+
+  <rect class="box" x="598" y="470" width="240" height="94" fill="#EEE9F7" stroke="#674A97"/>
+  <text class="t nm" x="612" y="492" style="font-size:13px" fill="#46316B">ShmPlantProxy</text>
+  <text class="t dt" x="612" y="511">→ non-RT SimGateway →</text>
+  <text class="t dt" x="612" y="526">Isaac Sim / Isaac Lab / Genesis</text>
+  <text class="t m dt" x="612" y="548" fill="#674A97">engine work stays off the RT path</text>
+
+  <!-- ============ L-1 ============ -->
+  <rect class="box" x="86" y="582" width="300" height="46" fill="#DFE3E6" stroke="#3E4850"/>
+  <text class="t m id" x="100" y="601" fill="#3E4850">L-1</text>
+  <text class="t nm" x="136" y="601" style="font-size:13px">Board and device firmware</text>
+  <text class="t dt" x="100" y="619" style="font-size:10px">bootloaders · FOC · encoders · sensors · BMS · watchdogs</text>
+
+  <path d="M206 564 L206 582" stroke="#4C565F" stroke-width="1.25" fill="none" marker-end="url(#ar)"/>
+  <text class="t dt" x="420" y="598" font-style="italic">A low-level host API does not make this firmware open, replaceable, or verified.</text>
+  <text class="t dt" x="420" y="615" font-style="italic">Openness is assessed per component, never inferred from a joint-command SDK.</text>
+
+  <!-- ============ not-Linux boundary ============ -->
+  <line x1="44" y1="646" x2="856" y2="646" stroke="#97690A" stroke-width="1.25" stroke-dasharray="6 4"/>
+  <rect x="96" y="635" width="316" height="22" fill="#F5F6F7"/>
+  <text class="t m bd" x="104" y="650" fill="#8A5F08">MUST HOLD WITHOUT LINUX, robotd, OR THE NETWORK</text>
+
+  <!-- ============ L-2 ============ -->
+  <rect class="box" x="44" y="664" width="812" height="60" fill="#FCF1D3" stroke="#97690A"/>
+  <text class="t m id" x="58" y="686" fill="#5A3F00">L-2</text>
+  <text class="t nm" x="96" y="686" fill="#5A3F00">Independent safety and trust</text>
+  <text class="t dt" x="96" y="705" fill="#5A3F00">E-stop function · STO / torque inhibition · brake control · energy isolation · safety controller · hardware root of trust</text>
+  <text class="t dt" x="96" y="719" fill="#8A5F08">These are four distinct functions and final elements. None of them implies the others, or a complete safe state.</text>
+
+  <!-- ============ authority gutter ============ -->
+  <line x1="872" y1="84" x2="872" y2="724" stroke="#D6DBDF" stroke-width="1"/>
+  <text class="t m eb" x="890" y="98">SAFETY AUTHORITY</text>
+  <text class="t dt" x="890" y="116" style="font-size:10px">A lower number must stay</text>
+  <text class="t dt" x="890" y="129" style="font-size:10px">effective when everything</text>
+  <text class="t dt" x="890" y="142" style="font-size:10px">above it fails or disappears.</text>
+
+  <g>
+    <rect class="box" x="890" y="168" width="200" height="44" fill="#EAEDEF" stroke="#7C868F"/>
+    <text class="t m id" x="900" y="186" fill="#4A545E">SA-5</text>
+    <text class="t dt" x="940" y="186">applications and AI</text>
+    <text class="t dt" x="900" y="203" style="font-size:10px">never a trusted safety mechanism</text>
+
+    <rect class="box" x="890" y="276" width="200" height="44" fill="#E6ECF8" stroke="#2B4B8E"/>
+    <text class="t m id" x="900" y="294" fill="#1E3568">SA-4</text>
+    <text class="t dt" x="940" y="294">runtime authority</text>
+    <text class="t dt" x="900" y="311" style="font-size:10px">lease, mode, authorization, timing</text>
+
+    <rect class="box" x="890" y="358" width="200" height="54" fill="#DFEFF0" stroke="#16656E"/>
+    <text class="t m id" x="900" y="376" fill="#0E4A51">SA-3</text>
+    <text class="t dt" x="940" y="376">safety supervisor</text>
+    <text class="t dt" x="900" y="393" style="font-size:10px">envelopes, deadlines, safe states</text>
+    <text class="t dt" x="900" y="407" style="font-size:10px" fill="#0E4A51">non-safety-rated by default</text>
+
+    <text class="t dt" x="890" y="500" font-size="10" font-style="italic">L0 has no row here.</text>
+    <text class="t dt" x="890" y="514" font-size="10" font-style="italic">A HAL is not a safety</text>
+    <text class="t dt" x="890" y="528" font-size="10" font-style="italic">authority.</text>
+
+    <rect class="box" x="890" y="582" width="200" height="46" fill="#DFE3E6" stroke="#3E4850"/>
+    <text class="t m id" x="900" y="600" fill="#3E4850">SA-2</text>
+    <text class="t dt" x="940" y="600">drive protection</text>
+    <text class="t dt" x="900" y="618" style="font-size:10px">current, thermal, encoder, watchdog</text>
+
+    <rect class="box" x="890" y="664" width="200" height="28" fill="#FCF1D3" stroke="#97690A"/>
+    <text class="t m id" x="900" y="683" fill="#5A3F00">SA-1</text>
+    <text class="t dt" x="940" y="683" style="font-size:10px">independent safety controller</text>
+
+    <rect class="box" x="890" y="696" width="200" height="28" fill="#F8E3A8" stroke="#97690A"/>
+    <text class="t m id" x="900" y="715" fill="#5A3F00">SA-0</text>
+    <text class="t dt" x="940" y="715" style="font-size:10px">final stop / energy elements</text>
+  </g>
+
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#4C565F"/>
+    </marker>
+  </defs>
+</svg>

@@ -21,6 +21,7 @@ Architecture documents should stay concise and opinionated. Deep Research is int
 - [`middleware-and-ipc.md`](middleware-and-ipc.md) — RT IPC, shared memory, provisional Zenoh, Cyclone DDS/gRPC gateways, public protocol semantics, and triggered benchmark plan.
 - [`robot-protocol-and-data-model.md`](robot-protocol-and-data-model.md) — identity, capabilities, state/command/RPC/action/event/lease semantics, schema evolution, errors, bulk data, and V0 protocol surface.
 - [`time-synchronization-and-determinism.md`](time-synchronization-and-determinism.md) — monotonic/PTP/TAI/device/simulation time, lifecycle generations, Plant timeline/tick, EtherCAT DC, sensor timestamp provenance, and deterministic replay.
+- [`policy-runtime-interface.md`](policy-runtime-interface.md) — the boundary between a low-rate policy/teleoperation command source and the 1 kHz `robot-rt` loop: timeout policy, interpolation ownership, observation time alignment, and action chunking.
 
 ### Robot model, simulation, and safety
 

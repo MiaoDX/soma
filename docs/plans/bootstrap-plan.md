@@ -14,18 +14,21 @@ The current lack of hardware is a constraint, not a reason to couple the archite
 ## Runnable spine
 
 ```text
-Python SDK
-    |
-    | Robot Protocol over provisional Zenoh
-    v
-robot-runtime
+Python SDK                    synthetic 20 Hz cadence source
+    |                         (lookup table or sine, no trained
+    | Robot Protocol           model required — see D-19)
+    | over provisional Zenoh          |
+    v                                 v
+robot-runtime  <-------------------- command stream
   auth boundary | lease | timing | capability | lifecycle | record
     |
     | bounded RT/runtime mailbox contract
     v
 robot-rt
   representative ControlCore -> SA-3 -> applied evidence
-    |
+    |                            ^
+    |                            | command_staleness_policy
+    |                            | (hold / decay / fallback / inhibit)
     | bounded Plant contract
     v
 MuJoCo Plant
@@ -37,7 +40,7 @@ parallel contract fixture, not a second runtime:
 fake/recorded G1/G2-class boundary -> adapter conformance
 ```
 
-This is the smallest slice that exercises the architecture rather than merely demonstrating a simulator.
+This is the smallest slice that exercises the architecture rather than merely demonstrating a simulator. The synthetic cadence source exists specifically to force the timeout, interpolation, and staleness code paths defined in [`policy-runtime-interface.md`](../deep-research/policy-runtime-interface.md) (D-19) to exist before a trained policy or real hardware arrives — it is a control-and-timing fixture, not a step toward a real policy.
 
 ## Implementation maturity map
 
@@ -99,14 +102,23 @@ Each dynamic result records scenario ID, loop composition, hardware/model/releas
 
 ## Milestone 1: no-hardware runnable spine
 
-Milestone 1 has two checkpoints so qualification work does not block the first executable system:
+Milestone 1 has three checkpoints so qualification work does not block the
+first executable system, and so the hardest, most research-like piece
+(executable stateful replay) cannot silently stall the rest of V0:
 
 | Checkpoint | Purpose | Required result |
 | --- | --- | --- |
-| **M1a: runs** | prove the architecture can execute end to end | Python lease/command/state through separate runtime/RT processes into MuJoCo, with command lineage and reset/timeline rejection |
-| **M1b: credible** | prove the V0 claims are measurable and failure-aware | recovery paths, bounded IPC, executable replay negatives, recorder pressure, adapter conformance, signed verifier and installable candidate |
+| **M1a: runs** | prove the architecture can execute end to end | Python lease/command/state through separate runtime/RT processes into MuJoCo, with command lineage and reset/timeline rejection, driven in part by a synthetic cadence source that exercises `command_staleness_policy` (D-19) |
+| **M1b: credible** | prove the bounded-engineering V0 claims are measurable and failure-aware | recovery paths, bounded IPC negatives, recorder pressure, adapter conformance, signed verifier and installable candidate |
+| **M1c: reproducible** | prove recorded sessions can be replayed and trusted, or state plainly that they cannot yet | executable stateful replay with the four negative cases (omitted state, clock bypass, corrupt log, incompatible build), and the D-09 Copper-vs-native decision |
 
-M1a is the first implementation target. M1b completes V0 before adding real hardware or another simulator.
+M1a is the first implementation target. M1b completes the bounded-engineering
+half of V0. M1c is scoped separately because stateful replay correctness is a
+harder, more open-ended problem than the rest of M1 (see the "Replay
+guarantees are a system contract" findings in
+[`runtime-and-platform-reference-projects.md`](../deep-research/runtime-and-platform-reference-projects.md));
+it is allowed to conclude "not yet, replay is message-level only" without
+blocking M1a/M1b from being reviewable and mergeable.
 
 ### Contracts and fixtures
 
@@ -188,11 +200,12 @@ This is an index, not a test DSL. Scenario implementation details live beside th
 | Shared model semantics span embodiments | `model-two-fixtures` | `HOST` | two different embodiments validate without public protocol branches | manifest fixtures + validator report | M1a |
 | Same control path drives simulation | `sdk-mujoco-roundtrip` | `SIL` | SDK -> runtime -> RT -> MuJoCo -> state/evidence completes | MCAP + release/scenario IDs | M1a |
 | Timeline prevents stale control | `reset-with-inflight-command` | `SIL` | reset changes timeline; prior command is rejected with reason | event and command-lineage record | M1a |
+| A low-rate command source can safely drive the 1 kHz loop | `cadence-source-decimation` | `SIL` | synthetic 20 Hz source drives the loop; a missed tick reaches the declared `command_staleness_policy` fallback and is recorded with attribution | command-lineage record + D-19 policy identity | M1a |
 | Runtime generations and leases recover explicitly | `runtime-restart-reconnect` | `SIL` | Plant timeline persists; old lease fails; SDK reacquires | lifecycle/lease trace | M1b |
 | Slow consumers cannot block RT | `subscriber-overload` | `SIL` | bounded drop/age counters increase; RT envelope holds | benchmark + counters | M1b |
 | RT/runtime IPC is bounded and restart-safe | `ipc-overflow-generation-abi` | `HOST`/`SIL` | no cyclic allocation/blocking; stale or incompatible region cannot enable motion | test and benchmark report | M1b |
-| Replay is executable and honest | `stateful-replay-negative-cases` | `HOST`/`SIL` | valid replay compares as declared; omission/corruption/incompatibility fails visibly | source and replay journals + manifest | M1b |
 | Recorder does not perturb control silently | `recorder-pressure` | `SIL` | RT envelope holds or failure is explicit; losses invalidate completeness claim | enabled/disabled/pressure report | M1b |
+| Replay is executable and honest | `stateful-replay-negative-cases` | `HOST`/`SIL` | valid replay compares as declared; omission/corruption/incompatibility fails visibly | source and replay journals + manifest | M1c |
 | Vendor boundary stays contained | `adapter-contract-fixture` | `HOST`/`SIM` | classification, mappings, capabilities, typed unsupported errors and evidence limits pass | conformance report | M1b |
 | Ordinary artifacts cannot relax safety profile | `artifact-authority-separation` | `HOST`/`SIL` | model/control/policy/scenario changes leave active `SafetyProfile` identity and bounds unchanged | activation/evidence trace | M1b |
 | Development verifier rejects invalid artifacts | `signed-artifact-negative-cases` | `HOST` | modified, unsigned, incompatible and disallowed rollback inputs are rejected audibly | verifier report | M1b |
@@ -352,57 +365,75 @@ Contracts are a short sequential gate; implementation then separates into bounde
 
 | Step | Modules | Depends on |
 | --- | --- | --- |
-| Foundation | shared types, model fixtures, scenario IDs, release identity | M0 decisions |
-| Lane A: control and simulation | `robot-rt`, Plant, MuJoCo, RT benchmark | Foundation |
+| Foundation | shared types, model fixtures, scenario IDs, release identity, RT/runtime IPC (D-05) | M0 decisions |
+| Lane A: control and simulation | `robot-rt`, Plant, MuJoCo, minimal native execution graph, RT benchmark | Foundation |
 | Lane B: runtime and SDK | `robot-runtime`, protocol, Rust/Python client | Foundation |
-| Lane C: execution evidence | Copper/minimal spike, replay, MCAP, recorder | Foundation; integrates with Lane A workload |
+| Lane C: execution evidence | Copper-vs-native comparison (D-09), replay, MCAP, recorder | Lane A's minimal graph, not Foundation directly |
 | Lane D: adapter conformance | adapter fixtures, `InterfaceProfile`, capability cases | Foundation |
 | Integration | end-to-end recovery, reset, overload, Performance Envelope, packaging | A + B + C + D |
 
 Execution order:
 
 ```text
-Foundation
+Foundation (shared types, RT/runtime IPC)
    |
-   +--> Lane A ----+
-   +--> Lane B ----+--> integration and M1 qualification
-   +--> Lane C ----+
-   +--> Lane D ----+
+   +--> Lane A: minimal native graph -----+--> Lane C: Copper comparison --+
+   +--> Lane B ---------------------------|                                +--> integration and M1 qualification
+   +--> Lane D ---------------------------+--------------------------------+
 ```
 
-Lanes A and C both touch the representative control graph, so define the graph fixture in Foundation and assign one owner during integration. Lanes A/B share fixed-layout types but should not edit those types independently after the Foundation checkpoint.
+RT/runtime IPC (D-05) moved into Foundation rather than its own lane: M1a's
+definition requires commanding MuJoCo through separate `robot-runtime` and
+`robot-rt` processes, so the mailbox is on the M1a critical path, not an
+optional comparison alongside it.
+
+Lane C is deliberately sequential after Lane A's minimal native graph exists,
+not parallel with it. D-09's adoption criteria (see the Copper adoption
+spike in [`runtime-and-platform-reference-projects.md`](../deep-research/runtime-and-platform-reference-projects.md))
+require comparing Copper against a working Soma-native baseline; comparing it
+against a graph that does not exist yet is not a comparison. Lanes A/B share
+fixed-layout types but should not edit those types independently after the
+Foundation checkpoint.
 
 ## Implementation Tasks
 
-- [ ] **T1 (P1, human: ~2 days / Codex: ~3 hours)** — Decisions — record P0 ADRs that have evidence and write bounded protocols for experiment-dependent decisions.
+- [x] **T0 (P0)** — Repo hygiene — add LICENSE, `.gitignore`, and baseline doc lint/link-check CI ahead of the first workspace commit.
+  - Surfaced by: Architecture Review — T2 assumes CI configuration exists; a public repository about to receive a Rust workspace had neither a license nor a `.gitignore`.
+  - Files: `LICENSE`, `.gitignore`, `docs/architecture/diagrams/`.
+  - Verify: LICENSE present; `cargo build` artifacts do not appear in `git status`; documentation links resolve.
+- [ ] **T0b (P0)** — Target-compute baseline (D-20) — measure 1 kHz max latency, allocation-free execution, and SPSC-mailbox crash behavior on a representative embedded board.
+  - Surfaced by: Architecture Review — the two-process Linux/PREEMPT_RT assumption the whole design rests on was going untested through all of M1 because "no hardware" was read as "no robot," when it does not require a robot to test.
+  - Files: `docs/measurements/`, a standalone `cyclictest`/allocation-detector harness (not part of the `robot-rt` workspace).
+  - Verify: 24 h soak reports **max** latency (not p99) on the target board; SPSC ring survives `SIGKILL` on either side; results published and referenced by D-05 and D-09 thresholds.
+- [ ] **T1 (P1)** — Decisions — record P0 ADRs that have evidence and write bounded protocols for experiment-dependent decisions.
   - Surfaced by: Architecture Review — research and decisions lacked a consistent convergence path.
   - Files: `docs/decisions/`, `docs/plans/decision-register.md`, relevant Deep Research.
   - Verify: every P0 row is accepted, provisional with trigger, or has a measurable experiment; spike results later close their own ADRs.
-- [ ] **T2 (P1, human: ~3 days / Codex: ~6 hours)** — Foundation — create the minimal workspace, shared contracts, model fixtures, validator and candidate release identity.
+- [ ] **T2 (P1)** — Foundation — create the minimal workspace, shared contracts, model fixtures, validator and candidate release identity.
   - Surfaced by: Scope and Code Quality Review — runnable spine must precede the broad long-term module surface.
   - Files: initial workspace modules and CI/build configuration.
   - Verify: clean build, validator cases, two embodiment fixtures, no ROS/core dependency.
-- [ ] **T3 (P1, human: ~5 days / Codex: ~1 day)** — RT/SIM — implement the representative control graph and MuJoCo Plant with virtual time.
-  - Surfaced by: Architecture Review — hardware-independent Plant/ControlCore claim needs executable evidence.
-  - Files: `robot-rt`, simulation modules, scenarios.
-  - Verify: lockstep/reset/fault tests, allocation detector and RT Performance Envelope.
-- [ ] **T4 (P1, human: ~5 days / Codex: ~1 day)** — Runtime/SDK — implement minimal protocol, leases, capabilities, lifecycle, Zenoh transport and Python path.
+- [ ] **T3 (P1)** — RT/SIM — implement the representative control graph and MuJoCo Plant with virtual time, including a synthetic cadence source exercising `command_staleness_policy` (D-19).
+  - Surfaced by: Architecture Review — hardware-independent Plant/ControlCore claim needs executable evidence; the policy-to-RT boundary (D-19) had no executable evidence at all.
+  - Files: `robot-rt`, simulation modules, scenarios, `SafetyProfile` staleness-policy field.
+  - Verify: lockstep/reset/fault tests, allocation detector, RT Performance Envelope, and the `cadence-source-decimation` scenario.
+- [ ] **T4 (P1)** — Runtime/SDK — implement minimal protocol, leases, capabilities, lifecycle, Zenoh transport and Python path.
   - Surfaced by: Test Review — normal and recovery SDK flows cross all critical components.
   - Files: `robot-runtime`, protocol/client modules, Python package.
   - Verify: SDK roundtrip, reconnect, lease loss, slow consumer and runtime restart scenarios.
-- [ ] **T5 (P1, human: ~3 days / Codex: ~6 hours)** — RT IPC — compare community and minimal implementations, then land one bounded mailbox.
-  - Surfaced by: Code Quality and Performance Review — preserve behavior without committing to unnecessary custom infrastructure.
+- [ ] **T5 (P0)** — RT/runtime IPC (Foundation) — compare the minimal SPSC mailbox against a mature community option using the D-05 decision threshold, then land one bounded mailbox.
+  - Surfaced by: Code Quality and Performance Review — preserve behavior without committing to unnecessary custom infrastructure; Architecture Review — M1a requires two separate processes, so this belongs in Foundation, not an optional parallel lane.
   - Files: RT/runtime IPC module and benchmark.
-  - Verify: overflow, generation, ABI, restart, allocation and latency evidence.
-- [ ] **T6 (P2, human: ~5 days / Codex: ~1 day)** — Replay/Recorder — qualify executable replay and recorder interference after M1a runs.
-  - Surfaced by: Test and Performance Review — message playback alone cannot support deterministic replay or RT isolation claims.
+  - Verify: overflow, generation, ABI, restart, allocation and latency evidence against the D-20 target-compute baseline.
+- [ ] **T6 (P2)** — Replay/Recorder (M1c) — qualify executable stateful replay and recorder interference. May conclude with a deferral decision rather than a working implementation; see M1c.
+  - Surfaced by: Test and Performance Review — message playback alone cannot support deterministic replay or RT isolation claims; `runtime-and-platform-reference-projects.md` shows replay completeness is an application contract, not a framework guarantee.
   - Files: execution/replay, MCAP and runtime recording modules.
-  - Verify: valid replay plus omitted-state, clock-bypass, corrupt-log, incompatible-build and storage-pressure cases.
-- [ ] **T7 (P2, human: ~2 days / Codex: ~4 hours)** — Adapter boundary — build the hardware-free G1/G2-class conformance fixture.
+  - Verify: valid replay plus omitted-state, clock-bypass, corrupt-log, incompatible-build and storage-pressure cases; or a recorded ADR explaining what is deferred and why.
+- [ ] **T7 (P2)** — Adapter boundary — build the hardware-free G1/G2-class conformance fixture.
   - Surfaced by: Test Review — hardware independence should be exercised before hardware arrives.
   - Files: adapter contract fixtures and conformance scenarios.
   - Verify: classification, mappings, capabilities, typed errors and evidence limits.
-- [ ] **T8 (P2, human: ~2 days / Codex: ~4 hours)** — Distribution — build and install the V0 candidate artifact set in clean CI environments.
+- [ ] **T8 (P2)** — Distribution — build and install the V0 candidate artifact set in clean CI environments.
   - Surfaced by: Architecture Review — binaries and SDKs need an explicit delivery path.
   - Files: CI, packaging and candidate `ReleaseManifest` generation.
   - Verify: reproducible identities, atomic runtime/RT set, clean Python wheel install and scenario execution.
@@ -411,20 +442,17 @@ No separate `TODOS.md` items are created by this review. Deferred work already h
 
 ## Definition of success
 
-M1a succeeds when the separate-process Python-to-MuJoCo path runs with command lineage and correct reset/timeline behavior. Milestone 1 succeeds at M1b when one versioned, installable no-hardware candidate also demonstrates recovery, boundedness, replay honesty, recorder isolation, and hardware-free vendor-boundary conformance. It must be clear what was measured, what failed visibly, what remains provisional, and what has not been physically or security qualified.
+M1a succeeds when the separate-process Python-to-MuJoCo path runs with command lineage, correct reset/timeline behavior, and a synthetic cadence source exercising `command_staleness_policy`. Milestone 1 succeeds at M1b when one versioned, installable no-hardware candidate also demonstrates recovery, boundedness, recorder isolation, and hardware-free vendor-boundary conformance. M1c succeeds when recorded sessions replay honestly with all four negative cases failing visibly — or, if that proves harder than scoped, when the plan states plainly that V0 replay is message-level only and stateful replay is deferred with a named trigger. It must be clear what was measured, what failed visibly, what remains provisional, and what has not been physically or security qualified.
 
 The longer plan succeeds when those contracts survive later vendor hardware, owner-controlled lower layers, additional simulators, and fleet operations without hiding inaccessible authority or replacing the runnable spine with a platform-specific fork.
 
-## GSTACK REVIEW REPORT
+## Plan status
 
-| Review | Trigger | Why | Runs | Status | Findings |
-| --- | --- | --- | --- | --- | --- |
-| CEO Review | `/plan-ceo-review` | Scope and strategy | 0 | - | Not run |
-| Codex Review | `/codex review` | Independent second opinion | 0 | - | Nested outside-voice pass skipped because this review ran under Codex |
-| Eng Review | `/plan-eng-review` | Architecture and tests | 1 | CLEAR | 24 issues folded, 0 critical gaps, scope reduced to M1a/M1b |
-| Design Review | `/plan-design-review` | UI/UX gaps | 0 | Not applicable | No UI scope |
-| DX Review | `/plan-devex-review` | Developer experience gaps | 0 | - | Not run |
-
-**VERDICT:** ENG CLEARED - ready to begin M0 ADRs and M1a implementation.
-
-NO UNRESOLVED DECISIONS
+M0 documentation has converged: canonical vocabulary is consistent across
+architecture, safety, and threat-model documents, and every P0 decision in
+the [Decision and Research Register](decision-register.md) is either
+accepted, provisional with a reversal trigger, or assigned a bounded
+experiment. `D-05`, `D-09`, `D-19`, and `D-20` remain `Experiment required` /
+`Research ready` by design — implementation of T3–T5 is expected to close
+them, not the other way around. This plan is ready for M1a implementation;
+it is not a claim that every open question has already been answered.

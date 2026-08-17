@@ -1,0 +1,107 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 458" width="1120" height="458" role="img" aria-label="Command lineage from requested through admitted and safety output to applied, with the authority that owns each transition and the structured reasons it emits">
+  <style>
+    .t  { font-family: "Inter", "Helvetica Neue", -apple-system, "Segoe UI", system-ui, sans-serif; fill: #12171D; }
+    .m  { font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace; }
+    .h1 { font-size: 21px; font-weight: 650; letter-spacing: -0.2px; }
+    .h2 { font-size: 12px; fill: #5A646E; }
+    .nm { font-size: 15px; font-weight: 640; }
+    .dt { font-size: 10.5px; fill: #4A545E; }
+    .eb { font-size: 9.5px; font-weight: 700; letter-spacing: 1.1px; fill: #79838C; }
+    .cd { font-size: 10px; fill: #3E4850; }
+    .box{ stroke-width: 1.25; rx: 3; }
+  </style>
+
+  <rect width="1120" height="458" fill="#F5F6F7"/>
+  <rect x="0.5" y="0.5" width="1119" height="457" fill="none" stroke="#D6DBDF"/>
+
+  <text class="t h1" x="44" y="36">One command, four observable states</text>
+  <text class="t h2" x="44" y="58">A policy that behaves oddly is either being constrained or is genuinely bad. Without these four states you cannot tell which one.</text>
+
+  <g transform="translate(0,-26)">
+  <!-- eyebrows -->
+  <text class="t m eb" x="44"  y="140">SA-5 · L4 CLIENT</text>
+  <text class="t m eb" x="336" y="140">SA-4 · L2 RUNTIME</text>
+  <text class="t m eb" x="628" y="140">SA-3 · L1 robot-rt</text>
+  <text class="t m eb" x="916" y="140">L0 PLANT / HAL</text>
+
+  <!-- state boxes -->
+  <rect class="box" x="44"  y="150" width="160" height="70" fill="#EAEDEF" stroke="#7C868F"/>
+  <text class="t nm" x="60" y="177">Requested</text>
+  <text class="t dt" x="60" y="196">what the application,</text>
+  <text class="t dt" x="60" y="209">teleop, or policy asked for</text>
+
+  <rect class="box" x="336" y="150" width="160" height="70" fill="#E6ECF8" stroke="#2B4B8E"/>
+  <text class="t nm" x="352" y="177" fill="#1E3568">Admitted</text>
+  <text class="t dt" x="352" y="196">accepted as a legitimate</text>
+  <text class="t dt" x="352" y="209">command from this source</text>
+
+  <rect class="box" x="628" y="150" width="160" height="70" fill="#DFEFF0" stroke="#16656E"/>
+  <text class="t nm" x="644" y="177" fill="#0E4A51">Safety output</text>
+  <text class="t dt" x="644" y="196">what survived the active</text>
+  <text class="t dt" x="644" y="209">SafetyProfile envelope</text>
+
+  <rect class="box" x="916" y="150" width="160" height="70" fill="#E7EAEC" stroke="#4C565F"/>
+  <text class="t nm" x="932" y="177">Applied</text>
+  <text class="t dt" x="932" y="196">what actually reached</text>
+  <text class="t dt" x="932" y="209">the plant this cycle</text>
+
+  <!-- gates -->
+  <g>
+    <path d="M204 185 L228 185" stroke="#7C868F" stroke-width="1.5" marker-end="url(#a1)"/>
+    <rect class="box" x="230" y="163" width="80" height="44" fill="#FFFFFF" stroke="#2B4B8E"/>
+    <text class="t m" x="270" y="181" style="font-size:11px;font-weight:700" fill="#1E3568" text-anchor="middle">SA-4</text>
+    <text class="t" x="270" y="197" style="font-size:9.5px" fill="#2B4B8E" text-anchor="middle">admission</text>
+    <path d="M310 185 L332 185" stroke="#2B4B8E" stroke-width="1.5" marker-end="url(#a2)"/>
+
+    <path d="M496 185 L520 185" stroke="#7C868F" stroke-width="1.5" marker-end="url(#a1)"/>
+    <rect class="box" x="522" y="163" width="80" height="44" fill="#FFFFFF" stroke="#16656E"/>
+    <text class="t m" x="562" y="181" style="font-size:11px;font-weight:700" fill="#0E4A51" text-anchor="middle">SA-3</text>
+    <text class="t" x="562" y="197" style="font-size:9.5px" fill="#16656E" text-anchor="middle">envelope</text>
+    <path d="M602 185 L624 185" stroke="#16656E" stroke-width="1.5" marker-end="url(#a3)"/>
+
+    <path d="M788 185 L806 185" stroke="#7C868F" stroke-width="1.5" marker-end="url(#a1)"/>
+    <rect class="box" x="808" y="163" width="100" height="44" fill="#FCF1D3" stroke="#97690A"/>
+    <text class="t m" x="858" y="181" style="font-size:11px;font-weight:700" fill="#5A3F00" text-anchor="middle">SA-2 / SA-0</text>
+    <text class="t" x="858" y="197" style="font-size:9.5px" fill="#8A5F08" text-anchor="middle">observed only</text>
+    <path d="M908 185 L912 185" stroke="#97690A" stroke-width="1.5" marker-end="url(#a4)"/>
+  </g>
+
+  <!-- reason callouts -->
+  <text class="t m eb" x="44" y="252">EACH TRANSITION MAY REJECT, CLIP, OR SUBSTITUTE — AND MUST SAY WHY</text>
+
+  <rect class="box" x="230" y="264" width="266" height="104" fill="#FBFCFC" stroke="#C3CBD3"/>
+  <text class="t dt" x="244" y="283" fill="#1E3568">identity · lease · mode · timing · timeline</text>
+  <text class="t m cd" x="244" y="303">NO_LEASE</text>
+  <text class="t m cd" x="244" y="319">STALE_PLANT_TIMELINE</text>
+  <text class="t m cd" x="244" y="335">DEADLINE_EXPIRED</text>
+  <text class="t m cd" x="244" y="351">MODE_NOT_PERMITTED</text>
+
+  <rect class="box" x="522" y="264" width="266" height="104" fill="#FBFCFC" stroke="#C3CBD3"/>
+  <text class="t dt" x="536" y="283" fill="#0E4A51">limits · state validity · stability · thermal</text>
+  <text class="t m cd" x="536" y="303">JOINT_VELOCITY_LIMIT</text>
+  <text class="t m cd" x="536" y="319">SELF_COLLISION_ENVELOPE</text>
+  <text class="t m cd" x="536" y="335">POWER_BUDGET_DERATE</text>
+  <text class="t m cd" x="536" y="351">STALE_STATE</text>
+
+  <rect class="box" x="808" y="264" width="268" height="104" fill="#FDF8E8" stroke="#DCC98F"/>
+  <text class="t dt" x="822" y="283" fill="#8A5F08">drive and independent hardware limits</text>
+  <text class="t m cd" x="822" y="303">DRIVE_CURRENT_CLAMP</text>
+  <text class="t m cd" x="822" y="319">THERMAL_DERATE</text>
+  <text class="t m cd" x="822" y="335">STO_ASSERTED</text>
+  <text class="t m cd" x="822" y="351">BRAKE_ENGAGED</text>
+
+  <line x1="44" y1="392" x2="1076" y2="392" stroke="#D6DBDF"/>
+
+  <text class="t m eb" x="44" y="418">RECORDED WITH EVERY DECISION</text>
+  <text class="t dt" x="44" y="440" style="font-size:11px"><tspan class="m">plant_timeline_id</tspan> · <tspan class="m">tick</tspan> · <tspan class="m">lease_generation</tspan> · <tspan class="m">safety_profile_id</tspan> + hash · <tspan class="m">calibration_id</tspan> · <tspan class="m">release_id</tspan> · hardware timestamps</text>
+  <text class="t dt" x="44" y="460" style="font-size:11px">→ MCAP flight recorder, so an incident can be replayed and attributed to an authority rather than argued about.</text>
+
+  </g>
+
+  <defs>
+    <marker id="a1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 1 L9 5 L0 9 z" fill="#7C868F"/></marker>
+    <marker id="a2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 1 L9 5 L0 9 z" fill="#2B4B8E"/></marker>
+    <marker id="a3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 1 L9 5 L0 9 z" fill="#16656E"/></marker>
+    <marker id="a4" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 1 L9 5 L0 9 z" fill="#97690A"/></marker>
+  </defs>
+</svg>

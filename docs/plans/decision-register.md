@@ -44,11 +44,11 @@ Priority describes decision order, not eventual product importance:
 | D-02 | P0 | Hardware-independent control boundary | Accepted: one `ControlCore` and bounded Plant contract for MuJoCo/SIL and later hardware | V0 MuJoCo vertical slice; no embodiment-specific public branch |
 | D-03 | P0 | Current implementation direction without hardware | Accepted: top-down from MuJoCo and G1/G2-class exposed boundaries | Runnable spine plus hardware-free adapter conformance |
 | D-04 | P0 | Runtime process boundary | Accepted: supervised `robot-rt` + `robot-runtime`; operations begin as runtime modules | Restart/generation/lease integration scenario |
-| D-05 | P0 | RT/runtime IPC implementation | Experiment required: preserve mailbox behavior, compare minimal SPSC with a mature community option | Choose the smallest implementation meeting boundedness, restart, ABI, and Performance Envelope criteria |
+| D-05 | P0 | RT/runtime IPC implementation | Experiment required: preserve mailbox behavior, compare minimal SPSC with a mature community option | V0 decision threshold: if the minimal SPSC implementation reaches 1 kHz mailbox round-trip p99.9 ≤ 20 µs on the target-compute baseline (D-20) with zero cyclic allocation, do not add a community dependency. Otherwise compare against the mature option on the same Performance Envelope before choosing. |
 | D-06 | P0 | Distributed transport | Provisional: Zenoh-first; Cyclone DDS/gRPC remain gateways | Compare only if Zenoh misses its envelope, creates an operational problem, or native DDS becomes required |
 | D-07 | P0 | Time and lifecycle semantics | Research ready: `ROBOT_MONOTONIC`, simulation time, synchronized time, timeline/generation split | Time ADR plus reset/restart/stale-command scenario |
 | D-08 | P0 | V0 robot model strategy | Accepted: minimal `ProductModelManifest` + backend-native assets + validator | Validate native MJCF and one second fixture; no universal compiler |
-| D-09 | P0 | RT execution/replay framework | Experiment required: Copper-hosted vs minimal Soma-native representative graph | Adopt only if public contracts remain independent and replay/RT criteria pass |
+| D-09 | P0 | RT execution/replay framework | Experiment required: Copper-hosted vs minimal Soma-native representative graph, compared *after* the minimal native graph exists (Lane A), not in parallel with it | V0 decision threshold: if the minimal native graph already satisfies every M1a pass condition, treat Copper as design reference only and defer adoption to M1c; adopt only if it clears every criterion in the Copper adoption spike (`runtime-and-platform-reference-projects.md`) without changing the public Robot Protocol |
 | D-10 | P0 | System verification traceability | Accepted: lightweight claim-to-evidence matrix | Each milestone exit claim has a scenario, pass condition, evidence level, and retained artifact |
 | D-11 | P0 | Performance requirements without target hardware | Accepted: define Performance Envelopes, not universal numbers | Record workload/platform identity and distributions for every spike |
 | D-12 | P1 | Commercial platform boundary | Accepted: classify as `NativePlantAdapter` or `ManagedMotionGateway` | Hardware-free contract tests now; physical qualification only when hardware exists |
@@ -58,6 +58,8 @@ Priority describes decision order, not eventual product importance:
 | D-16 | P2 | First physical platform | Deferred until accessible hardware and project need are known | Evaluate exposed boundary, licensing, safety authority, model assets, and recovery before selection |
 | D-17 | P2 | Owner-controlled L0/L-1/L-2 path | Deferred, retained as a long-term completeness requirement | Resume with own hardware or an accessible component bench; qualify only observed layers |
 | D-18 | P2 | Fleet OTA, production trust, and long-term operations | Deferred after runnable spine and target platform | Product-specific hazard, security, rollout, recovery, and retention evidence |
+| D-19 | P0 | Policy/inference to RT interface (timeout, interpolation ownership, observation alignment, action chunking) | Research ready: see [`policy-runtime-interface.md`](../deep-research/policy-runtime-interface.md) | Add a `command_staleness_policy` field to `SafetyProfile`; exercise it in M1a with a synthetic cadence source before a trained policy or hardware exists |
+| D-20 | P0 | Target-compute latency baseline without a robot | Experiment required: a representative embedded board is not "hardware" in the robot-qualification sense and does not require a robot to measure | cyclictest + 1 kHz allocation-free loop max latency (not p99) over a 24 h soak, plus SPSC-mailbox behavior under `SIGKILL` on either side; publish results to `docs/measurements/` and use them as the Performance Envelope baseline for D-05 and D-09 |
 
 ## Deep-research coverage
 
@@ -71,6 +73,8 @@ Priority describes decision order, not eventual product importance:
 | Safety and security | `safety-and-fault-architecture.md`, `security-threat-model.md` | Target-specific hazard/security decisions |
 | Hardware and fieldbus | `l0-hal-fieldbus.md`, `physical-ai-system-landscape.md` | D-16 and D-17 when hardware exists |
 | OTA and evidence | `ota-and-observability.md` | D-13 candidate manifest, later D-18 |
+| Policy/inference interface | `policy-runtime-interface.md` | D-19: `SafetyProfile` staleness policy, cadence-source scenario in M1a |
+| Target-compute baseline | none yet; D-20 produces it | D-20: cyclictest/allocation/SIGKILL measurement, no robot required |
 
 ## Register discipline
 
