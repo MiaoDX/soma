@@ -113,6 +113,27 @@ Rust async is a strong fit here:
 - OTA coordination;
 - Python SDK client implementation.
 
+## Runtime framework candidate: Copper
+
+[Copper](https://github.com/copper-project/copper-rs) is the most directly relevant open-source Rust reference found for Soma's bounded robot execution layer. It compiles a static RON task graph into an application-specific schedule, preallocates per-cycle `CopperList` message storage, separates critical `process()` work from background/lifecycle work, and integrates runtime-native logging and replay.
+
+It should be evaluated as an implementation candidate for part of `robot-rt`, not adopted as Soma's complete platform:
+
+```text
+Soma owns                         Copper may implement
+---------                         --------------------
+Plant and HAL semantics           generated in-process task schedule
+command lineage and authority     preallocated inter-task cycle data
+software/hardware safety split    task lifecycle and execution probes
+RT/runtime IPC                    task-state keyframes and replay harness
+Robot Protocol and SDK
+artifact/release identity
+```
+
+Copper does not remove the need for PREEMPT_RT configuration, CPU/IRQ isolation, memory locking, deadline measurement, independent safety supervision, or explicit fault behavior. Its asynchronous logging, background tasks, and pipelined execution modes also need separate worst-case evaluation before they enter a production RT profile.
+
+The adoption gate is a representative Plant-estimator-controller-safety graph at 1 kHz with allocation detection, target-hardware latency, stateful keyframe restore, injected nondeterminism, and record/replay output comparison. See [`runtime-and-platform-reference-projects.md`](runtime-and-platform-reference-projects.md) for the full spike and framework boundaries.
+
 ## Panic policy
 
 Rust supports unwind and abort panic strategies. Unwinding across the wrong FFI ABI can produce undefined behavior, and non-unwinding `extern "C"` boundaries should never allow foreign exceptions to cross into Rust.
@@ -283,12 +304,13 @@ The research supports an ADR roughly equivalent to:
 
 ## Experiments required before freezing
 
-1. `robot-rt` 1 kHz benchmark on target ARM/x86 with PREEMPT_RT.
-2. Allocation detector after activation.
-3. Rust SPSC SHM benchmark and crash/restart behavior.
-4. EtherCrab vs selected C EtherCAT master on actual slave topology.
-5. PyO3 client overhead and packaging matrix.
-6. FFI error/panic/fault-injection tests.
+1. Copper-hosted versus minimal Soma-native `robot-rt` graph at 1 kHz on target ARM/x86 with PREEMPT_RT.
+2. Allocation detector after activation in both execution variants.
+3. Stateful record/keyframe/replay comparison with clock and seeded-randomness injection.
+4. Rust SPSC SHM benchmark and crash/restart behavior.
+5. EtherCrab vs selected C EtherCAT master on actual slave topology.
+6. PyO3 client overhead and packaging matrix.
+7. FFI error/panic/fault-injection tests.
 
 ## Primary references
 
@@ -300,3 +322,7 @@ The research supports an ADR roughly equivalent to:
 - Rustonomicon — Send/Sync: https://doc.rust-lang.org/nomicon/send-and-sync.html
 - Ferrocene qualification plan: https://public-docs.ferrocene.dev/main/qualification/plan/index.html
 - EtherCrab: https://github.com/ethercrab-rs/ethercrab
+- Copper: https://github.com/copper-project/copper-rs
+- Copper runtime and platform reference analysis: [`runtime-and-platform-reference-projects.md`](runtime-and-platform-reference-projects.md)
+- Eclipse S-CORE Rust ASIL-B readiness decision (QNX 8/Ferrocene scope): https://github.com/eclipse-score/score/blob/main/docs/design_decisions/DR-001-arch.md
+- Eclipse S-CORE Rust toolchains: https://github.com/eclipse-score/toolchains_rust

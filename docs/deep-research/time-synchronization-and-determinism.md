@@ -372,6 +372,26 @@ simulator/version/seed where applicable
 
 Without timing provenance, replay can reproduce message order but not the original control problem.
 
+### Copper as an executable replay reference
+
+[Copper](https://github.com/copper-project/copper-rs) demonstrates a stronger controller-replay model than message republishing alone:
+
+```text
+recorded typed cycle messages
++ runtime-owned RobotClock values
++ periodic Freezable task-state keyframes
++ generated task schedule
+        -> restore and re-execute
+        -> write a separate replay log
+        -> compare complete cycle messages/keyframes
+```
+
+Its runtime tests compare encoded CopperLists and state keyframes byte for byte across repeated recording and resimulation. The pattern is directly useful to Soma even if Copper is not adopted.
+
+The important limitation is that replay completeness remains an application contract. A task can omit mutable state by using the default empty `Freezable` implementation; code can bypass the mock clock; external I/O or randomness can remain unrecorded; per-task logging can be disabled; and artifact/build changes can invalidate exact comparison. Soma therefore needs a replay manifest and an explicit nondeterminism inventory above any container or runtime.
+
+For Soma, Plant timeline/tick, release/model/calibration/SafetyProfile identity, and requested/admitted/safety-output/applied command lineage remain mandatory additions. Copper's `.copper` journal can be the execution-native record if adopted, while MCAP remains the tool-neutral incident/interchange record. See [`runtime-and-platform-reference-projects.md`](runtime-and-platform-reference-projects.md).
+
 ## Time-related failure modes
 
 Soma tests should inject:
@@ -418,6 +438,7 @@ This research supports decisions roughly equivalent to:
 5. Measure and record EtherCAT DC offset/jitter.
 6. Reset MuJoCo mid-stream and verify old-Plant-timeline command rejection.
 7. MCAP replay preserving Plant-timeline/tick and time-domain metadata.
+8. Copper spike: restore a stateful controller from a keyframe and compare original/replayed outputs, including one deliberately omitted-state failure test.
 
 ## Primary references
 
@@ -428,3 +449,6 @@ This research supports decisions roughly equivalent to:
 - EtherCAT Distributed Clocks: https://infosys.beckhoff.com/content/1033/ethercatsystem/2469118347.html
 - EtherCAT DC defaults/synchronization: https://infosys.beckhoff.com/content/1033/ethercatsystem/2469102219.html
 - MAVLink Time Synchronization v2: https://mavlink.io/en/services/timesync.html
+- Copper logging and replay: https://copper-project.github.io/copper-rs-book/logging-replay.html
+- Copper task lifecycle and state keyframes: https://copper-project.github.io/copper-rs/Task-Lifecycle/
+- Copper determinism test: https://github.com/copper-project/copper-rs/blob/master/examples/cu_caterpillar/src/determinism.rs

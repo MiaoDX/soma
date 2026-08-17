@@ -1,5 +1,7 @@
 # Reference System Design Space
 
+> Status: Deep Research baseline. This document maps alternatives; canonical posture lives in architecture docs and the Decision Register.
+
 ## Question
 
 What are the major architectural choices for a production robot reference system, and where should Soma intentionally remain opinionated versus extensible?
@@ -129,7 +131,7 @@ Risks:
 
 ### Soma direction
 
-Use custom SPSC mailboxes for the critical RT boundary. Evaluate iceoryx2 for non-RT local bulk data and multi-process high-bandwidth flows.
+Keep a fixed-capacity SPSC-style behavioral contract for the critical RT boundary. A bounded spike compares a minimal mailbox with a mature community implementation; choose the smaller implementation that meets the contract and measured envelope. Evaluate iceoryx2 separately for non-RT local bulk data and multi-process high-bandwidth flows.
 
 ## 5. Distributed middleware
 
@@ -174,7 +176,7 @@ Risks:
 
 ### Soma direction
 
-Zenoh-first public/distributed data plane, with DDS and gRPC adapters where they provide ecosystem value. This is a hypothesis pending benchmarks.
+Zenoh-first public/distributed data plane, with DDS and gRPC adapters where they provide ecosystem value. This is a provisional, reversible V0 choice; a Zenoh/Cyclone comparison is triggered by a missed Performance Envelope, an operational problem, or a native DDS requirement rather than required before implementation.
 
 ## 6. Public schema
 
@@ -361,9 +363,34 @@ Soma should build where the contract is part of the product's identity, and reus
 - MCAP;
 - simulation engines.
 
+## 15. Runtime and platform reference implementations
+
+Two open-source references sharpen this build-vs-reuse boundary without replacing Soma's architecture.
+
+### Copper: execution kernel candidate
+
+[Copper](https://github.com/copper-project/copper-rs) is a Rust runtime for static robot task graphs with generated scheduling, preallocated cycle messages, runtime-native recording, mockable time, task-state keyframes, and deterministic resimulation tests.
+
+It is a credible candidate for bounded in-process execution inside `robot-rt`. Soma must still own the Plant contract, four-stage command lineage, safety authority, RT/runtime IPC, public protocol, and release/artifact model. Adoption requires a representative 1 kHz spike rather than inference from framework benchmarks.
+
+### Eclipse S-CORE: platform and evidence reference
+
+[Eclipse S-CORE](https://github.com/eclipse-score) is not a robot runtime and explicitly is not a ready-to-integrate series product. Its highest-value lessons for Soma are:
+
+- lifecycle and health supervision are explicit platform services, separate from application/task execution;
+- typed local, steady, high-resolution, and PTP-synchronized clock APIs reduce cross-domain mistakes;
+- the reference integration pins a `known_good.json` set of module commits, patches, test configuration, exclusions, and known issues;
+- Linux/QNX target images and cross-module feature tests continuously prove an integrated set rather than nominal version compatibility;
+- requirements, decisions, tool evaluations, safety assumptions, and integrator responsibilities are public artifacts;
+- its 2026 Rust ASIL-B readiness decision shows the expected evidence shape while limiting the conclusion to QNX 8 with Ferrocene.
+
+Soma should copy the **continuously consistent stack** principle through a small candidate `ReleaseManifest`. It should not copy Adaptive AUTOSAR APIs, the Bazel multirepo structure, C++ base-library layers, or a full automotive process before the first vertical slice needs them.
+
+The detailed repository map, Copper replay analysis, adjacent Rust projects, and adoption gates live in [`runtime-and-platform-reference-projects.md`](runtime-and-platform-reference-projects.md).
+
 ## Decisions that need experiments before ADRs
 
-1. Zenoh vs Cyclone DDS benchmark.
+1. Zenoh production confirmation, with a Zenoh vs Cyclone DDS benchmark only when a defined trigger is met.
 2. RT shared-memory implementation and measured overhead.
 3. Rust EtherCAT vs mature C master comparison.
 4. PREEMPT_RT on target x86/ARM compute.
@@ -371,6 +398,8 @@ Soma should build where the contract is part of the product's identity, and reus
 6. MuJoCo in-process vs separate-process SIL topology.
 7. iceoryx2 vs custom blob pool for local sensor payloads.
 8. ProductModelManifest source-of-truth format and composed runtime RobotManifest.
+9. Copper-hosted versus minimal Soma-native RT execution/replay spike.
+10. Machine-readable candidate `ReleaseManifest` derived from S-CORE's `known_good` pattern.
 
 ## Architectural invariant to preserve
 

@@ -18,11 +18,11 @@ Fleet / Release Service
                          |
                   secure network
                          |
-Robot Operations Plane
-  update-agent | health-agent | observer | recorder
-       |              |            |          |
- installers       health gate     OTLP       MCAP
-       \______________|____________|__________/
+robot-runtime operations modules
+  update | health | observe | record | diagnostics
+       |        |         |       |         |
+ installers  health gate OTLP    MCAP    support API
+       \________|_________|_______|_________/
                          |
                robot-runtime / robot-rt
                          |
@@ -80,7 +80,24 @@ compatibility:
   safety_profile_policy: safety-policy-2
 ```
 
-The ReleaseManifest should eventually cover dependency/compatibility relationships rather than merely list artifacts.
+The `ReleaseManifest` covers dependency/compatibility relationships rather than merely listing artifacts. Its maturity state progresses from `draft` to `candidate`, `qualified`, and `released`; this avoids a parallel integration-baseline artifact.
+
+### Integrated known-good baseline
+
+Eclipse S-CORE's [`reference_integration/known_good.json`](https://github.com/eclipse-score/reference_integration/blob/main/known_good.json) is a useful implementation reference for the pre-release side of this model. It pins participating repositories by commit and records integration patches, extra test settings, explicit test exclusions, coverage/language metadata, and the integrated-set timestamp. Its reference workspace then builds images and runs cross-module tests against that exact set.
+
+Soma does not need S-CORE's Bazel multirepo structure initially, but it does need the same honesty. A candidate `ReleaseManifest` should contain:
+
+```text
+exact source/dependency/toolchain identities
+target build profile and container/image identity
+model/configuration/SafetyProfile/policy identities
+required patches and approved deviations
+test profile, explicit exclusions, and known limitations
+evidence bundle digests
+```
+
+`Cargo.lock` is one input to this candidate manifest, not the whole compatibility claim. Qualification promotes the same manifest and evidence set rather than copying it into another artifact or reconstructing it from branch names and "latest compatible" dependencies.
 
 ## Different artifacts require different lifecycle rules
 
@@ -324,7 +341,7 @@ pub struct RtEvent {
 }
 ```
 
-`robot-observer` converts these into structured logs/metrics outside RT.
+The `robot-runtime` observability module converts these into structured logs/metrics outside RT.
 
 ## Important metrics
 
@@ -563,18 +580,16 @@ The release pipeline should eventually integrate:
 
 Secure Boot, device identity, TPM/TEE/attestation, disk encryption, and debug-interface policy should be designed with OTA rather than added after fleet deployment.
 
-## Candidate Soma components
+## Candidate Soma modules and artifacts
 
 ```text
-robot-update-agent
-robot-health-agent
-robot-observer
-robot-recorder
-robot-diagnostics
-release-manifest
-update-journal
-artifact-installers/{rauc,mcuboot,runtime,policy}
+robot-runtime/{update,health,observe,record,diagnostics}
+ReleaseManifest
+update journal
+artifact installers/{rauc,mcuboot,runtime,policy}
 ```
+
+These begin as modules owned by `robot-runtime`, not independently deployed daemons. Split one into a separate process only when isolation, privilege, restart, or resource evidence justifies the operational cost.
 
 ## Open questions
 
@@ -605,3 +620,5 @@ artifact-installers/{rauc,mcuboot,runtime,policy}
 - systemd-coredump — https://www.freedesktop.org/software/systemd/man/latest/systemd-coredump.html
 - SPDX — https://spdx.dev/
 - SLSA — https://slsa.dev/
+- Eclipse S-CORE reference integration — https://github.com/eclipse-score/reference_integration
+- Eclipse S-CORE integrated `known_good.json` — https://github.com/eclipse-score/reference_integration/blob/main/known_good.json

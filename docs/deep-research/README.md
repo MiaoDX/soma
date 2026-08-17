@@ -1,5 +1,7 @@
 # Soma Deep Research
 
+> Status: Research index. Entries preserve evidence and alternatives; the Decision Register and ADRs determine what is current.
+
 This directory preserves the evidence base behind Soma.
 
 Architecture documents should stay concise and opinionated. Deep Research is intentionally broader: it captures competing approaches, implementation references, failure modes, adjacent-industry practices, and unresolved questions so that architectural decisions remain traceable.
@@ -15,7 +17,8 @@ Architecture documents should stay concise and opinionated. Deep Research is int
 
 - [`l0-hal-fieldbus.md`](l0-hal-fieldbus.md) — L-2/L-1/L0 decomposition below the Plant, HAL vs Plant, EtherCAT/CAN-FD, RT host, safety, and public reference implementations.
 - [`rust-realtime-runtime.md`](rust-realtime-runtime.md) — Rust production readiness, PREEMPT_RT execution profile, allocation/panic/unsafe/FFI boundaries, ABI strategy, and validation plan.
-- [`middleware-and-ipc.md`](middleware-and-ipc.md) — RT IPC, shared memory, Zenoh, Cyclone DDS, gRPC, public protocol semantics, and benchmark plan.
+- [`runtime-and-platform-reference-projects.md`](runtime-and-platform-reference-projects.md) — Copper execution/replay, Eclipse S-CORE platform/process lessons, and a practical Rust robotics repository map.
+- [`middleware-and-ipc.md`](middleware-and-ipc.md) — RT IPC, shared memory, provisional Zenoh, Cyclone DDS/gRPC gateways, public protocol semantics, and triggered benchmark plan.
 - [`robot-protocol-and-data-model.md`](robot-protocol-and-data-model.md) — identity, capabilities, state/command/RPC/action/event/lease semantics, schema evolution, errors, bulk data, and V0 protocol surface.
 - [`time-synchronization-and-determinism.md`](time-synchronization-and-determinism.md) — monotonic/PTP/TAI/device/simulation time, lifecycle generations, Plant timeline/tick, EtherCAT DC, sensor timestamp provenance, and deterministic replay.
 
