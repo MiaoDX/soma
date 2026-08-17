@@ -159,9 +159,9 @@ Only this mode needs to emulate PDOs, CAN frames, drive state machines, device d
 
 ## Time is a first-class simulation contract
 
-Soma should define explicit time domains:
+The Time ADR should define explicit time domains. The current research vocabulary is:
 
-- `MONOTONIC_ROBOT` — physical control deadlines/watchdogs;
+- `ROBOT_MONOTONIC` — physical control deadlines/watchdogs;
 - `SIMULATION` — pause/step/reset/accelerated time;
 - `UTC/PTP` — fleet correlation and external synchronized sensors.
 
@@ -220,20 +220,15 @@ A policy or replay should never silently assume that `humanoid_v2` means the sam
 
 URDF, MJCF, and USD have different expressive capabilities. Soma should not assume lossless round-trip conversion.
 
-Recommended model pipeline:
+Recommended V0 model composition:
 
 ```text
-ProductModelManifest / canonical shared engineering model
+minimal ProductModelManifest
         |
-        +-- common physical parameters
-        +-- Hardware Variant Overlay
-        +-- MuJoCo overlay
-        +-- Isaac/USD overlay
-        +-- Genesis overlay
+        +-- shared identity / joints / frames / units / transmissions
+        +-- references backend-native URDF / MJCF / USD artifacts
         |
-        +--> generated/validated URDF
-        +--> generated/validated MJCF
-        +--> generated/validated USD
+        +--> validator checks shared semantics and compatibility
 
 RobotInstanceManifest + DeviceInventory
 CalibrationSet + ControlProfile + SafetyProfile
@@ -241,7 +236,7 @@ CalibrationSet + ControlProfile + SafetyProfile
         +--> composed runtime RobotManifest and Plant configuration
 ```
 
-The model compiler should produce hashes used by runtime, logs, policies, and tests. A simulator can load the signed deployable `SafetyProfile` and add a separately identified `TestConstraintSet` for stricter scenario bounds; it cannot mutate or relax the profile while retaining its identity.
+The manifest validator and artifact packager should produce the hashes used by runtime, logs, policies, and tests. V0 does not require a universal model compiler or lossless conversion between URDF, MJCF, and USD. A simulator can load the signed deployable `SafetyProfile` and add stricter scenario configuration; logs record the scenario configuration hash, but that configuration is not another safety artifact and cannot mutate or relax the profile while retaining its identity.
 
 ## MuJoCo role
 
@@ -367,19 +362,15 @@ Additional backend-specific tests are expected.
 
 ## Repository shape
 
-Keep heavy simulators outside the core dependency graph:
+Keep heavy simulators outside the core dependency graph, but do not split packages before dependency pressure requires it. A reasonable progression is:
 
 ```text
-robot-core/
-robot-sim-contract/
-robot-sim-mujoco/
-robot-sim-isaac/
-robot-sim-genesis/
-robot-sim-hil/
-robot-sim-conformance/
+V0: robot-sim/{contract,mujoco,conformance}
+later external adapters: sim-gateway/{isaac,genesis}
+later hardware work: robot-hal / HIL fixtures
 ```
 
-These may begin as directories in one repository and split later if dependency/CI pressure warrants it.
+These may begin as modules in one workspace and split only if dependency, release, or CI pressure warrants it.
 
 ## Open questions
 

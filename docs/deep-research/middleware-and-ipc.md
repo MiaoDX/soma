@@ -41,7 +41,7 @@ A network or middleware failure must not stop the local servo/safety loop.
 
 ## RT/runtime shared memory
 
-This IPC is small enough to define explicitly rather than beginning with a general pub/sub framework.
+This IPC contract is small enough to define explicitly rather than beginning with a general pub/sub API. The implementation remains an experiment: compare a minimal SPSC mailbox with a mature community shared-memory primitive, then choose the smallest option that satisfies the same behavior and measurements.
 
 Recommended logical channels:
 
@@ -142,7 +142,7 @@ Risks for Soma:
 - DDS discovery/topology can be awkward in Wi-Fi, routed, or customer networks;
 - making DDS IDL the canonical schema could accidentally couple the entire architecture to DDS/ROS assumptions.
 
-Recommended role if Zenoh wins the default benchmark:
+Recommended Cyclone DDS role while Zenoh is the provisional default:
 
 ```text
 Robot Protocol
@@ -257,9 +257,9 @@ This keeps Humble/Jazzy/Kilted and `rclcpp`/RMW dependencies outside the robot c
 
 A `ros2_control` adapter should use the same authority/lease path rather than bypassing the runtime to talk directly to EtherCAT.
 
-## Benchmark plan
+## Triggered benchmark plan
 
-Before an ADR chooses the default distributed transport, build a repeatable benchmark suite across:
+V0 adopts Zenoh provisionally rather than blocking implementation on a broad middleware bake-off. Run the following comparison only if Zenoh misses its declared Performance Envelope, creates an operational problem, or native DDS interoperability becomes a product requirement. When triggered, use a repeatable benchmark across:
 
 ### Topologies
 
@@ -298,7 +298,7 @@ Before an ADR chooses the default distributed transport, build a repeatable benc
 - reconnect time;
 - queue/backpressure behavior.
 
-Candidates: Zenoh, Cyclone DDS, gRPC for its intended service cases, and iceoryx2/local shared memory for same-host paths.
+The distributed comparison is limited to Zenoh and Cyclone DDS. gRPC is measured only for its intended service cases, and iceoryx2/local shared memory only for same-host payload paths; neither expands the distributed transport contest.
 
 ## Open questions
 

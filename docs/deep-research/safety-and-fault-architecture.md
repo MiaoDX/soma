@@ -187,7 +187,7 @@ content checksums
 signatures and signer role
 ```
 
-`SafetyProfile` has an independent release, review, signature, authorization, and activation lifecycle. Switching a `ProductModelManifest`, simulator asset, policy, or ordinary `ControlProfile` must never silently change the active safety authority. Simulation may add a separately identified and hashed `TestConstraintSet`; it cannot mutate, relax, or reuse the identity of a deployable `SafetyProfile`.
+`SafetyProfile` has an independent release, review, signature, authorization, and activation lifecycle. Switching a `ProductModelManifest`, simulator asset, policy, or ordinary `ControlProfile` must never silently change the active safety authority. Simulation may add stricter scenario configuration and record its hash as test evidence; that configuration is not a separately governed safety artifact and cannot mutate, relax, or reuse the identity of a deployable `SafetyProfile`.
 
 `robot-rt` consumes a validated profile and reports its ID/hash in decisions and recordings. The effective safety envelope is the intersection of that profile and all applicable independent SA-0/SA-1/SA-2 bounds; host activation can never widen a lower-authority constraint. Accepting a profile in host software is not proof that those mechanisms were updated or that a product safety function is satisfied.
 

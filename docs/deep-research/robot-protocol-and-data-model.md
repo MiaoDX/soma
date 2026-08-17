@@ -240,7 +240,7 @@ Resource graph examples:
   payload:<id>
 ```
 
-The Product Profile defines a stable resource graph and conflict relation rather than treating these names as independent strings. Ancestor/descendant resources conflict, and additional overlaps such as navigation consuming locomotion authority are explicit edges. Acquisition is atomic over a requested resource set, so a client cannot hold `whole_body` while another independently holds `left_arm`; partial acquisition is never silently returned.
+The `ProductModelManifest` defines the stable resource graph and conflict relation rather than treating these names as independent strings. Ancestor/descendant resources conflict, and additional overlaps such as navigation consuming locomotion authority are explicit edges. Acquisition is atomic over a requested resource set, so a client cannot hold `whole_body` while another independently holds `left_arm`; partial acquisition is never silently returned.
 
 A lease token should contain at least:
 

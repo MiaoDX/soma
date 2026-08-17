@@ -1,5 +1,7 @@
 # Physical AI System Landscape
 
+> Status: Deep Research baseline. Vendor and community capabilities change; verify current sources before using a platform claim in an ADR.
+
 ## Question
 
 How do current robotics platforms expose hardware, control, simulation, SDK, and application layers, and what patterns are useful for Soma?
@@ -59,7 +61,7 @@ Each cell should distinguish `verified`, `documented`, `vendor_asserted`, `unkno
 Do not collapse qualification evidence, installed hardware, live health, caller authorization, and trust-key ownership into one public boolean manifest. Soma uses four related views:
 
 - an offline `EvidenceMatrix` records sources, build/update authority, trust ownership, and qualification evidence;
-- `RobotInstanceManifest` and the Product Profile record provisioned/authorized component policy, while revisioned `DeviceInventory` carries L0/device read-back and attestation without exposing sensitive key material;
+- `RobotInstanceManifest` plus provisioning and safety policy record authorized component policy, while revisioned `DeviceInventory` carries L0/device read-back and attestation without exposing sensitive key material;
 - `RuntimeCapabilitySnapshot` reports what is currently available or degraded, with source inventory/profile hashes, timestamp, sequence, and validity;
 - request-time authorization decides whether a particular caller may exercise an otherwise available capability.
 
@@ -239,7 +241,7 @@ Lease, command validity, progress, cancellation, safety intervention, and explic
 - Which level of L1 control should the first public Soma SDK expose?
 - How much DDS compatibility is required for interoperability with existing robot ecosystems?
 - Which vendor patterns remain valid when scaling from a single research robot to a managed fleet?
-- How should a Product Profile restrict the common Soma protocol for different robot classes?
+- Which stable `CapabilityCatalog` entries and adapter `InterfaceProfile` declarations are needed to restrict the common protocol for different robot classes?
 
 ## Primary references
 

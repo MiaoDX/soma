@@ -10,7 +10,7 @@ Should Soma treat URDF, MJCF, USD, or another simulator format as the source of 
 
 No existing simulation/robot description format should be Soma's complete source of truth.
 
-> **Soma should define a canonical `ProductModelManifest` for shared engineering semantics, then compose it with separately governed instance, calibration, control, safety, and runtime-capability artifacts. URDF, MJCF, USD, runtime tables, and policy schemas are generated or validated views of that composition.**
+> **Soma should define a minimal canonical `ProductModelManifest` for shared engineering semantics, then compose it with separately governed instance, calibration, control, safety, and runtime-capability artifacts. V0 validates backend-native URDF, MJCF, and USD artifacts against that manifest; generation is optional future tooling, not an architectural prerequisite.**
 
 The reason is semantic mismatch: URDF, MJCF, USD Physics, and SDFormat model different concerns and have different capabilities. A conversion pipeline can preserve a useful common subset, but cannot be assumed to be lossless.
 
@@ -110,15 +110,11 @@ rather than hoping one generated file is sufficient everywhere.
 ## Proposed Soma model stack
 
 ```text
-ProductModelManifest
-  + Hardware Variant / backend physics / ROS semantic overlays
+ProductModelManifest + backend-native URDF/MJCF/USD assets
                  |
-         model compiler / validator
+              validator
                  |
-         +-------+------------------+
-         |                          |
-         v                          v
-URDF/MJCF/USD target assets    topology/schema artifacts
+         shared identity/schema checks
 
 ProductModelManifest
 RobotInstanceManifest + DeviceInventory
@@ -172,7 +168,7 @@ instance_manifest_schema_version
 
 `DeviceInventory` records actual installed boards, drives, actuators, sensors, safety controllers, bus addresses, serial numbers, and firmware/hardware revisions. Product-model actuator and device entries describe engineering requirements and logical roles; they must not be mistaken for the observed inventory of one robot.
 
-`RobotInstanceManifest` is the provisioned, authorized identity/configuration for the physical robot and changes only through an explicit provisioning or service transaction, for example an installed-option or component-identity change. `DeviceInventory` is a revisioned L0 read-back/attestation of what is actually present; firmware OTA, device replacement, or bus-address change produces a new inventory revision. The Product Profile defines who may author/sign the instance manifest, who attests inventory, and which mismatches inhibit motion.
+`RobotInstanceManifest` is the provisioned, authorized identity/configuration for the physical robot and changes only through an explicit provisioning or service transaction, for example an installed-option or component-identity change. `DeviceInventory` is a revisioned L0 read-back/attestation of what is actually present; firmware OTA, device replacement, or bus-address change produces a new inventory revision. Provisioning policy defines who may author/sign the instance manifest and who attests inventory; safety and activation policy define which mismatches inhibit motion.
 
 A runtime should expose both:
 
@@ -360,7 +356,7 @@ It must not be embedded in a normal `ProductModelBundle`, controller update, pol
 
 Simulation can load a declared safety profile to exercise identical decision semantics. A simulation/scenario overlay may add stricter test constraints, but it cannot alter or relax the signed deployable profile while retaining the same profile identity/hash.
 
-Those extra simulation restrictions form a separately identified `TestConstraintSet`, not a modified `SafetyProfile`. Logs and replay metadata record both hashes. At runtime, the effective envelope is the intersection of the active `SafetyProfile`, applicable `SA-0` through `SA-2` device/safety-controller constraints, and any more-conservative control or test constraint. Host software cannot use a profile activation to relax an independently configured lower-authority bound.
+Those extra simulation restrictions live in the scenario configuration, not in a new safety artifact. Logs and replay metadata record its hash. At runtime, the effective envelope is the intersection of the active `SafetyProfile`, applicable `SA-0` through `SA-2` device/safety-controller constraints, and any more-conservative control or scenario constraint. Host software cannot use a profile activation to relax an independently configured lower-authority bound.
 
 ### RuntimeCapabilitySnapshot
 
@@ -419,7 +415,7 @@ frame_schema_hash
 sensor_schema_hash
 ```
 
-The exact hash canonicalization must be defined by the model compiler, not by hashing arbitrary YAML formatting.
+The exact hash canonicalization must be defined by the manifest schema and validator, not by hashing arbitrary YAML formatting.
 
 The shared product-model hash excludes `robot_serial`, installed device serials/firmware, calibration values, active control/safety profiles, and runtime health. Those artifacts carry their own IDs and hashes:
 
@@ -479,7 +475,7 @@ The runtime refuses incompatible product, schema, calibration, capability, and c
 
 Meshes, textures, calibration schemas, and backend models need content-addressed/versioned packaging.
 
-Suggested shared `ProductModelBundle` logical layout:
+Possible mature `ProductModelBundle` logical layout, only after V0 proves which generated views are useful:
 
 ```text
 manifest/
@@ -495,13 +491,13 @@ overlays/genesis/
 metadata/
 ```
 
-Generated artifacts should record compiler version and source manifest hash.
+Generated artifacts, when introduced, should record generator version and source manifest hash. Backend-native V0 artifacts record their own content hash and the manifest identity they were validated against.
 
 Per-robot calibration values are not stored in the shared product bundle; only calibration schemas and method compatibility may be included there. `RobotInstanceManifest`, `CalibrationSet`, `ControlProfile`, and `SafetyProfile` are separate signed or checksummed release/activation units with explicit compatibility references. `DeviceInventory` is a revisioned read-back/attestation produced by the running L0/device path, not an authored release unit; activation policy compares it with the provisioned instance and artifact requirements. A deployment package may transport several authored units together, but installation and activation remain separate state transitions, especially for `SafetyProfile`.
 
 ## Conformance tests
 
-A model compiler is only credible if it tests generated backends.
+A manifest validator, and any later model generator, is only credible if it tests every supported backend mapping.
 
 Required cross-backend checks:
 
@@ -601,7 +597,7 @@ The public composed `RobotManifest` view can be generated from these sources for
 This research supports decisions roughly equivalent to:
 
 1. Soma owns a canonical shared `ProductModelManifest` / product model bundle.
-2. URDF, MJCF, and USD are generated/validated target artifacts, not the complete source of truth.
+2. URDF, MJCF, and USD are backend-native artifacts validated against shared semantics; generation is optional future tooling.
 3. Product model, robot instance/device inventory, calibration, control profile, `SafetyProfile`, and `RuntimeCapabilitySnapshot` are distinct artifacts with distinct lifecycles.
 4. `robot_serial` and other instance state are excluded from the shared product-model hash.
 5. `SafetyProfile` is independently governed and cannot be changed implicitly by a model, controller, policy, or simulator bundle.
@@ -613,8 +609,8 @@ This research supports decisions roughly equivalent to:
 
 1. Define a minimal manifest for a differential-drive reference robot.
 2. Extend it to a legged robot with >10 DOF.
-3. Generate/validate URDF + MJCF from the same source.
-4. Create USD/Isaac mapping prototype.
+3. Validate native URDF + MJCF artifacts against the same minimal manifest.
+4. Create a USD/Isaac validation mapping prototype only when that backend enters an implementation milestone.
 5. Prove a `CalibrationSet` changes composed sensor/joint transforms without modifying nominal source.
 6. Validate PolicyBundle mismatch rejection.
 7. Prove two serial-numbered instances share one product-model hash while retaining different instance/calibration hashes.

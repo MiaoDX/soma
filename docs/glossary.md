@@ -1,5 +1,7 @@
 # Glossary
 
+> Status: Canonical vocabulary. Include only stable terms used across multiple modules; implementation-local names belong beside their code or ADR.
+
 This glossary keeps Soma terminology precise as the architecture evolves.
 
 ## Embodiment
@@ -82,6 +84,14 @@ An independently governed artifact containing safety-authoritative limits, requi
 
 An ephemeral, timestamped view of capabilities that are currently available, degraded, unavailable, or authorization-restricted after considering installed hardware, calibration, active profiles, mode, and faults.
 
+## CapabilityCatalog
+
+The stable Robot Protocol vocabulary for capabilities and their semantics. A product or adapter declares a supported subset; live availability and restriction are reported separately through `RuntimeCapabilitySnapshot`.
+
+## InterfaceProfile
+
+A versioned declaration of the Robot Protocol subset and boundary semantics exposed by a platform adapter. It classifies the boundary, references `CapabilityCatalog` entries, and prevents vendor-specific types or inaccessible lower-layer claims from leaking into the common API.
+
 ## PolicyBundle
 
 A deployable policy artifact containing a model plus its observation/action contracts, normalization, rates, compatibility metadata, checksums, and signatures.
@@ -100,7 +110,7 @@ A bounded local blackbox that continuously records recent high-frequency robot s
 
 ## ReleaseManifest
 
-A versioned description of a tested robot software release and the compatible combination of OS, runtime, firmware, robot model, policies, and schemas.
+A versioned description of an integrated robot software candidate and its exact compatible combination of source, toolchain, OS, runtime, firmware, robot model, policies, schemas, tests, exclusions, and evidence. Its maturity progresses from draft through candidate and qualified to released; Soma does not maintain a parallel integration-baseline artifact.
 
 ## ROS 2 Adapter
 

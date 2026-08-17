@@ -1,262 +1,430 @@
 # Soma Bootstrap Plan
 
-## Goal
+> Status: Reviewed implementation plan. The long-term architecture is complete at a system-boundary level; only Milestones 0 and 1 are current implementation scope. Later milestones reopen when their hardware or product trigger exists.
 
-Build Soma from a reference architecture into a measurable, production-oriented robot system while proving both of its essential claims:
+## Outcome
 
-1. the same control and runtime contracts work across simulation and physical embodiments;
-2. the project can own and validate the lower stack, not only adapt a vendor joint-command SDK.
+Soma has two sequential goals:
 
-The bootstrap therefore develops a MuJoCo vertical slice and a public-artifact actuator/electronics vertical slice in parallel. They converge on the same contracts before Soma expands to a bottom-up-qualified whole-robot reference and then to closed commercial compatibility targets.
+1. establish a technically defensible, community-backed system direction that can be reviewed with colleagues;
+2. implement a narrow runnable spine, then expand downward and outward without replacing its public contracts.
 
-## Sequencing principles
+The current lack of hardware is a constraint, not a reason to couple the architecture to one simulator. V0 proceeds top-down from MuJoCo/SIL and a G1/G2-class exposed interface boundary. Physical and bottom-up qualification remain explicit later milestones and cannot be claimed from mocks or vendor documentation.
 
-- Use the canonical L-2–L5 layer vocabulary and keep safety authorities in the separate SA-0–SA-5 namespace.
-- Establish the independent safety path, trust-root design, device identity, and signed development update flow before depending on OTA.
-- Assess openness per component. A `q/dq/tau/kp/kd` interface is privileged joint command access, not evidence that drive firmware, boot, BMS, fieldbus, or safety is open.
-- Develop SIL and physical lower-stack work concurrently so neither an idealized simulator nor vendor middleware silently defines the architecture.
-- Qualify every claim at an explicit evidence level and preserve the artifacts needed to reproduce it.
-- Use commercial robots after the bottom-up-qualified reference path as boundary/adapter compatibility targets, not substitutes for bottom-up validation.
+## Runnable spine
+
+```text
+Python SDK
+    |
+    | Robot Protocol over provisional Zenoh
+    v
+robot-runtime
+  auth boundary | lease | timing | capability | lifecycle | record
+    |
+    | bounded RT/runtime mailbox contract
+    v
+robot-rt
+  representative ControlCore -> SA-3 -> applied evidence
+    |
+    | bounded Plant contract
+    v
+MuJoCo Plant
+    |
+    +--> state / events / requested-to-applied lineage
+    +--> execution journal + MCAP evidence
+
+parallel contract fixture, not a second runtime:
+fake/recorded G1/G2-class boundary -> adapter conformance
+```
+
+This is the smallest slice that exercises the architecture rather than merely demonstrating a simulator.
+
+## Implementation maturity map
+
+| Direction | Design now | Implement now | Later evidence before a production claim |
+| --- | --- | --- | --- |
+| Layers and trust | L-2..L5, SA-0..SA-5, Plant and runtime boundaries | Preserve boundaries in module/API layout | Hazard analysis and physical authority validation |
+| Time | Clock domains, timeline/generation split, command validity invariants | Time ADR, simulation clock, reset/restart rejection | Target clock/PTP/bus measurements |
+| Model | Minimal `ProductModelManifest`, separate instance/calibration/control/safety artifacts | Native MJCF fixture plus validator; second embodiment fixture | Physical inventory/calibration and additional backend mappings |
+| RT execution | Restricted cyclic profile and replaceable execution kernel | Copper-vs-minimal representative graph spike | PREEMPT_RT and target-compute worst-case evidence |
+| RT/runtime IPC | Bounded mailbox behavior, ABI/generation/restart rules | Community-vs-minimal spike and one selected implementation | Target cache/NUMA/process-failure characterization |
+| Distributed protocol | Transport-neutral Robot Protocol, Zenoh provisional default | Minimal state/command/event/lease/capability surface | Triggered Cyclone comparison only if envelope or interoperability requires it |
+| Simulation | Same ControlCore/SA-3/Plant semantics, separate Simulation Control | MuJoCo lockstep/reset/fault scenarios | Additional simulators only for a concrete product need |
+| Evidence | Requested/admitted/safety-output/applied lineage and replay contract | Representative executable replay plus MCAP; recorder interference test | Incident retention, privacy, upload, fleet correlation |
+| Security | Threats, trust boundaries, artifact and developer-mode invariants | Signed development artifact verifier and its functional tests | Protocol abuse, fuzzing, DoS, key ceremony, physical debug qualification |
+| Hardware | `NativePlantAdapter` vs `ManagedMotionGateway`; capability honesty | Hardware-free adapter conformance only | Actual vendor boundary, then owner-controlled L0/L-1/L-2 qualification |
+| Fleet | Release, rollout, recovery, offline-first evidence model | Candidate `ReleaseManifest` identity only | Production signing, canary, rollback, SBOM, operations and support |
+
+## Decision and evidence flow
+
+The [Decision and Research Register](decision-register.md) is the index for open and provisional directions:
+
+```text
+decision -> deep research -> bounded experiment -> ADR -> implementation
+```
+
+Use an ADR for a durable decision, not for every implementation detail. A reversible default can remain provisional when it has an explicit trigger for reevaluation.
 
 ## Evidence model
 
-Exit criteria use the following evidence tags. They are complementary test environments, not interchangeable marketing maturity levels.
+Evidence labels describe where a claim was actually tested. They are not interchangeable maturity badges.
 
 | Evidence | What runs | Claims it can support | Claims it cannot support by itself |
-|---|---|---|---|
-| `HOST` | static checks and host-side unit, schema, cryptographic, or composition tests | parser/validator behavior, canonicalization, signature-policy logic, API compatibility | deployed scheduling, simulator dynamics, real bus/device behavior, physical safety |
-| `SIM` | simulator-native model, backend, or API facsimile | model structure, simulator adapter behavior, scenario generation, throughput | production controller behavior, fieldbus/firmware behavior, physical safety |
-| `SIL` | production control/runtime code against a simulated Plant or virtual device | control semantics, lifecycle, timing logic, reset/timeline behavior, deterministic regression, software fault handling | electrical behavior, real bus timing, boot/update recovery, physical dynamics |
-| `HIL` | production software with at least one target-equivalent real compute, bus controller, board, drive, sensor, or safety/power component in the loop; remaining components may be emulated | driver and device state machines, watchdogs, timestamps, firmware/update faults, bus and power fault response | unrepresented mechanism dynamics, payload/contact behavior, or thermal/mechanical limits |
-| `PHYSICAL` | the controlled physical actuator, mechanism, or whole robot | real dynamics, calibration, power/thermal behavior, physical fault response, operational evidence | certification or general safety assurance beyond the tested configuration |
+| --- | --- | --- | --- |
+| `HOST` | host unit, schema, cryptographic, composition, and packaging checks | validators, canonicalization, signature policy, API/schema compatibility | deployed scheduling, simulator dynamics, bus/device behavior, physical safety |
+| `SIM` | simulator-native model, backend, or API facsimile | asset mapping, simulator adapter behavior, scenario generation, throughput | production runtime path, fieldbus/firmware behavior, physical safety |
+| `SIL` | production control/runtime code against a simulated Plant or virtual device | control semantics, lifecycle, timing logic, reset, deterministic regression, software faults | electrical behavior, real bus timing, boot-chain enforcement, physical dynamics |
+| `HIL` | production software with target-equivalent compute, bus, board, drive, sensor, or safety/power component in the loop | driver/device state, watchdog, timestamp, firmware/update, bus/power fault behavior | unrepresented mechanism, contact, payload, thermal, or safety behavior |
+| `PHYSICAL` | controlled actuator, mechanism, or whole robot | real dynamics, calibration, power/thermal and physical fault response for the tested configuration | certification or untested product/general safety claims |
 
-Review, analysis, and inspection are verification methods rather than execution environments; they should be recorded separately instead of being relabeled as SIL or HIL. Each dynamic result should record the loop composition, including which parts are real, simulated, or emulated, and should reference a repeatable test or scenario ID, hardware and model identity, software/firmware versions, configuration and calibration hashes, measured tolerances, and retained logs/MCAP evidence. A claim must name the strongest relevant evidence actually obtained; for example, a SIL pass must not be presented as proof of E-stop or STO behavior.
+Each dynamic result records scenario ID, loop composition, hardware/model/release identities, scenario configuration hash, measured tolerances, and retained evidence. `unknown`, `documented`, and `vendor_asserted` never become verified physical evidence by implication.
 
-## Bottom-Up Reference Profile
-
-Soma keeps a cumulative coverage ledger so a platform cannot pass by declaring few capabilities or leaving every difficult row `unknown`. Before claiming a bottom-up reference, the combined benches and robot must provide verified evidence for at least:
-
-- host identity, boot, signed update, anti-rollback policy, recovery, and boot-reason reporting;
-- one representative actuator's electronics, encoder path, device BSP/RTOS, bootloader, firmware/FOC, signed update, rollback or recovery, and fault state;
-- raw fieldbus access, master/HAL implementation, cyclic timing, device lifecycle, timestamps, watchdog, and diagnostics;
-- serial-scoped calibration provenance, activation compatibility, device readback, and replacement invalidation;
-- an independent stop or torque-inhibition final element plus main-compute watchdog behavior, with braking and contactor/energy-isolation roles stated separately;
-- power, current, voltage, and thermal evidence plus at least one representative sensor-firmware path.
-
-No single robot must expose every row if a documented supplementary rig qualifies an otherwise inaccessible BMS, sensor, or safety/power path. `unknown`, `vendor_asserted`, and joint-command-only access do not satisfy a required row. The ledger records which rig provides each result and prevents a whole-robot adapter from inheriting evidence it did not earn.
-
-## Phase 0 — Architecture, safety, and trust foundations
-
-### Objectives
-
-- define system boundaries and invariants;
-- establish the canonical vocabulary and data contracts;
-- select reference paths from component-level evidence rather than whole-platform labels;
-- make safety and update trust part of the initial architecture.
+## Milestone 0: architecture convergence
 
 ### Deliverables
 
-- canonical L-2–L5 reference architecture and Plant/HAL/runtime boundaries;
-- time, timeline, lifecycle, error, lease, capability, and command-application models;
-- initial `ProductModelManifest`, `RobotInstanceManifest`, `DeviceInventory`, `CalibrationSet`, `ControlProfile`, independently governed `SafetyProfile`, `RuntimeCapabilitySnapshot`, and `PolicyBundle` schemas;
-- component-level openness/assurance matrix for each candidate platform;
-- preliminary whole-robot primary/fallback selection and a convergence map showing which Phase 1 actuator/bus path carries forward;
-- initial hazard analysis, safe-state definitions, independent stop/torque/brake/energy-control concept, and fault-test plan;
-- development trust-root and signing-role design, device identity format, anti-rollback and recovery policy;
-- signed development artifact verifier and a minimal signed-update proof of concept;
-- middleware, IPC, RT scheduling, OTA, recovery, and observability experiment plans;
-- ADR process with owners and resolution evidence for open decisions.
+- canonical reference architecture, layer/safety vocabulary, and high-level Threat Model;
+- Decision Register with priority, status, evidence, reversal trigger, and next action;
+- Time, simulation, RT/runtime, protocol, model, safety, OTA, and reference-project research sufficient for V0 ADRs;
+- lightweight verification matrix and Performance Envelope template;
+- initial `ReleaseManifest` maturity model: `draft -> candidate -> qualified -> released`;
+- one agreed runnable-spine scope and explicit non-goals.
 
 ### Exit criteria
 
-- `SIL`: wheeled/manipulator and legged manifest fixtures instantiate the same control/runtime contracts without embodiment-specific protocol branches;
-- `SIL`: the same fixed-layout control-facing Plant contract can execute against a simulated backend and a stubbed physical HAL;
-- `HOST`: a correctly scoped signed development artifact is accepted for its test device identity, while identity-incompatible, modified, unsigned, and policy-disallowed rollback artifacts are rejected with auditable reasons;
-- `SIL`: activating an ordinary product model, controller, simulator overlay, or policy cannot change or relax the independently governed `SafetyProfile`;
-- every candidate platform has a component matrix covering safety, boot/trust, power/BMS, actuator electronics/firmware, bus/HAL, calibration, runtime, SDK, and simulation assets;
-- the first physical bench has a reviewed independent E-stop or power-isolation path that does not depend on Linux, `robot-rt`, middleware, or cloud availability;
-- major unresolved decisions have an ADR, bounded experiment, owner, and required evidence level.
+- canonical docs use one meaning for Plant, timeline, generation, capability, safety authority, and artifact identity;
+- every P0 decision is accepted, provisional with a trigger, or assigned a bounded experiment;
+- no physical, security-qualified, deterministic-replay, or hard-RT claim exceeds its evidence;
+- the runnable spine can begin without selecting physical hardware.
 
-## Phase 1 — Parallel vertical slices
+## Milestone 1: no-hardware runnable spine
 
-### Objective
+Milestone 1 has two checkpoints so qualification work does not block the first executable system:
 
-Build two end-to-end paths against the same contracts:
+| Checkpoint | Purpose | Required result |
+| --- | --- | --- |
+| **M1a: runs** | prove the architecture can execute end to end | Python lease/command/state through separate runtime/RT processes into MuJoCo, with command lineage and reset/timeline rejection |
+| **M1b: credible** | prove the V0 claims are measurable and failure-aware | recovery paths, bounded IPC, executable replay negatives, recorder pressure, adapter conformance, signed verifier and installable candidate |
 
-- **Track A — MuJoCo vertical slice:** validate protocol, runtime, deterministic control, simulation semantics, replay, and SDK behavior;
-- **Track B — owner-controlled lower-stack bench:** validate L-1/L0 ownership on a mechanically constrained single joint, then expand to a synchronized multi-axis fixture.
+M1a is the first implementation target. M1b completes V0 before adding real hardware or another simulator.
 
-The tracks share schemas, controller interfaces, lifecycle, timestamps, manifests, identity, command validity, observation, and recording. They may use different execution topology below the Plant boundary.
+### Contracts and fixtures
 
-### Shared scope
+- minimal `ProductModelManifest` and validator;
+- backend-native MuJoCo MJCF for a legged or manipulator fixture plus a second embodiment manifest fixture;
+- fixed-layout control state/command, Plant, Clock, lifecycle, lease, capability, and command-lineage semantics;
+- `InterfaceProfile` only for an adapter's exposed boundary; stable capability names come from the shared `CapabilityCatalog`;
+- minimal `ReleaseManifest` that pins build, dependencies, model, scenario, configuration, test profile, exclusions, and evidence identity.
 
-- Rust `robot-rt` skeleton and fixed-layout RT state/command types;
-- bounded shared-memory IPC between `robot-rt` and `robot-runtime`;
-- minimal public Robot Protocol and Python SDK;
-- requested, admitted, safety-output, and applied command observability, including attributed runtime and safety decisions;
-- product model, robot instance/device inventory, configuration, calibration, `ControlProfile`, `SafetyProfile`, and `RuntimeCapabilitySnapshot` identities;
-- MCAP flight recording and structured health/events;
-- development device identity, signed host/device updates, rollback policy, and recovery metadata.
+### RT and simulation
 
-### Track A scope — MuJoCo
+- representative Plant -> estimator/controller -> limiter -> SA-3 -> applied sink graph;
+- Copper-hosted and minimal Soma-native spike behind the same Plant/task boundary;
+- MuJoCo Plant with virtual time, lockstep, pause/step/reset, fault injection, and timeline invalidation;
+- allocator detection after activation and Performance Envelope reporting;
+- bounded RT/runtime mailbox spike and selected implementation.
 
-- MuJoCo Plant backend;
-- deterministic headless scenario runner;
-- pause, step, reset, accelerated time, and timeline invalidation;
-- command expiry, lease loss, overload, and sensor/actuator fault injection;
-- record/replay and conformance fixtures reusable by later backends.
+### Runtime, protocol, and SDK
 
-### Track B scope — public-artifact actuator bench
+- `robot-runtime` with lease/arbitration, lifecycle, capability discovery, timing admission, structured events, recording, and operations modules;
+- minimal Robot Protocol for joint/base state, command, events, leases, capabilities, health, and version negotiation;
+- provisional Zenoh transport without exposing Zenoh-specific names as the public semantic source of truth;
+- Rust client plus a thin Python binding/package;
+- reconnect, lease loss, slow-consumer, and runtime-restart behavior in the integrated SDK flow.
 
-- select an actuator path using the component matrix, preferring the Phase 2 primary robot's actuator, bus, and update stack so the bench work carries forward;
-- when a generic moteus/ODRI-class contract rig is chosen instead, label it as a supplementary reference rig and budget the second L-1/L0 bring-up explicitly;
-- mechanically constrain and power-limit the initial single-joint setup;
-- own or reproducibly build the actuator firmware and host HAL for the layers being claimed;
-- integrate CAN-FD and/or EtherCAT timing, device state, raw diagnostics, and hardware timestamps;
-- implement calibration, watchdog, boot/update/recovery, and an independent bench stop/torque-inhibition or power-isolation final element selected by the bench hazard analysis;
-- expand from one joint to at least three simultaneously controlled axes without changing the public Plant state/command contract.
+### Evidence and replay
 
-### Demonstrations
+- requested, admitted, safety-output, and applied command identity at every stage;
+- execution journal/checkpoints for stateful replay and MCAP for tool-neutral incident/interchange data;
+- replay manifest covering build, graph, clock, model, scenario, profiles, exclusions, and loss counters;
+- omitted-state, clock-bypass/unrecorded-input, corrupt-log, and incompatible-build negative cases;
+- recorder enabled/disabled/saturated/disk-pressure comparison against the same workload.
 
-1. A Python application acquires a lease, commands the MuJoCo robot, receives state and health, and records a replayable session while the RT loop remains isolated from Python and middleware behavior.
-2. The same application and protocol family command a constrained physical joint and then a multi-axis fixture through a real HAL, with unsupported privileges reported through capability discovery.
+### Hardware-free adapter conformance
 
-### Exit criteria
+A fake or recorded G1/G2-class boundary validates Soma's side of the integration without pretending to emulate vendor internals:
 
-- `SIM`: the MuJoCo asset passes joint/frame identity, unit, transmission, actuator/sensor mapping, and initial-state checks against the canonical product model;
-- `SIL`: the headless MuJoCo scenario repeats within declared state, timing, and event-order tolerances in CI;
-- `SIL`: RT/runtime communication remains bounded under client and middleware overload, and stale, expired, or wrong-timeline commands are rejected;
-- `SIL`: simulation reset changes the control-timeline identity and rejects old-timeline commands; historical recordings remain intact and segmented for replay, while the accepted time/lifecycle ADR defines how boot, runtime restart, replay, and lease generations relate to that identity;
-- `PHYSICAL`: one actuator and a fixture with at least three simultaneously controlled axes use the same versioned Plant state/command semantics as the MuJoCo path;
-- `HIL` and `PHYSICAL`: bus loss, process death, stale commands, and watchdog expiry reach the declared safe bench state within measured bounds;
-- `HIL`: signed host and device artifacts are verified during boot/activation, altered or disallowed rollback artifacts are rejected, and an interrupted update recovers without vendor-only reflashing; a test that exercises only the updater cannot claim boot-chain enforcement;
-- `PHYSICAL`: a retained trace correlates requested, admitted, safety-output, and applied commands, including runtime/safety/lower-authority reasons, with hardware timestamps, bus health, power/thermal data, boot reason, and artifact hashes;
-- `PHYSICAL`: the multi-axis fixture measures cycle jitter/skew and synchronization loss while executing at least one coordinated or mechanically coupled motion;
-- every claimed L-2/L-1/L0 capability is backed by the component matrix and test evidence; gaps remain explicit and are not inferred from joint-command access;
-- the core crates have no ROS 2 dependency.
+- classify the boundary as `NativePlantAdapter` or `ManagedMotionGateway`;
+- declare supported and unsupported capabilities conservatively;
+- validate units, frames, modes, lifecycle, command/state mapping, and typed unsupported errors;
+- stop requested-to-applied claims at the last observable boundary;
+- keep vendor types and assumptions inside the adapter;
+- produce only `HOST`, `SIM`, or `SIL` evidence, never `PHYSICAL` evidence.
 
-## Phase 2 — Bottom-up-qualified whole-robot reference
+### Security posture
 
-### Objective
+V0 implements the signed development artifact verifier and tests accepted, altered, unsigned, identity-incompatible, and rollback-disallowed inputs. Broader protocol abuse-case qualification remains explicitly outside this milestone, per the Threat Model; the runtime is not production-security-qualified at Milestone 1.
 
-Move from the lower-stack fixture to a whole-robot embodiment that exposes enough of the relevant mechanics, electronics, firmware, bus, HAL, model, and calibration path to validate Soma bottom-up. Candidates with substantial public lower-stack artifacts include [Berkeley Humanoid Lite](https://github.com/HybridRobotics/Berkeley-Humanoid-Lite) and its [Recoil motor controller](https://github.com/T-K-233/Recoil-Motor-Controller-BESC) for a legged path, or [Reachy 2](https://github.com/pollen-robotics/reachy2_core) with public [Poulpe firmware](https://github.com/pollen-robotics/firmware_Poulpe) and [EtherCAT controller](https://github.com/pollen-robotics/poulpe_ethercat_controller) for a manipulation path. Each candidate still requires component-level verification; these sources do not by themselves establish an open safety, power, trust-key, or full OTA chain.
+### Distribution matrix
 
-A remaining closed component does not invalidate the platform, but it limits the layers and claims the platform can qualify. Those limits must be published.
+| Artifact | V0 target | Delivery path | Required proof |
+| --- | --- | --- | --- |
+| `robot-rt` | Linux x86_64 developer/SIL profile | pinned Cargo workspace build | reproducible build identity, restricted profile, tests and benchmark report |
+| `robot-runtime` | Linux x86_64 developer/SIL profile | same candidate release set as `robot-rt` | atomic IPC ABI compatibility and startup/restart scenario |
+| Python SDK | one supported CPython range on Linux x86_64 | local wheel produced in CI | clean-environment install and integrated SDK scenario |
+| MuJoCo model/scenarios | pinned MuJoCo version | content-addressed release assets | validator and scenario hashes, deterministic/tolerance report |
+| Evidence tooling | Linux developer profile | workspace binaries/modules | replay negative cases and MCAP readability |
+| Future aarch64/ROS/gateway artifacts | not V0 | added by a target-specific distribution profile | must not change core protocol semantics |
 
-### Scope
+### Demonstration
 
-- whole-robot real HAL and synchronized multi-device control;
-- target-compute RT configuration, latency, IRQ, and resource characterization;
-- robot instance identity, device inventory, model and calibration pipeline;
-- independent stop/torque/brake/energy-control path and platform safety integration;
-- whole-robot MuJoCo model and matching SIL scenarios;
-- local observability, crash-safe flight recording, signed OTA, and recovery;
-- locomotion or manipulation capability sufficient to exercise coordinated control rather than isolated joints.
+```text
+start candidate release
+ -> Python SDK connects and discovers capabilities
+ -> acquires lease and commands MuJoCo
+ -> receives state, health, and command-decision evidence
+ -> reset creates a new Plant timeline and rejects stale command
+ -> runtime restart invalidates old lease but not the Plant timeline
+ -> SDK reconnects and explicitly reacquires authority
+ -> session records, restores state, re-executes, and compares output
+```
 
-### Exit criteria
+## Milestone verification matrix
 
-- `SIL` and `PHYSICAL`: the same external SDK semantics and capability discovery run a matched scenario against simulation and the whole robot;
-- `PHYSICAL`: control-loop timing, jitter, synchronization, power, and thermal behavior are measured on target compute and stored with the platform manifest;
-- `HIL`: communication loss, controller/runtime failure, sensor invalidity, and every interrupted-update state reach the defined inhibited/recovery state with retained evidence; destructive power-cut update tests may remain on a constrained target-equivalent rig;
-- `PHYSICAL`: risk-assessed communication, control, and sensor-fault scenarios on the whole robot reach their defined states within measured bounds without requiring destructive update testing on a moving machine;
-- `PHYSICAL`: model and calibration identity are verified at activation, and incompatible or stale artifacts are rejected before actuation;
-- `HIL`: failed host and claimed device-firmware updates recover without vendor-only reflashing or loss of device identity;
-- recorded incidents include enough requested-to-applied command, bus, firmware, boot, power, thermal, lifecycle, and safety evidence for root-cause analysis;
-- all component-matrix rows have a known status, and source/build/update/key ownership is demonstrated for every lower layer described as open;
-- the cumulative Bottom-Up Reference Profile has verified coverage for every required row, including any supplementary rig evidence;
-- no private vendor daemon or undocumented service is required below a layer Soma claims to own.
+This is an index, not a test DSL. Scenario implementation details live beside the code when implementation begins.
 
-## Phase 3 — Closed commercial boundary compatibility
+| Claim | Scenario | Evidence | Pass condition | Retained artifact | Milestone |
+| --- | --- | --- | --- | --- | --- |
+| Shared model semantics span embodiments | `model-two-fixtures` | `HOST` | two different embodiments validate without public protocol branches | manifest fixtures + validator report | M1a |
+| Same control path drives simulation | `sdk-mujoco-roundtrip` | `SIL` | SDK -> runtime -> RT -> MuJoCo -> state/evidence completes | MCAP + release/scenario IDs | M1a |
+| Timeline prevents stale control | `reset-with-inflight-command` | `SIL` | reset changes timeline; prior command is rejected with reason | event and command-lineage record | M1a |
+| Runtime generations and leases recover explicitly | `runtime-restart-reconnect` | `SIL` | Plant timeline persists; old lease fails; SDK reacquires | lifecycle/lease trace | M1b |
+| Slow consumers cannot block RT | `subscriber-overload` | `SIL` | bounded drop/age counters increase; RT envelope holds | benchmark + counters | M1b |
+| RT/runtime IPC is bounded and restart-safe | `ipc-overflow-generation-abi` | `HOST`/`SIL` | no cyclic allocation/blocking; stale or incompatible region cannot enable motion | test and benchmark report | M1b |
+| Replay is executable and honest | `stateful-replay-negative-cases` | `HOST`/`SIL` | valid replay compares as declared; omission/corruption/incompatibility fails visibly | source and replay journals + manifest | M1b |
+| Recorder does not perturb control silently | `recorder-pressure` | `SIL` | RT envelope holds or failure is explicit; losses invalidate completeness claim | enabled/disabled/pressure report | M1b |
+| Vendor boundary stays contained | `adapter-contract-fixture` | `HOST`/`SIM` | classification, mappings, capabilities, typed unsupported errors and evidence limits pass | conformance report | M1b |
+| Ordinary artifacts cannot relax safety profile | `artifact-authority-separation` | `HOST`/`SIL` | model/control/policy/scenario changes leave active `SafetyProfile` identity and bounds unchanged | activation/evidence trace | M1b |
+| Development verifier rejects invalid artifacts | `signed-artifact-negative-cases` | `HOST` | modified, unsigned, incompatible and disallowed rollback inputs are rejected audibly | verifier report | M1b |
+| A physical boundary behaves as declared | target-specific matched scenario | `PHYSICAL` | supported subset works and inaccessible authority is not claimed | platform qualification bundle | M2+ |
 
-### Objective
+## Test coverage view
 
-Prove that Soma can integrate useful commercial robots without confusing SDK compatibility with bottom-up ownership.
+There is no code or test framework yet, so executable coverage is currently 0. The matrix above defines planned behavioral coverage, not achieved coverage.
 
-### Scope
+```text
+CODE / SYSTEM PATHS                              USER / OPERATOR FLOWS
 
-- add at least one commercial platform whose accessible boundary may be a privileged joint API, whole-robot motion API, vendor daemon, or ROS 2 integration;
-- classify the adapter as either a `NativePlantAdapter`, which enters Soma below `robot-rt` and can exercise Soma `SA-3`, or a `ManagedMotionGateway`, which terminates above the Plant boundary and retains vendor motion/safety authority;
-- terminate proprietary protocol and product-specific types inside the correctly classified adapter rather than calling every boundary a HAL;
-- publish conservative capabilities and authorization for the accessible boundary;
-- preserve vendor safety, commissioning, firmware, and recovery authority rather than bypassing it;
-- reuse protocol, SDK, lifecycle, recording, and matched SIL scenarios wherever the accessible boundary permits.
+[PLANNED M1] Python SDK                          [PLANNED M1] normal command session
+  +-- connect / discover                           +-- acquire lease -> command -> observe
+  +-- reconnect / runtime generation               +-- reset -> stale command rejected
+  +-- lease loss / explicit reacquire               +-- runtime restart -> recover explicitly
+  +-- slow consumer / gap visibility                +-- unsupported capability -> typed error
+          |
+[PLANNED M1] Robot Protocol
+  +-- lease / timing / capability admission
+  +-- requested -> admitted evidence
+          |
+[PLANNED M1] bounded RT IPC
+  +-- overflow / generation / ABI mismatch
+          |
+[PLANNED M1] ControlCore + SA-3
+  +-- safety-output -> applied evidence
+          |
+[PLANNED M1] MuJoCo Plant
+  +-- step / reset / injected fault
+          |
+[PLANNED M1] recording and executable replay
+  +-- omitted state / clock bypass
+  +-- corrupt log / incompatible build
 
-### Exit criteria
+[DEFERRED] protocol security abuse, fuzz, sustained DoS and penetration tests
+```
 
-- `PHYSICAL`: the common SDK runs its declared supported subset against the bottom-up-qualified reference and commercial platform, while unsupported operations return stable typed errors;
-- the commercial adapter publishes explicit capability and component-matrix limits, including unverified drive firmware, boot keys, BMS, raw bus, E-stop, or STO access;
-- proprietary types, transport, and vendor daemon assumptions do not leak into common controller, runtime, protocol, or client packages;
-- `SIL` and `PHYSICAL`: a matched conformance scenario produces comparable command, feedback, lifecycle, and incident records at the exposed boundary;
-- vendor safety and update mechanisms remain authoritative where Soma lacks ownership, and tests do not claim validation of inaccessible lower layers;
-- a `ManagedMotionGateway` claims only the command, feedback, lifecycle, and safety-intervention semantics observable at its exposed boundary, never Soma Plant or `SA-3` coverage;
-- adding the commercial platform requires an adapter and Product Profile, not a fork of the common runtime or SDK.
+Implementation modules that should retain small inline ASCII diagrams once code exists:
 
-## Phase 4 — Fleet production and operations
+- lifecycle/generation types: reset and restart state transitions;
+- RT/runtime IPC: header validation, generation handshake and overwrite/drop behavior;
+- runtime admission: requested -> admitted -> rejected decision flow;
+- replay service: record -> checkpoint -> restore -> re-execute -> compare;
+- adapter boundary: vendor input/output mapping and last observable evidence stage.
 
-### Objective
+## Performance Envelope
 
-Scale and harden the safety, identity, signing, update, observability, and compatibility mechanisms established in Phases 0–2. Phase 4 does not introduce the trust chain for the first time.
+Do not put universal numbers in the architecture without a workload and platform. Every benchmark records:
 
-### Scope
+```text
+profile:
+  CPU / kernel / scheduler / simulator / build
+  graph and message payloads
+  client/subscriber count
+  recorder mode and storage
+  warm-up, duration, repetitions
 
-- manufacturing identity provisioning and ownership lifecycle;
-- separation and protection of development, release, recovery, and fleet authorization roles;
-- production secure-boot enforcement, anti-rollback, key rotation/revocation, and recovery ceremonies;
-- staged/canary fleet rollout with compatibility manifests and automated rollback policy;
-- OpenTelemetry-based service observability and local crash-safe MCAP flight recorder;
-- incident upload, retention, access control, and release/boot/mission/action correlation;
-- SBOM, provenance, reproducible builds, vulnerability response, and signed artifacts;
-- compatibility, deprecation, and LTS policy;
-- SIM/SIL/HIL/PHYSICAL release-qualification gates;
-- ROS 2 adapters for selected distributions.
+RT cycle:
+  target rate, p50/p99/p99.9/max, deadline misses, cyclic allocations
+RT IPC:
+  latency distribution, sample age, drops/overwrites, CPU cost
+runtime/protocol:
+  throughput, latency distribution, queue age, reconnect and overload behavior
+recorder:
+  sustained write rate, queue depth/loss, disk-pressure degradation, RT delta
+simulation:
+  step rate, real-time factor, state/event tolerance and repeatability
+```
 
-### Exit criteria
+The representative Copper/minimal spike starts at 1 kHz, but the rate is a test workload, not a permanent requirement for every embodiment.
 
-- a release is reproducibly built and signed, passes its declared SIM/SIL/HIL/PHYSICAL gates, rolls through a canary cohort, and can be halted or rolled back without losing local robot safety;
-- a compromised, revoked, expired, incompatible, or rollback-disallowed artifact is rejected with an auditable reason;
-- identity provisioning, key rotation, recovery, ownership transfer, and decommissioning are exercised in runbooks and representative tests;
-- an incident can be correlated across hardware/model identity, release, boot, mission, lease, command, applied action, and safety event;
-- robot core operation and independent safe-state mechanisms remain available when fleet/cloud services are unavailable;
-- a commercial boundary adapter can participate only within its declared update, identity, observability, and safety capabilities.
+## Milestone 2: first accessible robot boundary
 
-## Near-term workstreams
+Trigger: suitable hardware becomes accessible and a product/research need justifies integration.
 
-### A. Contracts and assurance
+- evaluate the actual boundary, license, model assets, commissioning, update/recovery, and safety authority;
+- implement either a `NativePlantAdapter` or `ManagedMotionGateway` without forking the common runtime or SDK;
+- rerun the M1 adapter and SDK scenarios against hardware for the supported subset;
+- measure target compute, network, timestamp, and observable command behavior;
+- publish unknown and inaccessible lower-layer capabilities instead of inferring them;
+- do not claim Soma `SA-3` coverage for a managed vendor motion boundary.
 
-- canonical L-2–L5 vocabulary;
-- RT state/command and requested-to-applied lineage;
-- Plant, HAL, device-management, clock/timeline, lifecycle/fault, lease, and capability contracts;
-- `ProductModelManifest`, `RobotInstanceManifest`, `DeviceInventory`, `CalibrationSet`, `ControlProfile`, independently governed `SafetyProfile`, `RuntimeCapabilitySnapshot`, and component matrix;
-- evidence schema and conformance report format.
+## Milestone 3: owner-controlled lower stack
 
-### B. Safety and trust bootstrap
+Trigger: Soma has its own hardware, an accessible component bench, or a concrete need to own L0/L-1/L-2.
 
-- hazard and safe-state analysis;
-- independent E-stop/power-isolation bench design;
-- development signing root and role separation;
-- device identity, signed update, anti-rollback, recovery, and boot-reason reporting.
+- mechanically constrained actuator then synchronized multi-axis fixture;
+- owned or reproducibly built firmware/HAL for each claimed layer;
+- fieldbus timing, calibration, device lifecycle, watchdog, update/recovery, and diagnostics;
+- independent stop/torque-inhibition or energy-control path selected by hazard analysis;
+- HIL and PHYSICAL evidence for bus loss, process death, timestamp faults, update interruption, power/thermal limits, and command application;
+- whole-robot integration only after component evidence can support the intended ownership claim.
 
-### C. MuJoCo/SIL vertical slice
+This milestone may begin from different layers. It does not require rewriting the M1 public protocol, time, Plant, evidence, or SDK contracts.
 
-- `robot-rt`, `robot-runtime`, shared-memory IPC, and Zenoh prototype;
-- Python client and lease/arbitration;
-- deterministic scenario runner, replay, and fault injection;
-- MuJoCo Plant backend and Isaac/Genesis adapter contract.
+## Milestone 4: production and fleet qualification
 
-### D. Owner-controlled lower-stack vertical slice
+- production provisioning, signing roles, secure boot, anti-rollback, rotation/revocation, recovery and decommissioning;
+- protocol abuse, fuzzing, penetration, sustained DoS, and physical debug-interface qualification;
+- reproducible multi-target builds, SBOM/provenance and vulnerability response;
+- candidate qualification across required SIM/SIL/HIL/PHYSICAL gates;
+- canary rollout, halt/rollback, offline operation, incident retention/access/privacy and support runbooks;
+- compatibility, deprecation, ROS distribution and LTS policies.
 
-- actuator/electronics selection through the component matrix;
-- single-joint safety fixture, then synchronized multi-axis bench;
-- CAN-FD/EtherCAT HAL, firmware build/update, timestamps, calibration, and diagnostics;
-- HIL and physical watchdog, bus-fault, power-fault, update-recovery, and flight-recorder tests.
+## Failure modes
 
-### E. Platform conformance
+| Path | Realistic failure | Planned test | Planned handling / visibility |
+| --- | --- | --- | --- |
+| SDK connection | network loss or runtime restart | `runtime-restart-reconnect` | connection state and generation change are visible; explicit reacquire |
+| Lease | ownership revoked or stale renewal | same integrated scenario | command stops; typed lease event/error |
+| Command admission | old timeline, deadline, mode, or sequence | `reset-with-inflight-command` plus unit cases | rejected with attributable decision evidence |
+| RT IPC | producer crash, overflow, corrupt/incompatible header | `ipc-overflow-generation-abi` | motion remains inhibited; counters/reason visible |
+| Control/Plant | invalid state or missed cycle | MuJoCo fault scenarios | SA-3 safe behavior and structured event; lower safety required on hardware |
+| Model activation | wrong joint/frame/artifact identity | validator and activation tests | fail before actuation with mismatch reason |
+| Replay | omitted state, nondeterminism, corruption, incompatible build | `stateful-replay-negative-cases` | mismatch/rejection; never silent success |
+| Recorder | queue saturation, dirty-page pressure, full disk | `recorder-pressure` | bounded degradation and loss counters; no false completeness |
+| Vendor adapter | unsupported feature or hidden vendor authority | `adapter-contract-fixture` | typed unsupported result and bounded evidence claim |
+| Artifact verifier | altered, unsigned, incompatible or rollback-disallowed input | `signed-artifact-negative-cases` | preserve current state and audit rejection |
+| Protocol attack | malformed/replayed/excessive client traffic | deferred to M4 by decision | M1 makes no production-security claim; Threat Model preserves required invariant |
 
-- reusable SIM/SIL/HIL/PHYSICAL scenarios;
-- capability and Product Profile validation;
-- bottom-up whole-robot qualification;
-- closed commercial boundary/adapter compatibility after the qualified reference path.
+No M1 failure mode is both silently handled and claimed as verified without a planned test. Deferred security cases block a production-security claim, not the no-hardware architecture demonstration.
+
+## What already exists
+
+The repository currently contains research and architecture documents only: no workspace, executable code, test framework, CI, package, or release pipeline exists yet. Soma should reuse community mechanisms and retain only product-specific contracts:
+
+| Need | Existing reference or implementation | Soma-owned remainder |
+| --- | --- | --- |
+| Physics/SIL | MuJoCo, PX4/ArduPilot SITL patterns | Plant, time/reset, command lineage and conformance semantics |
+| RT graph and replay | Copper | adoption spike, Plant/authority integration and honest replay manifest |
+| Distributed transport | Zenoh; Cyclone DDS gateway ecosystem | Robot Protocol semantics, lease/timing/capability policy |
+| Local bulk IPC | iceoryx2 candidate | measured choice and payload lifetime policy |
+| Evidence container | MCAP and ecosystem tools | execution state/checkpoints, identities and completeness rules |
+| Lifecycle/integration evidence | Eclipse S-CORE patterns | small Soma lifecycle contract and maturity-bearing `ReleaseManifest` |
+| Host/device updates | RAUC/OSTree/Mender, MCUboot, TUF/Uptane patterns | product compatibility, authority, health and recovery policy |
+| ROS ecosystem | ROS 2 bridges and standard messages | mapping at the edge without core dependency |
+| Vendor surfaces | Unitree/AgiBot and other public SDK/sim assets | honest boundary classification and capability conformance |
+
+Soma does not need to own a general middleware, universal model language, automotive platform API, logging container, update framework, or simulator engine.
+
+## NOT in scope for Milestone 1
+
+- physical robot, actuator, fieldbus, E-stop, STO, brake, power, thermal, secure-boot, or hard-RT qualification: no hardware exists;
+- a universal URDF/MJCF/USD compiler or lossless conversion layer: V0 validates native assets;
+- complete G1/G2 emulators or vendor-internal behavior: adapter fixtures validate only Soma's boundary;
+- a mandatory Zenoh/Cyclone bake-off: comparison is trigger-based;
+- independent update/health/observer/recorder daemons: these start as `robot-runtime` modules;
+- full protocol security abuse, penetration, fuzz, DoS, production key, or physical debug testing: deferred to M4;
+- Isaac, Genesis, HIL, batch-RL infrastructure, ROS distribution matrix, fleet rollout, cloud service, long-term retention, or UI tooling;
+- universal plugin ABI, cross-version internal RT IPC compatibility, or multi-repository integration platform;
+- safety certification or claims about inaccessible vendor safety and lower-stack implementation.
+
+## Parallel implementation lanes
+
+Contracts are a short sequential gate; implementation then separates into bounded lanes.
+
+| Step | Modules | Depends on |
+| --- | --- | --- |
+| Foundation | shared types, model fixtures, scenario IDs, release identity | M0 decisions |
+| Lane A: control and simulation | `robot-rt`, Plant, MuJoCo, RT benchmark | Foundation |
+| Lane B: runtime and SDK | `robot-runtime`, protocol, Rust/Python client | Foundation |
+| Lane C: execution evidence | Copper/minimal spike, replay, MCAP, recorder | Foundation; integrates with Lane A workload |
+| Lane D: adapter conformance | adapter fixtures, `InterfaceProfile`, capability cases | Foundation |
+| Integration | end-to-end recovery, reset, overload, Performance Envelope, packaging | A + B + C + D |
+
+Execution order:
+
+```text
+Foundation
+   |
+   +--> Lane A ----+
+   +--> Lane B ----+--> integration and M1 qualification
+   +--> Lane C ----+
+   +--> Lane D ----+
+```
+
+Lanes A and C both touch the representative control graph, so define the graph fixture in Foundation and assign one owner during integration. Lanes A/B share fixed-layout types but should not edit those types independently after the Foundation checkpoint.
+
+## Implementation Tasks
+
+- [ ] **T1 (P1, human: ~2 days / Codex: ~3 hours)** — Decisions — record P0 ADRs that have evidence and write bounded protocols for experiment-dependent decisions.
+  - Surfaced by: Architecture Review — research and decisions lacked a consistent convergence path.
+  - Files: `docs/decisions/`, `docs/plans/decision-register.md`, relevant Deep Research.
+  - Verify: every P0 row is accepted, provisional with trigger, or has a measurable experiment; spike results later close their own ADRs.
+- [ ] **T2 (P1, human: ~3 days / Codex: ~6 hours)** — Foundation — create the minimal workspace, shared contracts, model fixtures, validator and candidate release identity.
+  - Surfaced by: Scope and Code Quality Review — runnable spine must precede the broad long-term module surface.
+  - Files: initial workspace modules and CI/build configuration.
+  - Verify: clean build, validator cases, two embodiment fixtures, no ROS/core dependency.
+- [ ] **T3 (P1, human: ~5 days / Codex: ~1 day)** — RT/SIM — implement the representative control graph and MuJoCo Plant with virtual time.
+  - Surfaced by: Architecture Review — hardware-independent Plant/ControlCore claim needs executable evidence.
+  - Files: `robot-rt`, simulation modules, scenarios.
+  - Verify: lockstep/reset/fault tests, allocation detector and RT Performance Envelope.
+- [ ] **T4 (P1, human: ~5 days / Codex: ~1 day)** — Runtime/SDK — implement minimal protocol, leases, capabilities, lifecycle, Zenoh transport and Python path.
+  - Surfaced by: Test Review — normal and recovery SDK flows cross all critical components.
+  - Files: `robot-runtime`, protocol/client modules, Python package.
+  - Verify: SDK roundtrip, reconnect, lease loss, slow consumer and runtime restart scenarios.
+- [ ] **T5 (P1, human: ~3 days / Codex: ~6 hours)** — RT IPC — compare community and minimal implementations, then land one bounded mailbox.
+  - Surfaced by: Code Quality and Performance Review — preserve behavior without committing to unnecessary custom infrastructure.
+  - Files: RT/runtime IPC module and benchmark.
+  - Verify: overflow, generation, ABI, restart, allocation and latency evidence.
+- [ ] **T6 (P2, human: ~5 days / Codex: ~1 day)** — Replay/Recorder — qualify executable replay and recorder interference after M1a runs.
+  - Surfaced by: Test and Performance Review — message playback alone cannot support deterministic replay or RT isolation claims.
+  - Files: execution/replay, MCAP and runtime recording modules.
+  - Verify: valid replay plus omitted-state, clock-bypass, corrupt-log, incompatible-build and storage-pressure cases.
+- [ ] **T7 (P2, human: ~2 days / Codex: ~4 hours)** — Adapter boundary — build the hardware-free G1/G2-class conformance fixture.
+  - Surfaced by: Test Review — hardware independence should be exercised before hardware arrives.
+  - Files: adapter contract fixtures and conformance scenarios.
+  - Verify: classification, mappings, capabilities, typed errors and evidence limits.
+- [ ] **T8 (P2, human: ~2 days / Codex: ~4 hours)** — Distribution — build and install the V0 candidate artifact set in clean CI environments.
+  - Surfaced by: Architecture Review — binaries and SDKs need an explicit delivery path.
+  - Files: CI, packaging and candidate `ReleaseManifest` generation.
+  - Verify: reproducible identities, atomic runtime/RT set, clean Python wheel install and scenario execution.
+
+No separate `TODOS.md` items are created by this review. Deferred work already has a milestone, trigger, and context here or a decision entry in the register; duplicating it into a generic backlog would make ownership less clear.
 
 ## Definition of success
 
-Soma succeeds if one versioned production architecture survives changes in robot embodiment, hardware generations, simulators, middleware integrations, and application ecosystems while preserving explicit ownership boundaries. Its evidence must distinguish what was proven in simulation, software, electronics, and physical hardware, and it must never infer lower-stack openness or safety authority from an SDK-shaped joint command.
+M1a succeeds when the separate-process Python-to-MuJoCo path runs with command lineage and correct reset/timeline behavior. Milestone 1 succeeds at M1b when one versioned, installable no-hardware candidate also demonstrates recovery, boundedness, replay honesty, recorder isolation, and hardware-free vendor-boundary conformance. It must be clear what was measured, what failed visibly, what remains provisional, and what has not been physically or security qualified.
+
+The longer plan succeeds when those contracts survive later vendor hardware, owner-controlled lower layers, additional simulators, and fleet operations without hiding inaccessible authority or replacing the runnable spine with a platform-specific fork.
+
+## GSTACK REVIEW REPORT
+
+| Review | Trigger | Why | Runs | Status | Findings |
+| --- | --- | --- | --- | --- | --- |
+| CEO Review | `/plan-ceo-review` | Scope and strategy | 0 | - | Not run |
+| Codex Review | `/codex review` | Independent second opinion | 0 | - | Nested outside-voice pass skipped because this review ran under Codex |
+| Eng Review | `/plan-eng-review` | Architecture and tests | 1 | CLEAR | 24 issues folded, 0 critical gaps, scope reduced to M1a/M1b |
+| Design Review | `/plan-design-review` | UI/UX gaps | 0 | Not applicable | No UI scope |
+| DX Review | `/plan-devex-review` | Developer experience gaps | 0 | - | Not run |
+
+**VERDICT:** ENG CLEARED - ready to begin M0 ADRs and M1a implementation.
+
+NO UNRESOLVED DECISIONS

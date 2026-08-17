@@ -1,5 +1,7 @@
 # Architecture Decision Records
 
+> Status: Process definition. Open and provisional questions are indexed in the [Decision and Research Register](../plans/decision-register.md); this directory contains durable decisions after their evidence is sufficient.
+
 This directory records decisions that materially shape Soma.
 
 Deep Research captures evidence and alternatives. The reference architecture captures the current system thesis. An ADR records a concrete decision, its context, trade-offs, and consequences.
@@ -41,7 +43,12 @@ What evidence, benchmark, or test supports the decision?
 - ROS 2 as an external adapter;
 - canonical ProductModelManifest and composed runtime RobotManifest;
 - product-model, robot-instance, calibration, control, and SafetyProfile artifact boundaries;
+- canonical time domains and Plant timeline/runtime/lease generation semantics;
 - MuJoCo as the first reference simulation backend;
+- minimal manifest validator versus any later model-generation tooling;
+- provisional Zenoh default and its measurable reevaluation triggers;
+- single maturity-bearing ReleaseManifest for integrated-set identity;
+- security trust boundaries and target-specific mechanism choices;
 - OTA trust/update stack;
 - observability data planes.
 

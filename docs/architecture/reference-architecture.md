@@ -1,5 +1,7 @@
 # Soma Reference Architecture
 
+> Status: Canonical architecture. This document states the current system thesis; unresolved implementation choices remain provisional until an ADR records evidence and consequences.
+
 ## Purpose
 
 Soma is a production-oriented reference system for embodied intelligence. It aims to define the stable system contracts that should remain valid across different robot embodiments while allowing hardware, control, simulation, and application implementations to vary.
@@ -175,7 +177,7 @@ Direct calls and fixed-size structs only.
 
 ### RT ↔ runtime plane
 
-Custom SPSC shared memory with bounded semantics.
+Bounded shared-memory mailboxes with fixed-layout messages. The behavioral contract is stable; a time-boxed spike will choose between a minimal SPSC implementation and a mature community implementation without changing the public Robot Protocol.
 
 ### Local bulk-data plane
 
@@ -183,7 +185,7 @@ Shared-memory blob pools or a zero-copy IPC framework such as iceoryx2 for camer
 
 ### Distributed robot protocol
 
-Current preferred direction: **Zenoh-first**, with optional gateways for Cyclone DDS and gRPC.
+Current provisional direction: **Zenoh-first**, with optional gateways for Cyclone DDS and gRPC.
 
 Rationale:
 
@@ -193,6 +195,8 @@ Rationale:
 - avoids making DDS/ROS type systems the architectural source of truth.
 
 Cyclone DDS remains relevant when native DDS interoperability is a product requirement, especially for ROS 2 or Unitree-style ecosystems.
+
+V0 does not require a transport bake-off before implementation. A comparative benchmark is triggered if Zenoh misses a declared Performance Envelope, creates an operational problem, or native DDS interoperability becomes a product requirement.
 
 ## Public Robot Protocol
 
@@ -231,11 +235,7 @@ The system should distinguish **requested**, **admitted**, **safety-output**, an
 
 Time is a first-class contract.
 
-Soma distinguishes:
-
-- `MONOTONIC_ROBOT` — deadlines and watchdogs on physical hardware;
-- `SIMULATION` — lockstep, pause, accelerated simulation, reset;
-- `UTC/PTP` — multi-computer logs, fleet correlation, external sensors.
+Soma distinguishes robot-local monotonic deadlines, resettable simulation time, and synchronized/calendar correlation time. Canonical clock-domain names and conversion rules belong to the Time ADR; architecture overviews should not duplicate an enum that can drift.
 
 A reset, snapshot restore, replay seek, `robot-rt`/Plant restart, or other discontinuous Plant-state change creates a new opaque `plant_timeline_id` so stale commands cannot cross timelines. Robot boot, `robot-runtime` restart, and lease succession use separate `boot_id`, `runtime_generation`, and resource-scoped `lease_generation`; restarting only `robot-runtime` does not imply that the Plant timeline changed.
 
@@ -272,7 +272,7 @@ ControlProfile             controller tuning and ordinary operational limits
 SafetyProfile              independently governed safety-authoritative limits/behavior
 ```
 
-A model compiler can generate or validate URDF/Xacro, MJCF, USD, ROS descriptions, RT joint maps, and policy schemas from the applicable persistent artifacts. The public `RobotManifest` is a composed runtime projection for SDK discovery, not another writable source of truth. Separately, L0 reports inventory and health while L2 produces an ephemeral `RuntimeCapabilitySnapshot`; that snapshot references the activation-set hashes but does not enter the product-model or `RobotManifest` hash.
+V0 uses a minimal `ProductModelManifest` alongside backend-native URDF, MJCF, and USD artifacts. A validator checks shared identity, joints, frames, units, transmissions, and declared compatibility; it does not attempt lossless cross-format generation. A model compiler is a later option only where repeated, proven transformations justify it. The public `RobotManifest` is a composed runtime projection for SDK discovery, not another writable source of truth. Separately, L0 reports inventory and health while L2 produces an ephemeral `RuntimeCapabilitySnapshot`; that snapshot references the activation-set hashes but does not enter the product-model or `RobotManifest` hash.
 
 All relevant artifacts should carry stable identifiers such as:
 
@@ -370,17 +370,17 @@ The software safety path should validate:
 
 Hardware E-stop, STO, brakes, and power cutoff remain outside the Linux application safety path.
 
-Security should include device identity, signed artifacts, authenticated control sessions, capability-level authorization, auditability, and a long-term secure-boot/update trust chain.
+Security should include device identity, signed artifacts, authenticated control sessions, capability-level authorization, auditability, and a long-term secure-boot/update trust chain. The high-level threats, trust boundaries, and invariants are defined in [Security Threat Model](security-threat-model.md); detailed mechanisms remain ADR and implementation work.
 
 ## Open architectural questions
 
 The current reference architecture is a working thesis. Important questions still requiring experiments include:
 
-- Zenoh vs Cyclone DDS under real robot LAN/Wi-Fi/WAN workloads;
+- whether Zenoh needs a Cyclone DDS comparison after measured V0 workloads or a native DDS requirement triggers it;
 - pure-Rust EtherCAT implementations vs mature C/C++ masters;
 - PREEMPT_RT latency bounds on candidate compute platforms;
 - shared-memory ABI strategy and compatibility;
-- canonical robot model representation;
+- whether repeated model transformations justify a compiler beyond the V0 manifest validator;
 - which safety responsibilities belong in the host versus dedicated safety hardware;
 - how much low-level control should be exposed to external research users;
 - OTA/recovery strategy across heterogeneous robot electronics.

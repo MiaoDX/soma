@@ -24,8 +24,10 @@ Soma is currently in the **research and architecture** phase. The repository wil
 
 - [Reference architecture](docs/architecture/reference-architecture.md)
 - [Layering and trust boundaries](docs/architecture/layering-and-trust-boundaries.md)
+- [Security threat model](docs/architecture/security-threat-model.md)
 - [Glossary](docs/glossary.md)
 - [Architecture decisions](docs/decisions/README.md)
+- [Decision and research register](docs/plans/decision-register.md)
 - [Bootstrap plan](docs/plans/bootstrap-plan.md)
 - [Deep research index](docs/deep-research/README.md)
 
