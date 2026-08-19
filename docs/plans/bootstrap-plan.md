@@ -9,7 +9,7 @@ Soma has two sequential goals:
 1. establish a technically defensible, community-backed system direction that can be reviewed with colleagues;
 2. implement a narrow runnable spine, then expand downward and outward without replacing its public contracts.
 
-The current lack of hardware is a constraint, not a reason to couple the architecture to one simulator. V0 proceeds top-down from MuJoCo/SIL and a G1/G2-class exposed interface boundary. Physical and bottom-up qualification remain explicit later milestones and cannot be claimed from mocks or vendor documentation.
+The current lack of hardware is a constraint, not a reason to couple the architecture to one simulator. V0 proceeds top-down from MuJoCo/SIL and a vendor-neutral exposed-interface contract. Physical and bottom-up qualification remain explicit later milestones and cannot be claimed from mocks or vendor documentation.
 
 ## Runnable spine
 
@@ -20,24 +20,23 @@ Python SDK                    synthetic 20 Hz cadence source
     | over provisional Zenoh          |
     v                                 v
 robot-runtime  <-------------------- command stream
-  auth boundary | lease | timing | capability | lifecycle | record
+  lease | timing | capability | lifecycle | bounded evidence
     |
     | bounded RT/runtime mailbox contract
     v
 robot-rt
   representative ControlCore -> SA-3 -> applied evidence
     |                            ^
-    |                            | command_staleness_policy
-    |                            | (hold / decay / fallback / inhibit)
+    |                            | command TTL + control_mode -> SafeBehavior
     | bounded Plant contract
     v
 MuJoCo Plant
     |
     +--> state / events / requested-to-applied lineage
-    +--> execution journal + MCAP evidence
+    +--> bounded evidence ring + post-run MCAP export
 
 parallel contract fixture, not a second runtime:
-fake/recorded G1/G2-class boundary -> adapter conformance
+vendor-neutral InterfaceProfile -> adapter conformance
 ```
 
 This is the smallest slice that exercises the architecture rather than merely demonstrating a simulator. The synthetic cadence source exists specifically to force the timeout, interpolation, and staleness code paths defined in [`policy-runtime-interface.md`](../deep-research/policy-runtime-interface.md) (D-19) to exist before a trained policy or real hardware arrives — it is a control-and-timing fixture, not a step toward a real policy.
@@ -49,12 +48,12 @@ This is the smallest slice that exercises the architecture rather than merely de
 | Layers and trust | L-2..L5, SA-0..SA-5, Plant and runtime boundaries | Preserve boundaries in module/API layout | Hazard analysis and physical authority validation |
 | Time | Clock domains, timeline/generation split, command validity invariants | Time ADR, simulation clock, reset/restart rejection | Target clock/PTP/bus measurements |
 | Model | Minimal `ProductModelManifest`, separate instance/calibration/control/safety artifacts | Native MJCF fixture plus validator; second embodiment fixture | Physical inventory/calibration and additional backend mappings |
-| RT execution | Restricted cyclic profile and replaceable execution kernel | Copper-vs-minimal representative graph spike | PREEMPT_RT and target-compute worst-case evidence |
-| RT/runtime IPC | Bounded mailbox behavior, ABI/generation/restart rules | Community-vs-minimal spike and one selected implementation | Target cache/NUMA/process-failure characterization |
+| RT execution | Restricted cyclic profile and replaceable execution kernel | Minimal native representative graph | Copper adoption decision and target-compute worst-case evidence |
+| RT/runtime IPC | Bounded mailbox behavior, ABI/generation/restart rules | Provisional minimal SPSC plus development-machine characterization | Target cache/NUMA/process-failure qualification and dependency reevaluation |
 | Distributed protocol | Transport-neutral Robot Protocol, Zenoh provisional default | Minimal state/command/event/lease/capability surface | Triggered Cyclone comparison only if envelope or interoperability requires it |
 | Simulation | Same ControlCore/SA-3/Plant semantics, separate Simulation Control | MuJoCo lockstep/reset/fault scenarios | Additional simulators only for a concrete product need |
-| Evidence | Requested/admitted/safety-output/applied lineage and replay contract | Representative executable replay plus MCAP; recorder interference test | Incident retention, privacy, upload, fleet correlation |
-| Security | Threats, trust boundaries, artifact and developer-mode invariants | Signed development artifact verifier and its functional tests | Protocol abuse, fuzzing, DoS, key ceremony, physical debug qualification |
+| Evidence | Requested/admitted/safety-output/applied lineage and replay contract | Bounded in-memory evidence ring plus post-run MCAP export | Live recording, recorder pressure, stateful replay, incident retention and fleet correlation |
+| Security | Threats, trust boundaries, artifact and developer-mode invariants | Loopback-only `insecure-local-dev`; no cryptographic implementation | Authentication, signing, trust/update mechanisms and security qualification before any non-local or physical use |
 | Hardware | `NativePlantAdapter` vs `ManagedMotionGateway`; capability honesty | Hardware-free adapter conformance only | Actual vendor boundary, then owner-controlled L0/L-1/L-2 qualification |
 | Fleet | Release, rollout, recovery, offline-first evidence model | Candidate `ReleaseManifest` identity only | Production signing, canary, rollback, SBOM, operations and support |
 
@@ -74,7 +73,7 @@ Evidence labels describe where a claim was actually tested. They are not interch
 
 | Evidence | What runs | Claims it can support | Claims it cannot support by itself |
 | --- | --- | --- | --- |
-| `HOST` | host unit, schema, cryptographic, composition, and packaging checks | validators, canonicalization, signature policy, API/schema compatibility | deployed scheduling, simulator dynamics, bus/device behavior, physical safety |
+| `HOST` | host unit, schema, composition, and packaging checks | validators, canonicalization, API/schema compatibility | deployed scheduling, simulator dynamics, bus/device behavior, physical safety |
 | `SIM` | simulator-native model, backend, or API facsimile | asset mapping, simulator adapter behavior, scenario generation, throughput | production runtime path, fieldbus/firmware behavior, physical safety |
 | `SIL` | production control/runtime code against a simulated Plant or virtual device | control semantics, lifecycle, timing logic, reset, deterministic regression, software faults | electrical behavior, real bus timing, boot-chain enforcement, physical dynamics |
 | `HIL` | production software with target-equivalent compute, bus, board, drive, sensor, or safety/power component in the loop | driver/device state, watchdog, timestamp, firmware/update, bus/power fault behavior | unrepresented mechanism, contact, payload, thermal, or safety behavior |
@@ -100,72 +99,79 @@ Each dynamic result records scenario ID, loop composition, hardware/model/releas
 - no physical, security-qualified, deterministic-replay, or hard-RT claim exceeds its evidence;
 - the runnable spine can begin without selecting physical hardware.
 
-## Milestone 1: no-hardware runnable spine
+## Milestone 1: no-robot runnable spine
 
-Milestone 1 has three checkpoints so qualification work does not block the
-first executable system, and so the hardest, most research-like piece
-(executable stateful replay) cannot silently stall the rest of V0:
+Milestone 1 has three independently reviewable checkpoints. Foundation freezes
+only the contracts needed by M1a; target qualification belongs to M1b; live
+recording, framework adoption and stateful replay cannot block either one.
 
-| Checkpoint | Purpose | Required result |
-| --- | --- | --- |
-| **M1a: runs** | prove the architecture can execute end to end | Python lease/command/state through separate runtime/RT processes into MuJoCo, with command lineage and reset/timeline rejection, driven in part by a synthetic cadence source that exercises `command_staleness_policy` (D-19) |
-| **M1b: credible** | prove the bounded-engineering V0 claims are measurable and failure-aware | recovery paths, bounded IPC negatives, recorder pressure, adapter conformance, signed verifier and installable candidate |
-| **M1c: reproducible** | prove recorded sessions can be replayed and trusted, or state plainly that they cannot yet | executable stateful replay with the four negative cases (omitted state, clock bypass, corrupt log, incompatible build), and the D-09 Copper-vs-native decision |
+### Foundation contracts
 
-M1a is the first implementation target. M1b completes the bounded-engineering
-half of V0. M1c is scoped separately because stateful replay correctness is a
-harder, more open-ended problem than the rest of M1 (see the "Replay
-guarantees are a system contract" findings in
-[`runtime-and-platform-reference-projects.md`](../deep-research/runtime-and-platform-reference-projects.md));
-it is allowed to conclude "not yet, replay is message-level only" without
-blocking M1a/M1b from being reviewable and mergeable.
+- minimal `ProductModelManifest`, backend-native MuJoCo MJCF, a second embodiment fixture, and a validator;
+- fixed-layout RT control state/command and mailbox lifecycle, ABI, generation, overflow and restart semantics;
+- Protobuf as the provisional V0 source of truth for the public network schema, with golden compatibility fixtures and major-version rejection; RT messages remain fixed-layout, while bulk data crosses the public protocol by descriptor or handle;
+- one exclusive `whole_body` lease with acquire, renew, release, expiry, conflict and stale-generation behavior; resource-graph leases are deferred;
+- `ImmediateTiming` and `TickTargetTiming`; `ScheduledTiming` is represented but returns typed unsupported in M1;
+- `control_mode -> SafeBehavior`, interpolation owner, command TTL/staleness policy, and requested/admitted/safety-output/applied lineage; policy chunking and observation alignment are deferred;
+- a supervisor contract for startup order, health, restart and lifecycle transitions, implemented by an M1a test harness and by systemd in M1b; no custom supervisor daemon;
+- vendor-neutral `InterfaceProfile` and shared `CapabilityCatalog` fixtures;
+- minimal `ReleaseManifest` that pins build, dependencies, model, scenario, configuration, test profile, exclusions and evidence identity.
 
-### Contracts and fixtures
+### M1a: runs
 
-- minimal `ProductModelManifest` and validator;
-- backend-native MuJoCo MJCF for a legged or manipulator fixture plus a second embodiment manifest fixture;
-- fixed-layout control state/command, Plant, Clock, lifecycle, lease, capability, and command-lineage semantics;
-- `InterfaceProfile` only for an adapter's exposed boundary; stable capability names come from the shared `CapabilityCatalog`;
-- minimal `ReleaseManifest` that pins build, dependencies, model, scenario, configuration, test profile, exclusions, and evidence identity.
+Deliverables:
 
-### RT and simulation
+- separate `robot-runtime` and `robot-rt` processes connected by a provisional minimal SPSC mailbox;
+- a minimal native Plant -> estimator/controller -> limiter -> SA-3 -> applied sink graph and a MuJoCo Plant with virtual time, lockstep, pause/step/reset, fault injection and timeline invalidation;
+- minimal Protobuf Robot Protocol over provisional Zenoh, a Rust client and thin Python binding;
+- a bounded in-memory evidence ring with requested-to-applied lineage and post-run MCAP export;
+- Linux x86_64 developer/SIL packaging under the loopback-only `insecure-local-dev` profile.
 
-- representative Plant -> estimator/controller -> limiter -> SA-3 -> applied sink graph;
-- Copper-hosted and minimal Soma-native spike behind the same Plant/task boundary;
-- MuJoCo Plant with virtual time, lockstep, pause/step/reset, fault injection, and timeline invalidation;
-- allocator detection after activation and Performance Envelope reporting;
-- bounded RT/runtime mailbox spike and selected implementation.
+Required scenarios and exit gate:
 
-### Runtime, protocol, and SDK
+- the Python SDK acquires the exclusive lease, commands MuJoCo and receives state/evidence end to end;
+- reset rejects a stale timeline; the synthetic cadence source exercises the frozen interpolation, TTL and `SafeBehavior` path;
+- lease acquire/renew/release/expiry/conflict/stale-generation and both supported timing modes pass; scheduled timing fails with a typed unsupported result;
+- schema goldens, major-version rejection and model-validator positive/negative fixtures pass;
+- supervisor test harness demonstrates ordered startup, process-death detection, motion inhibition and explicit restart/reacquisition;
+- development-machine IPC characterization reports latency distributions, allocations, overflow and crash behavior without claiming target qualification.
 
-- `robot-runtime` with lease/arbitration, lifecycle, capability discovery, timing admission, structured events, recording, and operations modules;
-- minimal Robot Protocol for joint/base state, command, events, leases, capabilities, health, and version negotiation;
-- provisional Zenoh transport without exposing Zenoh-specific names as the public semantic source of truth;
-- Rust client plus a thin Python binding/package;
-- reconnect, lease loss, slow-consumer, and runtime-restart behavior in the integrated SDK flow.
+### M1b: credible
 
-### Evidence and replay
+Deliverables:
 
-- requested, admitted, safety-output, and applied command identity at every stage;
-- execution journal/checkpoints for stateful replay and MCAP for tool-neutral incident/interchange data;
-- replay manifest covering build, graph, clock, model, scenario, profiles, exclusions, and loss counters;
-- omitted-state, clock-bypass/unrecorded-input, corrupt-log, and incompatible-build negative cases;
-- recorder enabled/disabled/saturated/disk-pressure comparison against the same workload.
+- systemd units implementing the Foundation supervisor contract;
+- runtime restart/reconnect, slow-consumer and bounded IPC recovery evidence;
+- vendor-neutral adapter-contract conformance using `InterfaceProfile`;
+- one clean-install Linux x86_64 candidate;
+- representative-board qualification: `cyclictest` plus the 1 kHz end-to-end cycle over a 24-hour soak, recording maximum latency, deadline misses, allocations and process-failure behavior.
 
-### Hardware-free adapter conformance
+Required scenarios and exit gate:
 
-A fake or recorded G1/G2-class boundary validates Soma's side of the integration without pretending to emulate vendor internals:
+- runtime restart preserves the Plant timeline, invalidates the old lease and requires explicit reacquisition;
+- overflow, stale generation and incompatible mailbox ABI cannot enable motion;
+- the target board completes the 24-hour qualification and establishes the final IPC budget from the measured end-to-end 1 ms cycle; no fixed microsecond threshold is assumed;
+- the generic adapter fixture proves mappings, capabilities, typed unsupported behavior and honest evidence limits;
+- the candidate installs and runs the M1a scenario in a clean environment.
 
-- classify the boundary as `NativePlantAdapter` or `ManagedMotionGateway`;
-- declare supported and unsupported capabilities conservatively;
-- validate units, frames, modes, lifecycle, command/state mapping, and typed unsupported errors;
-- stop requested-to-applied claims at the last observable boundary;
-- keep vendor types and assumptions inside the adapter;
-- produce only `HOST`, `SIM`, or `SIL` evidence, never `PHYSICAL` evidence.
+### M1c: reproducible
+
+Deliverables and exit gate:
+
+- live recording with bounded degradation and explicit disk-pressure/loss behavior;
+- the D-09 Copper-vs-native adoption decision, measured against the working M1a graph;
+- executable stateful replay with replay-manifest completeness and the omitted-state, clock-bypass, corrupt-log and incompatible-build negative cases.
+
+M1c may conclude that V0 supports only message-level replay and defer stateful
+replay with a named trigger. That result does not reopen M1a or M1b.
 
 ### Security posture
 
-V0 implements the signed development artifact verifier and tests accepted, altered, unsigned, identity-incompatible, and rollback-disallowed inputs. Broader protocol abuse-case qualification remains explicitly outside this milestone, per the Threat Model; the runtime is not production-security-qualified at Milestone 1.
+M1 implements no authentication, TLS, artifact signing, trust store, secure boot,
+anti-rollback, key rotation or revocation. The `insecure-local-dev` profile binds
+only to loopback; `source_id` is evidence attribution, not authenticated
+identity. Security design reopens before any non-local control, external
+distribution, physical actuation or OTA path is enabled.
 
 ### Distribution matrix
 
@@ -173,12 +179,14 @@ V0 implements the signed development artifact verifier and tests accepted, alter
 | --- | --- | --- | --- |
 | `robot-rt` | Linux x86_64 developer/SIL profile | pinned Cargo workspace build | reproducible build identity, restricted profile, tests and benchmark report |
 | `robot-runtime` | Linux x86_64 developer/SIL profile | same candidate release set as `robot-rt` | atomic IPC ABI compatibility and startup/restart scenario |
-| Python SDK | one supported CPython range on Linux x86_64 | local wheel produced in CI | clean-environment install and integrated SDK scenario |
+| Python SDK | one supported CPython range on Linux x86_64 | local wheel produced by the workspace build | clean-environment install and integrated SDK scenario |
 | MuJoCo model/scenarios | pinned MuJoCo version | content-addressed release assets | validator and scenario hashes, deterministic/tolerance report |
-| Evidence tooling | Linux developer profile | workspace binaries/modules | replay negative cases and MCAP readability |
+| Evidence tooling | Linux developer profile | workspace binaries/modules | bounded-ring behavior and post-run MCAP readability |
 | Future aarch64/ROS/gateway artifacts | not V0 | added by a target-specific distribution profile | must not change core protocol semantics |
 
-### Demonstration
+### Checkpoint demonstrations
+
+M1a:
 
 ```text
 start candidate release
@@ -188,7 +196,26 @@ start candidate release
  -> reset creates a new Plant timeline and rejects stale command
  -> runtime restart invalidates old lease but not the Plant timeline
  -> SDK reconnects and explicitly reacquires authority
- -> session records, restores state, re-executes, and compares output
+ -> bounded evidence exports to MCAP after the run
+```
+
+M1b:
+
+```text
+install candidate on the representative board
+ -> systemd starts both processes in contract order
+ -> run the M1a scenario and restart/reacquisition path
+ -> complete the 24-hour 1 kHz qualification
+ -> publish the final target-derived IPC budget and adapter conformance
+```
+
+M1c:
+
+```text
+run the representative graph with live recording pressure
+ -> make losses and completeness explicit
+ -> compare native execution with Copper and record the adoption decision
+ -> restore/re-execute a valid session; reject all declared negative cases
 ```
 
 ## Milestone verification matrix
@@ -197,18 +224,24 @@ This is an index, not a test DSL. Scenario implementation details live beside th
 
 | Claim | Scenario | Evidence | Pass condition | Retained artifact | Milestone |
 | --- | --- | --- | --- | --- | --- |
-| Shared model semantics span embodiments | `model-two-fixtures` | `HOST` | two different embodiments validate without public protocol branches | manifest fixtures + validator report | M1a |
+| Shared model semantics span embodiments | `model-validator-fixtures` | `HOST` | two embodiments validate; duplicate/missing joint, unknown/cyclic frame, invalid unit, non-finite value, actuator mismatch and native-asset identity mismatch are rejected | manifest fixtures + validator report | M1a |
+| Public schema changes are explicit | `protobuf-compatibility` | `HOST` | golden V0 payloads remain compatible | golden fixtures + compatibility report | M1a |
+| Incompatible public schemas fail visibly | `protocol-major-version-rejection` | `HOST`/`SIL` | SDK/runtime integration rejects an unsupported major version before commands are admitted | integration trace | M1a |
 | Same control path drives simulation | `sdk-mujoco-roundtrip` | `SIL` | SDK -> runtime -> RT -> MuJoCo -> state/evidence completes | MCAP + release/scenario IDs | M1a |
 | Timeline prevents stale control | `reset-with-inflight-command` | `SIL` | reset changes timeline; prior command is rejected with reason | event and command-lineage record | M1a |
-| A low-rate command source can safely drive the 1 kHz loop | `cadence-source-decimation` | `SIL` | synthetic 20 Hz source drives the loop; a missed tick reaches the declared `command_staleness_policy` fallback and is recorded with attribution | command-lineage record + D-19 policy identity | M1a |
+| A low-rate command source has a defined 1 kHz behavior | `cadence-source-decimation` | `SIL` | synthetic 20 Hz source uses the frozen interpolation owner and TTL; expiry selects `control_mode -> SafeBehavior` and records lineage | command-lineage record + D-19 contract identity | M1a |
+| M1 lease scope is complete and exclusive | `whole-body-lease-lifecycle` | `HOST`/`SIL` | acquire, renew, release, expiry and conflict work; stale generation is rejected | lease trace | M1a |
+| M1 timing scope is explicit | `timing-mode-admission` | `HOST`/`SIL` | immediate and tick-target commands execute; scheduled timing returns typed unsupported | admission trace | M1a |
+| Supervision preserves recovery semantics | `supervisor-process-death` | `SIL` | the harness detects either process death, inhibits motion and requires explicit restart/reacquisition | lifecycle trace | M1a |
+| RT/runtime IPC is bounded and restart-safe | `ipc-overflow-generation-abi` | `HOST`/`SIL` | no cyclic allocation/blocking; stale or incompatible region cannot enable motion; development-machine distributions are reported as provisional | test and characterization report | M1a |
 | Runtime generations and leases recover explicitly | `runtime-restart-reconnect` | `SIL` | Plant timeline persists; old lease fails; SDK reacquires | lifecycle/lease trace | M1b |
 | Slow consumers cannot block RT | `subscriber-overload` | `SIL` | bounded drop/age counters increase; RT envelope holds | benchmark + counters | M1b |
-| RT/runtime IPC is bounded and restart-safe | `ipc-overflow-generation-abi` | `HOST`/`SIL` | no cyclic allocation/blocking; stale or incompatible region cannot enable motion | test and benchmark report | M1b |
-| Recorder does not perturb control silently | `recorder-pressure` | `SIL` | RT envelope holds or failure is explicit; losses invalidate completeness claim | enabled/disabled/pressure report | M1b |
+| Production supervision matches the contract | `systemd-supervisor-conformance` | `HOST`/`SIL` | systemd startup, process death, restart and explicit reacquisition match the M1a harness semantics | unit files + lifecycle trace | M1b |
+| Target loop behavior is qualified | `target-board-24h` | `HIL` | representative board completes 24 h at 1 kHz with max latency, misses, allocations and crash behavior reported | qualification report + final IPC budget | M1b |
 | Replay is executable and honest | `stateful-replay-negative-cases` | `HOST`/`SIL` | valid replay compares as declared; omission/corruption/incompatibility fails visibly | source and replay journals + manifest | M1c |
-| Vendor boundary stays contained | `adapter-contract-fixture` | `HOST`/`SIM` | classification, mappings, capabilities, typed unsupported errors and evidence limits pass | conformance report | M1b |
+| Live recording cannot perturb control silently | `recorder-pressure` | `SIL` | RT envelope holds or failure is explicit; losses invalidate completeness claim | enabled/disabled/pressure report | M1c |
+| Vendor boundary stays contained | `interface-profile-conformance` | `HOST`/`SIM` | generic classification, mappings, capabilities, typed unsupported errors and evidence limits pass | conformance report | M1b |
 | Ordinary artifacts cannot relax safety profile | `artifact-authority-separation` | `HOST`/`SIL` | model/control/policy/scenario changes leave active `SafetyProfile` identity and bounds unchanged | activation/evidence trace | M1b |
-| Development verifier rejects invalid artifacts | `signed-artifact-negative-cases` | `HOST` | modified, unsigned, incompatible and disallowed rollback inputs are rejected audibly | verifier report | M1b |
 | A physical boundary behaves as declared | target-specific matched scenario | `PHYSICAL` | supported subset works and inaccessible authority is not claimed | platform qualification bundle | M2+ |
 
 ## Test coverage view
@@ -225,7 +258,8 @@ CODE / SYSTEM PATHS                              USER / OPERATOR FLOWS
   +-- slow consumer / gap visibility                +-- unsupported capability -> typed error
           |
 [PLANNED M1] Robot Protocol
-  +-- lease / timing / capability admission
+  +-- whole_body lease / timing / capability admission
+  +-- Protobuf golden compatibility / major rejection
   +-- requested -> admitted evidence
           |
 [PLANNED M1] bounded RT IPC
@@ -237,7 +271,9 @@ CODE / SYSTEM PATHS                              USER / OPERATOR FLOWS
 [PLANNED M1] MuJoCo Plant
   +-- step / reset / injected fault
           |
-[PLANNED M1] recording and executable replay
+[PLANNED M1a] bounded evidence / post-run MCAP export
+
+[PLANNED M1c] live recording and executable replay
   +-- omitted state / clock bypass
   +-- corrupt log / incompatible build
 
@@ -249,7 +285,7 @@ Implementation modules that should retain small inline ASCII diagrams once code 
 - lifecycle/generation types: reset and restart state transitions;
 - RT/runtime IPC: header validation, generation handshake and overwrite/drop behavior;
 - runtime admission: requested -> admitted -> rejected decision flow;
-- replay service: record -> checkpoint -> restore -> re-execute -> compare;
+- M1c replay service: record -> checkpoint -> restore -> re-execute -> compare;
 - adapter boundary: vendor input/output mapping and last observable evidence stage.
 
 ## Performance Envelope
@@ -261,7 +297,7 @@ profile:
   CPU / kernel / scheduler / simulator / build
   graph and message payloads
   client/subscriber count
-  recorder mode and storage
+  evidence mode; recorder mode and storage only when recording is in scope
   warm-up, duration, repetitions
 
 RT cycle:
@@ -276,7 +312,7 @@ simulation:
   step rate, real-time factor, state/event tolerance and repeatability
 ```
 
-The representative Copper/minimal spike starts at 1 kHz, but the rate is a test workload, not a permanent requirement for every embodiment.
+The representative graph starts at 1 kHz, but the rate is a test workload, not a permanent requirement for every embodiment. M1a development-machine results characterize the implementation; M1b derives the final mailbox budget from the representative board's end-to-end 1 ms cycle measurements. Copper and live-recorder deltas are measured later in M1c.
 
 ## Milestone 2: first accessible robot boundary
 
@@ -320,14 +356,13 @@ This milestone may begin from different layers. It does not require rewriting th
 | Command admission | old timeline, deadline, mode, or sequence | `reset-with-inflight-command` plus unit cases | rejected with attributable decision evidence |
 | RT IPC | producer crash, overflow, corrupt/incompatible header | `ipc-overflow-generation-abi` | motion remains inhibited; counters/reason visible |
 | Control/Plant | invalid state or missed cycle | MuJoCo fault scenarios | SA-3 safe behavior and structured event; lower safety required on hardware |
-| Model activation | wrong joint/frame/artifact identity | validator and activation tests | fail before actuation with mismatch reason |
+| Model activation | duplicate/missing joint, unknown/cyclic frame, invalid unit, non-finite value, actuator mismatch or native-asset identity mismatch | `model-validator-fixtures` | fail before actuation with a typed reason |
 | Replay | omitted state, nondeterminism, corruption, incompatible build | `stateful-replay-negative-cases` | mismatch/rejection; never silent success |
 | Recorder | queue saturation, dirty-page pressure, full disk | `recorder-pressure` | bounded degradation and loss counters; no false completeness |
-| Vendor adapter | unsupported feature or hidden vendor authority | `adapter-contract-fixture` | typed unsupported result and bounded evidence claim |
-| Artifact verifier | altered, unsigned, incompatible or rollback-disallowed input | `signed-artifact-negative-cases` | preserve current state and audit rejection |
+| Vendor adapter | unsupported feature or hidden vendor authority | `interface-profile-conformance` | typed unsupported result and bounded evidence claim |
 | Protocol attack | malformed/replayed/excessive client traffic | deferred to M4 by decision | M1 makes no production-security claim; Threat Model preserves required invariant |
 
-No M1 failure mode is both silently handled and claimed as verified without a planned test. Deferred security cases block a production-security claim, not the no-hardware architecture demonstration.
+No M1 failure mode is both silently handled and claimed as verified without a planned test. Deferred security cases block a production-security claim, not the no-robot architecture demonstration.
 
 ## What already exists
 
@@ -336,7 +371,7 @@ The repository currently contains research and architecture documents only: no w
 | Need | Existing reference or implementation | Soma-owned remainder |
 | --- | --- | --- |
 | Physics/SIL | MuJoCo, PX4/ArduPilot SITL patterns | Plant, time/reset, command lineage and conformance semantics |
-| RT graph and replay | Copper | adoption spike, Plant/authority integration and honest replay manifest |
+| RT graph and replay | Copper | M1c adoption spike, Plant/authority integration and honest replay manifest |
 | Distributed transport | Zenoh; Cyclone DDS gateway ecosystem | Robot Protocol semantics, lease/timing/capability policy |
 | Local bulk IPC | iceoryx2 candidate | measured choice and payload lifetime policy |
 | Evidence container | MCAP and ecosystem tools | execution state/checkpoints, identities and completeness rules |
@@ -349,13 +384,13 @@ Soma does not need to own a general middleware, universal model language, automo
 
 ## NOT in scope for Milestone 1
 
-- physical robot, actuator, fieldbus, E-stop, STO, brake, power, thermal, secure-boot, or hard-RT qualification: no hardware exists;
+- physical robot, actuator, fieldbus, E-stop, STO, brake, power, thermal, secure-boot, or actuation hard-RT qualification: M1b's representative compute board does not provide physical-system evidence;
 - a universal URDF/MJCF/USD compiler or lossless conversion layer: V0 validates native assets;
-- complete G1/G2 emulators or vendor-internal behavior: adapter fixtures validate only Soma's boundary;
+- complete vendor emulators or vendor-internal behavior: `InterfaceProfile` fixtures validate only Soma's boundary;
 - a mandatory Zenoh/Cyclone bake-off: comparison is trigger-based;
 - independent update/health/observer/recorder daemons: these start as `robot-runtime` modules;
 - full protocol security abuse, penetration, fuzz, DoS, production key, or physical debug testing: deferred to M4;
-- Isaac, Genesis, HIL, batch-RL infrastructure, ROS distribution matrix, fleet rollout, cloud service, long-term retention, or UI tooling;
+- Isaac, Genesis, device/actuator HIL rigs, batch-RL infrastructure, ROS distribution matrix, fleet rollout, cloud service, long-term retention, or UI tooling;
 - universal plugin ABI, cross-version internal RT IPC compatibility, or multi-repository integration platform;
 - safety certification or claims about inaccessible vendor safety and lower-stack implementation.
 
@@ -365,21 +400,24 @@ Contracts are a short sequential gate; implementation then separates into bounde
 
 | Step | Modules | Depends on |
 | --- | --- | --- |
-| Foundation | shared types, model fixtures, scenario IDs, release identity, RT/runtime IPC (D-05) | M0 decisions |
+| Foundation | shared types, Protobuf schema, model fixtures, lease/timing/supervisor contracts, scenario IDs, release identity, RT/runtime IPC (D-05) | M0 decisions |
 | Lane A: control and simulation | `robot-rt`, Plant, MuJoCo, minimal native execution graph, RT benchmark | Foundation |
 | Lane B: runtime and SDK | `robot-runtime`, protocol, Rust/Python client | Foundation |
-| Lane C: execution evidence | Copper-vs-native comparison (D-09), replay, MCAP, recorder | Lane A's minimal graph, not Foundation directly |
+| Lane C (M1c): execution evidence | Copper-vs-native comparison (D-09), stateful replay and live recorder | M1a's minimal graph |
 | Lane D: adapter conformance | adapter fixtures, `InterfaceProfile`, capability cases | Foundation |
-| Integration | end-to-end recovery, reset, overload, Performance Envelope, packaging | A + B + C + D |
+| M1a integration | end-to-end command, reset, contract tests and post-run MCAP export | A + B |
+| M1b qualification | recovery, adapter conformance, target-board envelope and packaging | M1a + D |
 
 Execution order:
 
 ```text
-Foundation (shared types, RT/runtime IPC)
+Foundation (shared contracts, RT/runtime IPC)
    |
-   +--> Lane A: minimal native graph -----+--> Lane C: Copper comparison --+
-   +--> Lane B ---------------------------|                                +--> integration and M1 qualification
-   +--> Lane D ---------------------------+--------------------------------+
+   +--> Lane A: minimal native graph --+
+   +--> Lane B ------------------------+--> M1a --> M1b qualification
+   +--> Lane D -----------------------------------+
+                                         |
+                                         +--> M1c: recorder / Copper / replay
 ```
 
 RT/runtime IPC (D-05) moved into Foundation rather than its own lane: M1a's
@@ -397,39 +435,42 @@ Foundation checkpoint.
 
 ## Implementation Tasks
 
-- [x] **T0 (P0)** — Repo hygiene — add LICENSE, `.gitignore`, and baseline doc lint/link-check CI ahead of the first workspace commit.
-  - Surfaced by: Architecture Review — T2 assumes CI configuration exists; a public repository about to receive a Rust workspace had neither a license nor a `.gitignore`.
+- [x] **T0 (P0)** — Repo hygiene — add LICENSE, `.gitignore`, and architecture diagrams ahead of the first workspace commit.
+  - Surfaced by: Architecture Review — a public repository about to receive a Rust workspace had neither a license nor a `.gitignore`.
   - Files: `LICENSE`, `.gitignore`, `docs/architecture/diagrams/`.
   - Verify: LICENSE present; `cargo build` artifacts do not appear in `git status`; documentation links resolve.
-- [ ] **T0b (P0)** — Target-compute baseline (D-20) — measure 1 kHz max latency, allocation-free execution, and SPSC-mailbox crash behavior on a representative embedded board.
-  - Surfaced by: Architecture Review — the two-process Linux/PREEMPT_RT assumption the whole design rests on was going untested through all of M1 because "no hardware" was read as "no robot," when it does not require a robot to test.
-  - Files: `docs/measurements/`, a standalone `cyclictest`/allocation-detector harness (not part of the `robot-rt` workspace).
-  - Verify: 24 h soak reports **max** latency (not p99) on the target board; SPSC ring survives `SIGKILL` on either side; results published and referenced by D-05 and D-09 thresholds.
+- [ ] **T0b (P0)** — Development-machine characterization (D-20) — measure the provisional SPSC and 1 kHz loop without blocking M1a on target selection.
+  - Surfaced by: Architecture Review — implementation feedback is needed early, while physical qualification belongs after a representative board is selected.
+  - Files: benchmark/allocation/crash harness and local results.
+  - Verify: latency distributions, allocations, overflow, ABI/generation rejection and `SIGKILL` behavior are reported as development evidence only.
 - [ ] **T1 (P1)** — Decisions — record P0 ADRs that have evidence and write bounded protocols for experiment-dependent decisions.
   - Surfaced by: Architecture Review — research and decisions lacked a consistent convergence path.
   - Files: `docs/decisions/`, `docs/plans/decision-register.md`, relevant Deep Research.
   - Verify: every P0 row is accepted, provisional with trigger, or has a measurable experiment; spike results later close their own ADRs.
-- [ ] **T2 (P1)** — Foundation — create the minimal workspace, shared contracts, model fixtures, validator and candidate release identity.
+- [ ] **T2 (P1)** — Foundation — create the minimal workspace, Protobuf public schema, shared contracts, model fixtures, validator, supervisor harness and candidate release identity.
   - Surfaced by: Scope and Code Quality Review — runnable spine must precede the broad long-term module surface.
   - Files: initial workspace modules and CI/build configuration.
-  - Verify: clean build, validator cases, two embodiment fixtures, no ROS/core dependency.
-- [ ] **T3 (P1)** — RT/SIM — implement the representative control graph and MuJoCo Plant with virtual time, including a synthetic cadence source exercising `command_staleness_policy` (D-19).
+  - Verify: clean build; schema goldens and major-version rejection; lease/timing/supervisor cases; model positive fixtures and all named negative fixtures; no ROS/core dependency.
+- [ ] **T3 (P1)** — RT/SIM — implement the representative control graph and MuJoCo Plant with virtual time, including a synthetic cadence source exercising command TTL and `control_mode -> SafeBehavior` (D-19).
   - Surfaced by: Architecture Review — hardware-independent Plant/ControlCore claim needs executable evidence; the policy-to-RT boundary (D-19) had no executable evidence at all.
-  - Files: `robot-rt`, simulation modules, scenarios, `SafetyProfile` staleness-policy field.
+  - Files: `robot-rt`, simulation modules, scenarios, and the frozen D-19 `SafetyProfile` fields.
   - Verify: lockstep/reset/fault tests, allocation detector, RT Performance Envelope, and the `cadence-source-decimation` scenario.
 - [ ] **T4 (P1)** — Runtime/SDK — implement minimal protocol, leases, capabilities, lifecycle, Zenoh transport and Python path.
   - Surfaced by: Test Review — normal and recovery SDK flows cross all critical components.
   - Files: `robot-runtime`, protocol/client modules, Python package.
   - Verify: SDK roundtrip, reconnect, lease loss, slow consumer and runtime restart scenarios.
-- [ ] **T5 (P0)** — RT/runtime IPC (Foundation) — compare the minimal SPSC mailbox against a mature community option using the D-05 decision threshold, then land one bounded mailbox.
-  - Surfaced by: Code Quality and Performance Review — preserve behavior without committing to unnecessary custom infrastructure; Architecture Review — M1a requires two separate processes, so this belongs in Foundation, not an optional parallel lane.
+- [ ] **T5 (P0)** — RT/runtime IPC (Foundation) — land a provisional minimal SPSC mailbox and preserve the bounded mailbox contract.
+  - Surfaced by: Code Quality and Performance Review — M1a requires two separate processes, so this belongs in Foundation; target evidence later decides whether the implementation remains appropriate.
   - Files: RT/runtime IPC module and benchmark.
-  - Verify: overflow, generation, ABI, restart, allocation and latency evidence against the D-20 target-compute baseline.
-- [ ] **T6 (P2)** — Replay/Recorder (M1c) — qualify executable stateful replay and recorder interference. May conclude with a deferral decision rather than a working implementation; see M1c.
+  - Verify: overflow, generation, ABI, restart, allocation and development-machine latency characterization; M1b sets the final target budget.
+- [ ] **T5b (P1)** — Target qualification (M1b, D-20) — run `cyclictest` and the end-to-end 1 kHz cycle on a selected representative board for 24 hours.
+  - Files: qualification harness and `docs/measurements/` report.
+  - Verify: maximum latency, misses, allocations and process-failure behavior are reported; the final D-05 budget is derived from the measured 1 ms cycle.
+- [ ] **T6 (P2)** — Execution evidence (M1c) — qualify live recording, decide Copper adoption and attempt executable stateful replay. May conclude with a deferral decision rather than a working replay implementation.
   - Surfaced by: Test and Performance Review — message playback alone cannot support deterministic replay or RT isolation claims; `runtime-and-platform-reference-projects.md` shows replay completeness is an application contract, not a framework guarantee.
   - Files: execution/replay, MCAP and runtime recording modules.
   - Verify: valid replay plus omitted-state, clock-bypass, corrupt-log, incompatible-build and storage-pressure cases; or a recorded ADR explaining what is deferred and why.
-- [ ] **T7 (P2)** — Adapter boundary — build the hardware-free G1/G2-class conformance fixture.
+- [ ] **T7 (P2)** — Adapter boundary — build the vendor-neutral `InterfaceProfile` conformance fixture.
   - Surfaced by: Test Review — hardware independence should be exercised before hardware arrives.
   - Files: adapter contract fixtures and conformance scenarios.
   - Verify: classification, mappings, capabilities, typed errors and evidence limits.
@@ -442,7 +483,7 @@ No separate `TODOS.md` items are created by this review. Deferred work already h
 
 ## Definition of success
 
-M1a succeeds when the separate-process Python-to-MuJoCo path runs with command lineage, correct reset/timeline behavior, and a synthetic cadence source exercising `command_staleness_policy`. Milestone 1 succeeds at M1b when one versioned, installable no-hardware candidate also demonstrates recovery, boundedness, recorder isolation, and hardware-free vendor-boundary conformance. M1c succeeds when recorded sessions replay honestly with all four negative cases failing visibly — or, if that proves harder than scoped, when the plan states plainly that V0 replay is message-level only and stateful replay is deferred with a named trigger. It must be clear what was measured, what failed visibly, what remains provisional, and what has not been physically or security qualified.
+M1a succeeds when the separate-process Python-to-MuJoCo path runs with the frozen schema, lease, timing, supervisor, model and policy-boundary contracts. M1b succeeds when one installable Linux x86_64 candidate demonstrates recovery, generic adapter conformance and representative-board 24-hour qualification. M1c succeeds when live recording is bounded, Copper adoption is decided and recorded sessions replay honestly with all four negative cases failing visibly — or when stateful replay is explicitly deferred and V0 is limited to message-level replay. Every checkpoint states what was measured, what failed visibly, what remains provisional and what has not been physically or security qualified.
 
 The longer plan succeeds when those contracts survive later vendor hardware, owner-controlled lower layers, additional simulators, and fleet operations without hiding inaccessible authority or replacing the runnable spine with a platform-specific fork.
 
@@ -452,7 +493,7 @@ M0 documentation has converged: canonical vocabulary is consistent across
 architecture, safety, and threat-model documents, and every P0 decision in
 the [Decision and Research Register](decision-register.md) is either
 accepted, provisional with a reversal trigger, or assigned a bounded
-experiment. `D-05`, `D-09`, `D-19`, and `D-20` remain `Experiment required` /
-`Research ready` by design — implementation of T3–T5 is expected to close
+experiment. `D-05`, `D-09`, and `D-20` remain experiment-backed by design —
+implementation of T3–T6 is expected to close
 them, not the other way around. This plan is ready for M1a implementation;
 it is not a claim that every open question has already been answered.
