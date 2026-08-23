@@ -2,9 +2,9 @@
 
 **A system foundation for embodied intelligence.**
 
-Soma explores a common software and systems foundation for Physical AI that can
-span different robotic embodiments, from wheeled mobile robots to legged robots
-and future platforms.
+Soma is building a common software and systems foundation for Physical AI. The
+active bootstrap is intentionally narrower: one fixed Reachy Mini profile in
+MuJoCo and on Reachy Mini Lite hardware.
 
 The project focuses on the layers beneath application intelligence: hardware abstraction, real-time control, runtime and communication, simulation, safety, deployment, observability, OTA, and ecosystem adapters.
 
@@ -32,7 +32,22 @@ More diagrams and their relationship to the prose: [`docs/architecture/diagrams/
 
 ## Status
 
-Soma is currently in the **research and architecture** phase. The repository will evolve from design documents and comparative research into a working reference implementation validated across simulation and real robot embodiments.
+The Reachy simulation path is executable. A thin Python client sends the fixed
+9-actuator Protobuf command over loopback Zenoh to `robot-runtime`, which
+bridges through a bounded local mailbox to `robot-rt` and the pinned MuJoCo
+model. Native Lite work remains gated by the read-only N0 probe and physical
+actuation authorization N1.
+
+Run the complete simulation acceptance scenario:
+
+```bash
+cd python && uv sync && cd ..
+scripts/run-sim-scenario
+```
+
+The first run downloads the pinned Rust and Python dependencies plus MuJoCo
+3.9.0. The scenario proves state delivery, actuator movement, command expiry to
+measured-position hold, reset timeline change, and old-timeline rejection.
 
 ## Design direction
 
