@@ -25,6 +25,7 @@ Architecture documents should stay concise and opinionated. Deep Research is int
 
 ### Robot model, simulation, and safety
 
+- [`fast-open-robot-reference-path.md`](fast-open-robot-reference-path.md) — Reachy Mini-only simulation/native decision, direct Dynamixel feasibility evidence, official-stack comparison, and prior candidate research.
 - [`robot-model-manifest-calibration.md`](robot-model-manifest-calibration.md) — product model, instance inventory, calibration, control and SafetyProfile boundaries, simulator overlays, hashes, and PolicyBundle compatibility.
 - [`simulation-architecture.md`](simulation-architecture.md) — MuJoCo, Isaac, Genesis, SIL/HIL, simulation time, model identity, PolicyBundle, and conformance testing.
 - [`safety-and-fault-architecture.md`](safety-and-fault-architecture.md) — SA-0 through SA-5 safety authority, SafetyProfile governance, standards landscape, safe behavior, fault lifecycle, watchdog hierarchy, and research-mode controls.

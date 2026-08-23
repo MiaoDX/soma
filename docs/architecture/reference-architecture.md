@@ -129,7 +129,12 @@ This separation prevents simulation-only capabilities from leaking into deployab
 
 ## Runtime separation
 
-`robotd` is the supervised deployment unit and on-robot service identity, not a monolithic-process requirement. Its baseline deployment consists of `robot-rt`, `robot-runtime`, and supervision that owns startup order, health monitoring, restart policy, and coordinated lifecycle transitions. Foundation defines those externally visible semantics; M1a exercises them with a test harness and M1b deploys them as systemd units. Soma does not build a custom supervisor daemon in M1.
+`robotd` is the future supervised deployment unit and on-robot service identity,
+not a monolithic-process requirement. Its baseline deployment consists of
+`robot-rt`, `robot-runtime`, and supervision that owns startup order, health
+monitoring, restart policy, and coordinated lifecycle transitions. The first
+runnable slice implements the two process roles but deliberately defers the
+supervisor and recovery contract until the happy path is stable.
 
 ### `robot-rt`
 
@@ -153,10 +158,10 @@ Constraints:
 
 ### `robot-runtime`
 
-Responsibilities:
+Eventual responsibilities:
 
 - public protocol;
-- source attribution and, after the M1 development profile, identity and authentication;
+- source attribution and, after the local development profile, identity and authentication;
 - control leases and arbitration;
 - actions and long-running tasks;
 - capability discovery;
@@ -165,7 +170,13 @@ Responsibilities:
 - external communication;
 - OTA and observability coordination.
 
-The two processes communicate through bounded shared-memory mailboxes. State publication may drop stale samples rather than block the real-time producer. Commands must carry timing-mode/local-deadline, sequence, Plant-timeline, runtime-generation, and ownership metadata. Loss or restart of `robot-runtime` must be handled by local `robot-rt` and lower safety authorities without unexpected motion.
+The two processes communicate through bounded shared-memory mailboxes. State
+publication may drop stale samples rather than block the real-time producer.
+The first slice carries sequence, local TTL, and Plant timeline. Timing modes,
+runtime generation, ownership metadata, and restart recovery are added when the
+corresponding behavior is implemented. In the eventual deployed contract, loss
+or restart of `robot-runtime` must be handled by local `robot-rt` and lower
+safety authorities without unexpected motion.
 
 ## Communication planes
 
@@ -177,7 +188,11 @@ Direct calls and fixed-size structs only.
 
 ### RT ↔ runtime plane
 
-Bounded shared-memory mailboxes with fixed-layout messages. M1a uses a provisional minimal SPSC implementation and characterizes it on the development machine. M1b derives the final IPC budget from a representative board's end-to-end 1 ms control-cycle measurements; a mature community implementation is compared only if that envelope or maintenance evidence requires it.
+Bounded shared-memory mailboxes with fixed-layout messages. The first runnable
+slice uses a provisional minimal SPSC implementation and performs only a
+development-machine smoke measurement. Recovery semantics, cross-version ABI,
+target budgets, and dependency comparisons reopen when measured load or target
+hardware makes them concrete.
 
 ### Local bulk-data plane
 
@@ -196,28 +211,33 @@ Rationale:
 
 Cyclone DDS remains relevant when native DDS interoperability is a product requirement, especially for ROS 2 or Unitree-style ecosystems.
 
-V0 does not require a transport bake-off before implementation. A comparative benchmark is triggered if Zenoh misses a declared Performance Envelope, creates an operational problem, or native DDS interoperability becomes a product requirement.
+The first slice does not require a transport bake-off. A comparative benchmark
+is triggered if Zenoh misses a measured need, creates an operational problem,
+or native DDS interoperability becomes a product requirement.
 
 ## Public Robot Protocol
 
 The public contract should be independent of ROS 2. Protobuf is the provisional
-V0 source of truth for its network schema; Zenoh and later gateways are
-bindings, not competing semantic definitions. Golden payloads protect V0
-compatibility and peers with an unsupported major version are rejected. This
-does not replace the RT plane's fixed-layout messages.
+wire schema and Zenoh the first loopback binding. The initial schema contains
+only the happy-path command, state, and reset messages and carries no
+compatibility promise. Compatibility and version negotiation begin when Soma
+has a released artifact or external consumer. This does not replace the RT
+plane's fixed-layout messages.
 
 It should explicitly model:
 
 - **State streams** — joint state, IMU, odometry, power, health;
 - **Command streams** — velocity, low-level research commands, teleoperation;
-- **RPC** — short transactions and configuration;
-- **Actions** — cancellable long-running operations with progress;
+- **RPC** — short transactions and configuration when a concrete workflow needs them;
+- **Actions** — cancellable long-running operations with progress when a concrete workflow needs them;
 - **Events** — faults, lifecycle transitions, lease loss, safety intervention;
-- **Leases** — M1 has one exclusive `whole_body` lease with acquire, renew, release, expiry, conflict and stale-generation semantics; resource graphs are deferred;
-- **Capabilities** — feature and hardware discovery;
-- **Version negotiation** — protocol and schema compatibility.
+- **Leases** — ownership and arbitration once more than one command source exists;
+- **Capabilities** — feature and hardware discovery once implementations vary;
+- **Version negotiation** — protocol and schema compatibility once an external contract exists.
 
-Commands should include at least:
+The first slice includes only immediate commands with a local TTL, sequence,
+and Plant timeline. Richer timing and ownership metadata are added when their
+trigger exists. The eventual command contract should include at least:
 
 ```text
 robot_id

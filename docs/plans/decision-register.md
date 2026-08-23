@@ -1,86 +1,46 @@
-# Decision and Research Register
+# Current Decision Register
 
-> Status: Living planning index. Keep entries short; evidence belongs in Deep Research, decisions in ADRs, and implementation detail in milestone plans.
+> Status: Thin index for decisions that constrain the current implementation.
+> Research documents preserve the wider design space; this register does not
+> track decisions for work that has no active trigger.
 
-## Decision path
+## Rule
 
-```text
-Decision Register
-      |
-      v
-Deep Research / community evidence
-      |
-      v
-bounded experiment or spike
-      |
-      v
-ADR: accept, reject, or defer
-      |
-      v
-implementation + verification evidence
-```
+A decision belongs here only when changing it would alter the current happy
+path or the next implementation step. Reversible implementation details remain
+in code and tests. Future product, hardware, security, release, replay, and
+fleet choices return only when their trigger exists.
 
-Not every decision needs every step. A reversible implementation default may begin as `Provisional`; a safety, time, public-contract, or trust-boundary decision requires explicit evidence and an ADR before it is treated as stable.
+## Current Decisions
 
-## Status and priority
+| ID | Decision | Current posture | Proof or reversal trigger |
+| --- | --- | --- | --- |
+| D-02 | Control/Plant boundary | One `ControlCore` drives a bounded Plant contract; MuJoCo is the first Plant | The fixed-step movement, timeout, and reset tests must use this boundary |
+| D-04 | Runtime boundary | Keep separate `robot-runtime` and `robot-rt` processes in the first slice | Revisit only if the end-to-end path proves the boundary has no useful responsibility split |
+| D-05 | RT/runtime IPC | Start with a minimal bounded SPSC command mailbox and state mailbox | Compare or replace only after measured load, recovery needs, or maintenance cost justify it |
+| D-06 | Client transport | Use loopback Zenoh for the first end-to-end path | Compare only for a demonstrated envelope, operations, or interoperability problem |
+| D-07 | Time and reset | Immediate commands carry TTL; reset creates an opaque Plant timeline | Add tick-target or synchronized time only for a concrete controller requirement |
+| D-14 | Local actuation and security scope | Local physical experiments require the approved N1 actuation gate; no cryptographic mechanism or production-security claim | Reopen security before non-local control, external distribution, or OTA; N1 governs local physical motion |
+| D-19 | Policy-to-control fallback | The command consumer owns TTL expiry and selects `SafeBehavior` | Revisit interpolation and action chunks when a real policy workload exists |
+| D-21 | Public wire schema | Use a minimal Protobuf command/state/reset schema without compatibility guarantees | Freeze compatibility only when an artifact is released or an external consumer exists |
+| D-22 | Robot and hardware path | Use one pinned Reachy Mini profile with two Plants: MuJoCo simulation and Reachy Mini Lite native hardware; native means Soma-owned host-to-servo control without the Reachy daemon/controller wheel; official simulation and hardware are comparison targets | Reopen if N0 finds an unexpected protocol/configuration dependency, or after the two-profile path completes |
 
-- **Accepted** — current architecture; change through an ADR.
-- **Provisional** — usable default with a named reversal trigger.
-- **Research ready** — evidence exists; ADR or experiment is next.
-- **Experiment required** — a bounded spike must answer the question.
-- **Deferred** — intentionally outside the current implementation milestone.
+## Deliberately Unregistered
 
-Priority describes decision order, not eventual product importance:
+The following subjects have research coverage but no current implementation
+decision: universal model metadata, vendor adapters, replay frameworks, durable
+recording, release identity, packaging matrices, target qualification,
+cryptographic trust and OTA, ROS integration, additional simulators, fleet
+operations, and owner-controlled hardware layers.
 
-- **P0** — blocks the no-robot runnable spine.
-- **P1** — needed before a real platform or release claim.
-- **P2** — later hardware, fleet, or qualification work.
+Their evidence remains under [`docs/deep-research/`](../deep-research/README.md).
+Their re-entry conditions are listed in the
+[`Explicitly Deferred`](bootstrap-plan.md#explicitly-deferred) table.
 
-## Register
+## Discipline
 
-| ID | Priority | Question | Current posture | Next evidence / stop condition |
-| --- | --- | --- | --- | --- |
-| D-01 | P0 | Product layers and safety-authority vocabulary | Accepted: L-2..L5 and SA-0..SA-5 remain separate | Maintain conformance across architecture docs and first code modules |
-| D-02 | P0 | Hardware-independent control boundary | Accepted: one `ControlCore` and bounded Plant contract for MuJoCo/SIL and later hardware | V0 MuJoCo vertical slice; no embodiment-specific public branch |
-| D-03 | P0 | Current implementation direction without robot hardware | Accepted: top-down from MuJoCo plus a vendor-neutral `InterfaceProfile` contract fixture | Runnable spine plus generic adapter conformance; real vendor mapping begins at M2 |
-| D-04 | P0 | Runtime process and supervisor boundary | Accepted: supervised `robot-rt` + `robot-runtime`; Foundation defines startup, health, restart and lifecycle semantics | M1a uses a test harness; M1b uses systemd; no custom supervisor daemon |
-| D-05 | P0 | RT/runtime IPC implementation | Provisional: minimal SPSC preserves the bounded mailbox behavior for M1a | Characterize on the development machine; derive the final budget from D-20's representative-board end-to-end 1 ms cycle, then compare a mature option only if the measured envelope or maintenance cost requires it |
-| D-06 | P0 | Distributed transport | Provisional: Zenoh-first; Cyclone DDS/gRPC remain gateways | Compare only if Zenoh misses its envelope, creates an operational problem, or native DDS becomes required |
-| D-07 | P0 | Time and lifecycle semantics | Accepted for M1: timeline/generation split plus `ImmediateTiming` and `TickTargetTiming`; synchronized scheduling is deferred | Time ADR plus reset/restart/stale-command cases; `ScheduledTiming` returns typed unsupported until a synchronized-clock requirement exists |
-| D-08 | P0 | V0 robot model strategy | Accepted: minimal `ProductModelManifest` + backend-native assets + validator | Validate native MJCF and one second fixture; no universal compiler |
-| D-09 | P0 | RT execution/replay framework | Experiment required: Copper-hosted vs minimal Soma-native representative graph, compared *after* the minimal native graph exists (Lane A), not in parallel with it | V0 decision threshold: if the minimal native graph already satisfies every M1a pass condition, treat Copper as design reference only and defer adoption to M1c; adopt only if it clears every criterion in the Copper adoption spike (`runtime-and-platform-reference-projects.md`) without changing the public Robot Protocol |
-| D-10 | P0 | System verification traceability | Accepted: lightweight claim-to-evidence matrix | Each milestone exit claim has a scenario, pass condition, evidence level, and retained artifact |
-| D-11 | P0 | Performance requirements without target hardware | Accepted: define Performance Envelopes, not universal numbers | Record workload/platform identity and distributions for every spike |
-| D-12 | P1 | Commercial platform boundary | Accepted: classify as `NativePlantAdapter` or `ManagedMotionGateway` using a vendor-neutral `InterfaceProfile` fixture | Generic contract tests now; real vendor mappings and physical qualification only when hardware exists |
-| D-13 | P1 | Release integration identity | Accepted: one maturity-bearing `ReleaseManifest`; no parallel integration artifact | Candidate manifest pins source, toolchain, artifacts, tests, exclusions, and evidence |
-| D-14 | P1 | Security scope | Accepted: M1 is loopback-only `insecure-local-dev` and implements no cryptographic mechanism | Reopen authentication, TLS, signing, trust/update mechanisms, rotation and revocation before non-local control, external distribution, physical actuation or OTA |
-| D-15 | P1 | Python packaging and target matrix | Accepted for V0: Linux x86_64 only | Build/install the x86_64 candidate; add aarch64 only after target selection |
-| D-16 | P2 | First physical platform | Deferred until accessible hardware and project need are known | Evaluate exposed boundary, licensing, safety authority, model assets, and recovery before selection |
-| D-17 | P2 | Owner-controlled L0/L-1/L-2 path | Deferred, retained as a long-term completeness requirement | Resume with own hardware or an accessible component bench; qualify only observed layers |
-| D-18 | P2 | Fleet OTA, production trust, and long-term operations | Deferred after runnable spine and target platform | Product-specific hazard, security, rollout, recovery, and retention evidence |
-| D-19 | P0 | Policy/inference to RT interface | Accepted for M1a: freeze interpolation owner, command TTL, `control_mode -> SafeBehavior`, and command lineage; see [`policy-runtime-interface.md`](../deep-research/policy-runtime-interface.md) | Exercise with a synthetic cadence source; defer action chunking and observation alignment until a real policy workload exists |
-| D-20 | P0 | Compute latency evidence | Experiment required in two stages: M1a development-machine characterization is provisional; M1b representative-board evidence is qualification | In M1b run `cyclictest` and the end-to-end 1 kHz cycle for 24 h, report max latency/misses/allocations and either-side `SIGKILL`, then derive D-05's final budget from the measured 1 ms cycle |
-| D-21 | P0 | V0 public network schema | Provisional: Protobuf is the public Robot Protocol source of truth; transport bindings do not own semantics | Golden compatibility tests plus one major-version rejection scenario; fixed-layout RT messages remain separate and bulk payloads use descriptors/handles |
-
-## Deep-research coverage
-
-| Direction | Primary research | Remaining decision work |
-| --- | --- | --- |
-| Runtime and RT | `rust-realtime-runtime.md`, `runtime-and-platform-reference-projects.md` | D-05, D-09 |
-| Time and replay | `time-synchronization-and-determinism.md` | D-07 ADR and V0 scenario |
-| Simulation consistency | `simulation-architecture.md` | MuJoCo conformance and tolerance evidence |
-| Protocol and middleware | `robot-protocol-and-data-model.md`, `middleware-and-ipc.md` | D-06 transport confirmation; D-21 schema compatibility evidence |
-| Model and calibration | `robot-model-manifest-calibration.md` | D-08 validator spike |
-| Safety and security | `safety-and-fault-architecture.md`, `security-threat-model.md` | Target-specific hazard/security decisions |
-| Hardware and fieldbus | `l0-hal-fieldbus.md`, `physical-ai-system-landscape.md` | D-16 and D-17 when hardware exists |
-| OTA and evidence | `ota-and-observability.md` | D-13 candidate manifest, later D-18 |
-| Policy/inference interface | `policy-runtime-interface.md` | D-19 M1a contract, then deferred chunking/alignment when a real workload exists |
-| Compute latency | none yet; D-20 produces it | M1a development characterization, then M1b 24-hour representative-board qualification |
-
-## Register discipline
-
-- Do not add component backlog items here; put implementation work in the bootstrap plan.
-- Do not duplicate research conclusions; link the evidence.
-- Every `Provisional` entry has a measurable reversal trigger.
-- Every `Deferred` entry says what reopens it.
-- Close an experiment with an ADR, including negative results; do not leave a permanent spike branch as the decision record.
+- Do not add a row merely because a topic matters eventually.
+- Do not write an ADR for a reversible default with no external consumer.
+- Close a current experiment by updating the row or recording a durable ADR.
+- Remove a row when its implementation scope is deferred; Git history retains
+  the previous analysis.
