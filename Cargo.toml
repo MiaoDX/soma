@@ -1,6 +1,11 @@
 [workspace]
 resolver = "2"
-members = ["crates/soma-core", "crates/soma-sim"]
+members = [
+    "crates/soma-core",
+    "crates/soma-protocol",
+    "crates/soma-runtime",
+    "crates/soma-sim",
+]
 
 [workspace.package]
 edition = "2021"

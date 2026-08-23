@@ -19,6 +19,8 @@ pub const ACTUATOR_NAMES: [&str; ACTUATOR_COUNT] = [
     "right_antenna",
     "left_antenna",
 ];
+pub const REACHY_SCENE_PATH: &str =
+    concat!(env!("CARGO_MANIFEST_DIR"), "/assets/reachy-mini/scene.xml");
 
 #[derive(Debug)]
 pub enum SimError {
@@ -117,6 +119,21 @@ impl ReachySimPlant {
             joint.view(&self.data).qpos[0] as f32
         })
     }
+
+    pub fn validate_positions(&self, positions_rad: ActuatorPositions) -> Result<(), SimError> {
+        for (index, value) in positions_rad.into_iter().enumerate() {
+            let [min, max] = self.limits[index];
+            if !value.is_finite() || (self.limited[index] && (value < min || value > max)) {
+                return Err(SimError::TargetOutOfRange {
+                    name: ACTUATOR_NAMES[index],
+                    value,
+                    min,
+                    max,
+                });
+            }
+        }
+        Ok(())
+    }
 }
 
 impl Plant for ReachySimPlant {
@@ -135,17 +152,7 @@ impl Plant for ReachySimPlant {
     }
 
     fn apply_positions(&mut self, positions_rad: ActuatorPositions) -> Result<(), Self::Error> {
-        for (index, value) in positions_rad.into_iter().enumerate() {
-            let [min, max] = self.limits[index];
-            if !value.is_finite() || (self.limited[index] && (value < min || value > max)) {
-                return Err(SimError::TargetOutOfRange {
-                    name: ACTUATOR_NAMES[index],
-                    value,
-                    min,
-                    max,
-                });
-            }
-        }
+        self.validate_positions(positions_rad)?;
         self.data
             .ctrl_mut()
             .copy_from_slice(&positions_rad.map(f64::from));
