@@ -84,7 +84,13 @@ robotd supervisor
 
 The supervisor owns startup order, health monitoring, restart policy, and coordinated lifecycle transitions. It must not silently turn a `robot-rt` failure into unexpected motion after restart. Products may implement the supervisor with the init system or a small dedicated process as long as the externally observed lifecycle and recovery rules are equivalent.
 
-`robot-rt` and `robot-runtime` communicate through bounded shared memory and fixed-layout mailboxes. `robot-runtime` may restart independently only when the safety, Plant-timeline, runtime-generation, and lease rules make that transition explicit. Loss of `robot-runtime`, a client, ROS 2, or the network must be handled locally by `robot-rt` and the lower safety authorities.
+The current bootstrap connects `robot-rt` and `robot-runtime` with bounded,
+nonblocking, exclusively owned Unix datagrams. Bounded shared memory and
+fixed-layout mailboxes remain the target deployment boundary after measurement;
+they are not implemented yet. `robot-runtime` may restart independently only
+when the safety, Plant-timeline, runtime-generation, and lease rules make that
+transition explicit. Loss of `robot-runtime`, a client, ROS 2, or the network
+must be handled locally by `robot-rt` and the lower safety authorities.
 
 ## One control core, several Plant implementations
 
