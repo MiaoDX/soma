@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root=$(cd "$(dirname "$0")/.." && pwd)
+run_dir=${1:-"$repo_root/output/official-sim-comparison"}
+run_dir=$(realpath -m "$run_dir")
+image=soma-reachy-official:v1.9.0
+official_container=soma-official-comparison
+
+# shellcheck source=scripts/sim-stack.sh
+source "$repo_root/scripts/sim-stack.sh"
+
+cleanup() {
+  sim_stack_cleanup
+  docker rm -f "$official_container" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+mkdir -p "$run_dir"
+docker build -t "$image" "$repo_root/comparison/official_sim"
+
+sim_stack_start "$repo_root" false official-comparison
+(
+  cd "$repo_root/python"
+  PYTHONPATH="$repo_root:$repo_root/python" UV_DEFAULT_INDEX=https://pypi.org/simple \
+    uv run python -m comparison.official_sim.soma_adapter \
+    --output "$run_dir/soma.jsonl"
+)
+sim_stack_cleanup
+
+docker run -d --name "$official_container" \
+  -p 127.0.0.1:18000:18000 -e MUJOCO_GL=egl \
+  -v "$repo_root:/workspace:ro" -v "$run_dir:/evidence" "$image" \
+  reachy-mini-daemon --sim --headless --no-media --no-wake-up-on-start \
+  --no-goto-sleep-on-stop --no-preload-datasets --fastapi-host 0.0.0.0 \
+  --fastapi-port 18000 >"$run_dir/official-container-id.txt"
+
+for _ in $(seq 1 100); do
+  if docker logs "$official_container" 2>&1 | grep -q 'Failed to start daemon'; then
+    docker logs "$official_container" >"$run_dir/official-daemon.log" 2>&1
+    exit 1
+  fi
+  if docker logs "$official_container" 2>&1 | grep -q 'Daemon started successfully'; then
+    break
+  fi
+  docker inspect "$official_container" --format '{{.State.Running}}' | grep -q true || {
+    docker logs "$official_container" >"$run_dir/official-daemon.log" 2>&1
+    exit 1
+  }
+  sleep 0.1
+done
+docker logs "$official_container" >"$run_dir/official-daemon.log" 2>&1
+grep -q 'Daemon started successfully' "$run_dir/official-daemon.log"
+
+docker exec "$official_container" python -m comparison.official_sim.official_adapter \
+  --host 127.0.0.1 --output /evidence/official.jsonl
+
+PYTHONPATH="$repo_root" python3 -m comparison.official_sim.analyze \
+  --soma "$run_dir/soma.jsonl" --official "$run_dir/official.jsonl" \
+  --json "$run_dir/metrics.json" --report "$run_dir/report.md"
+echo "comparison complete: $run_dir/report.md"

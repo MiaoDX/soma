@@ -22,12 +22,13 @@ connected. Hardware work remains blocked and no N0/N1 gate is bypassed.
 
 While waiting for the device, the bounded
 [official simulation comparison plan](docs/plans/official-simulation-comparison-plan.md)
-is stopped at its D0 local-validation gate. The pinned Reachy Mini v1.9.0
-install cannot build its `pygobject` dependency because this host lacks
-GObject-introspection development metadata. The
-[D0 blocker evidence](docs/measurements/official-simulation-d0-blocker.md)
-records the exact environment and reproduction commands. D1 tooling must not
-start until a live official daemon and public-SDK nine-actuator mapping pass.
+has completed its simulation-only D0-D3 slice. The private owning command
+builds an isolated, pinned Reachy Mini v1.9.0 image with Git LFS assets, runs
+Soma and the official daemon separately, records capability-labelled JSONL,
+and generates deterministic motion/timing metrics. The representative report
+is [here](docs/measurements/official-simulation-representative-report.md);
+generated raw evidence remains under ignored `output/`. Hardware N0/N1 gates
+remain unchanged.
 
 When the reviewed device arrives, stop the official daemon before running:
 
