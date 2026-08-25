@@ -1,14 +1,14 @@
 # Official Simulation Fixed Case Suite Plan
 
-> Status: Agent-planning-loop converged; awaiting user approval, 2026-08-25.
+> Status: Agent-planning-loop converged; execution preflight drafted, 2026-08-25.
 > Parent evidence: `docs/plans/official-simulation-comparison-plan.md`.
 > Appetite: at most 2 engineering days; simulation-only.
 
 ## Plan Ledger
 
-- `status`: planning loop converged; awaiting user approval
+- `status`: planning loop converged; execution preflight ready for new-context approval
 - `current_slice`: extend the completed one-trace comparison into a fixed three-case evidence suite
-- `next_action`: after user approval, prepare an execution-ready preflight for the whole plan
+- `next_action`: execute the full preflight in one new context through `$intuitive-flow`
 - `no_touch`: hardware, N0/N1, public protocol, production runtime dependencies, generic trace framework, result-driven case selection
 - `stop_condition`: stop if a case cannot share the fixed nine-actuator public command/state mapping or requires unsafe/undefined Stewart targets
 
@@ -199,8 +199,136 @@ completed parent plan. This plan commits a new suite report at
 `docs/measurements/official-simulation-case-suite-report.md` and updates current
 status to link the suite report without deleting the parent evidence.
 
+## Execution Preflight
+
+Preflight status: DRAFT
+
+Task source: approved fixed-case-suite plan and converged agent-planning-loop
+review.
+
+Canonical source: `docs/plans/official-simulation-case-suite-plan.md`.
+
+Route: durable `$intuitive-flow` in one new context; the main session owns all
+stage gates and final complete/blocked judgment.
+
+Goal: implement the complete fixed three-case Soma-versus-official simulation
+suite and commit reproducible quantitative evidence without changing production
+or hardware contracts.
+
+Scope:
+
+- Execute S0 through S3 in order within the two-engineering-day appetite.
+- Replace the drifted single-trace ownership with one strict ordered
+  `suite.json`, then make both existing adapters, analyzer, and owning script
+  consume it.
+- Run every declared case through fresh isolated Soma and official lifecycles,
+  preserve success/failure/timeout evidence, continue after case failures, and
+  return the aggregate exit status only after attempting the suite report.
+- Add focused contract tests, run two clean live suites, commit one suite report,
+  and update compact current-status documentation to link it.
+
+Non-goals: all plan non-goals and stop gates remain binding, especially no
+hardware access or writes, N0/N1 bypass, public protocol/ControlCore/Plant
+change, production official-daemon dependency, direct official `MjData`, fourth
+or outcome-selected case, Stewart-specific target, generic case framework, new
+dependency, App/media/IK work, or additional simulator backend.
+
+Entity budget:
+
+- reuse: `comparison/official_sim/`, its schema/analyzer/tests/adapters,
+  `scripts/run-official-sim-comparison`, the pinned v1.9.0 image, existing Soma
+  launcher, ignored `output/`, and current report renderer;
+- remove/merge: delete `trace.json` and derive the duplicated trace constants,
+  commanded indexes, case identity, and timing values from the canonical suite;
+  extend existing modules and tests instead of adding a registry, framework, or
+  parallel report pipeline;
+- new: one committed `suite.json` because ordered cases need a single auditable
+  identity, and one committed suite report because the completed one-trace
+  evidence is immutable; per-run case status/log files are generated evidence,
+  not new product surfaces;
+- expansion triggers: any public interface, production dependency, generic
+  abstraction, additional case, unsafe/undefined Stewart target, vendor patch,
+  direct simulator-state access, hardware use, or changed metric-selection
+  policy requires re-approval.
+
+Context:
+
+- must-read: injected `AGENTS.md`; this plan;
+  `docs/plans/official-simulation-comparison-plan.md`;
+  `docs/status/active/bootstrap.md`; `STATUS.md`;
+  `docs/agents/operating-runbook.md`; `scripts/run-official-sim-comparison`;
+  all source and tests under `comparison/official_sim/`;
+- useful: `docs/measurements/official-simulation-representative-report.md`,
+  `scripts/sim-stack.sh`, and the fixed actuator-order definitions reached from
+  the existing adapters;
+- avoid-unless-needed: hardware probe code, visualization/teleop internals,
+  unrelated deep research, deferred architecture, other robot profiles, and
+  historical raw output.
+
+Acceptance:
+
+- SUCCESS: one owning command automatically runs the ordered `yaw-step`,
+  `mirrored-antennas`, and `combined-yaw-antennas` cases against separately
+  owned Soma and official processes; every declared case has status/log/raw
+  evidence; all successful streams contain the common suite identity and
+  exactly 100 planned samples; every commanded actuator moves at least 0.05
+  rad; failed/timed-out cases remain visible and cause a final nonzero exit only
+  after report generation; two clean runs agree on all hard-gated structural
+  fields; the committed report contains the full matrix and predeclared
+  representative label without result-based selection.
+- BLOCKED_NEEDS_DECISION: a case requires a vendor patch, direct official
+  `MjData`, public Soma contract change, unsafe/undefined target, new dependency,
+  generic abstraction, or revised case/selection policy; stop and return
+  evidence plus the smallest options.
+- BLOCKED_NEEDS_LOCAL_VALIDATION: Docker, the pinned official daemon/SDK, or
+  live MuJoCo execution is unavailable; implementation is not complete or
+  merge-ready until both clean suite product runs pass on a capable host.
+- INTERMEDIATE_ONLY: none; code-local completion without the required live
+  product runs is not an accepted outcome.
+- No regressions: the completed one-trace report remains unchanged; existing
+  public protocol, ControlCore, Plant, fixed scenario behavior, and hardware
+  gates remain unchanged; canonical repository checks stay green.
+
+Verification:
+
+- deterministic: strict suite-loader tests covering schema, unknown keys,
+  duplicate IDs, actuator count, finite deltas, representative membership, and
+  hash identity; focused analyzer/report/schedule/movement/failure-status tests;
+  `PYTHONPATH=. python3 -m unittest comparison.official_sim.test_analyze`;
+  `python3 -m compileall -q comparison/official_sim`;
+  `bash -n scripts/run-official-sim-comparison`; `cargo fmt --all -- --check`;
+  `scripts/cargo-mujoco test --workspace`;
+  `scripts/cargo-mujoco clippy --workspace --all-targets -- -D warnings`;
+  `git diff --check`;
+- integration: exercise malformed suite rejection, non-existing output
+  enforcement, one isolated live case before S2, later-case continuation after
+  an injected adapter failure, aggregate report generation with a failed case,
+  and final nonzero exit semantics;
+- product-run: from clean process state run
+  `scripts/run-official-sim-comparison output/official-sim-suite-run1` and
+  `scripts/run-official-sim-comparison output/official-sim-suite-run2`, then run
+  `scripts/run-sim-scenario`;
+- local-live-manual: required Docker-backed pinned official daemon/SDK and live
+  MuJoCo runs; inspect both run manifests, raw traces, movement validity,
+  capability labels, failure-free statuses, structural repeatability, and the
+  generated matrix against the committed report; confirm no owned process or
+  container remains after success, failure, timeout, or interruption;
+- optional: visual trajectory inspection; it cannot replace structured traces,
+  movement gates, or the two clean headless runs.
+
+Execution: main=root supervisor for S0-S3, scope/stop gates, process isolation,
+incremental commits, verification, plan/capsule/status updates, and final
+judgment; worker=none by default; worker-goal=none.
+
+To execute: `/goal execute docs/plans/official-simulation-case-suite-plan.md with intuitive-flow`
+
+Optional tracking: none.
+
+Approval: starting the exact named goal in the new context approves this
+unchanged contract; any change to scope, cases, selection policy, acceptance,
+or live verification requires revision.
+
 ## Handoff
 
-After planning-loop approval, prepare an execution-ready preflight and run the
-whole plan through `$intuitive-flow`. Do not reopen the completed one-trace plan
-or rewrite its evidence as though it had not completed.
+Run the exact goal above in one new context. Do not reopen the completed
+one-trace plan or rewrite its evidence as though it had not completed.

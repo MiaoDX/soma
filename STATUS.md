@@ -30,6 +30,11 @@ is [here](docs/measurements/official-simulation-representative-report.md);
 generated raw evidence remains under ignored `output/`. Hardware N0/N1 gates
 remain unchanged.
 
+A follow-up [fixed case suite plan](docs/plans/official-simulation-case-suite-plan.md)
+has completed its planning loop and execution preflight but has not started
+implementation. It will extend the same private owning command to run three
+predeclared yaw, antenna, and combined cases without outcome-based selection.
+
 When the reviewed device arrives, stop the official daemon before running:
 
 ```bash
@@ -61,6 +66,7 @@ readability remains the final gate.
 ## Active Work
 
 - Active comparison/hardware state: [bootstrap capsule](docs/status/active/bootstrap.md)
+- Preflighted next slice: [official simulation fixed case suite](docs/plans/official-simulation-case-suite-plan.md)
 - Preflighted interim plan: [official simulation comparison](docs/plans/official-simulation-comparison-plan.md)
 - Approved hardware plan: [bootstrap plan](docs/plans/bootstrap-plan.md)
 - Implemented, manual display review pending: [simulation visualization plan](docs/plans/simulation-visualization-plan.md)
