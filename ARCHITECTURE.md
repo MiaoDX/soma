@@ -24,6 +24,54 @@ The same bounded `Plant` and `ControlCore` contracts are intended to serve a
 future native Reachy hardware Plant. That path is not implemented: the current
 hardware surface stops at the standalone read-only N0 probe.
 
+## Implementation Language Selection
+
+Language follows ownership and execution guarantees, not the feature label
+(`sim`, `teleop`, or `client`). The default rule is:
+
+> Rust owns mechanisms and authoritative robot semantics; Python expresses
+> intent, composes workflows, and consumes public interfaces.
+
+Choose Rust when a module:
+
+- runs in the periodic control path or must provide bounded timing, memory, or
+  failure behavior;
+- owns Plant I/O, command admission, sequence/timeline/TTL handling, limits,
+  hold behavior, safety decisions, or lifecycle authority;
+- is a long-running robot-side runtime or system service whose failure must be
+  contained without relying on a Python process; or
+- is shared by simulation and future hardware and therefore must preserve the
+  deployable control contract.
+
+Choose Python when a module:
+
+- is an L4 SDK/application, teleoperation surface, experiment, task
+  orchestrator, data tool, or developer-facing workflow;
+- submits requests and reads evidence through the public Robot Protocol without
+  making safety or control decisions; or
+- intentionally provides cross-language end-to-end proof of that protocol.
+
+These rules do not prohibit a Python dependency behind a non-RT process
+boundary, nor do they require rewriting a mature simulator or vendor library.
+They do prohibit Python, async work, middleware, blocking I/O, or unbounded
+allocation from entering `robot-rt`'s periodic path. A proposed exception must
+name the boundary, timing/resource evidence, failure containment, and why the
+existing adapter/process seam is insufficient.
+
+Current mapping:
+
+| Module | Language | Reason |
+| --- | --- | --- |
+| `ReachySimPlant`, `ControlCore`, `robot-rt` | Rust | authoritative Plant and deterministic control semantics |
+| `robot-runtime` and protocol bridge | Rust | robot-side non-RT runtime and lifecycle authority |
+| `python/soma_client/scenario.py` | Python | black-box protocol acceptance client |
+| `python/soma_client/command_session.py` | Python | L4 terminal teleoperation client |
+
+Therefore the current demos are not Python simulations: MuJoCo simulation and
+control remain Rust; Python supplies two intentionally separate clients. Core
+semantics belong in Rust tests. Python scenarios should verify the public
+protocol and complete process topology rather than reimplement those semantics.
+
 ## Code Map
 
 | Path | Responsibility |

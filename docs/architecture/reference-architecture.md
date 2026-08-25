@@ -34,6 +34,17 @@ The canonical assignment of responsibilities is defined in [Layering and Trust B
 6. **Production concerns are first-class architecture**  
    Safety, identity, security, OTA, observability, crash evidence, compatibility, and recovery are designed with the runtime rather than added later.
 
+### Implementation language rule
+
+The Rust-first principle is an ownership rule, not a blanket ban on Python.
+Rust owns deterministic control, Plant and hardware adaptation, command and
+safety semantics, and robot-side runtime authority. Python is appropriate for
+L4 SDKs and applications such as teleoperation, experiments, orchestration, and
+black-box protocol acceptance. A Python module may sit behind a non-RT process
+seam, but Python, middleware, blocking I/O, async work, and unbounded
+allocation must not enter the periodic `robot-rt` path. Exceptions require
+explicit timing/resource and failure-containment evidence at the seam.
+
 ## High-level system
 
 ```text
