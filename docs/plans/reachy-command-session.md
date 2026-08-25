@@ -1,6 +1,6 @@
 # Reachy Simulation Command Session Plan
 
-> Status: Approved for implementation, 2026-08-25.
+> Status: Implemented; desktop interaction review pending, 2026-08-25.
 > This is a simulation-only developer interaction slice. It does not resume or
 > alter the hardware-gated bootstrap work in `docs/status/active/bootstrap.md`.
 
@@ -216,13 +216,22 @@ scripts/cargo-mujoco clippy --workspace --all-targets -- -D warnings
 scripts/run-sim-scenario
 scripts/run-sim-scenario --visualize
 scripts/run-sim-teleop --help
-scripts/run-sim-teleop <bounded-input-harness-options>
+scripts/run-sim-teleop --keys ADQE
 scripts/run-sim-teleop --visualize
 ```
 
 The implementation must replace `<bounded-input-harness-options>` with the
 smallest documented non-interactive test route rather than leaving a
 placeholder in the finished product documentation.
+
+## Implementation Status
+
+The terminal state machine, public launcher, bounded `--keys ADQE` integration
+route, focused unit tests, process supervision, and compact human documentation
+are implemented. Format, workspace test/check/clippy, headless scenario,
+sequential Xvfb visual scenario, headless teleop, and Xvfb visual teleop gates
+pass. Xvfb proves visual process startup and teardown but does not satisfy the
+required desktop-backed keyboard, visible-motion, and Rerun evidence review.
 
 The final desktop-backed run must verify `A`, `D`, `Q`, and `E` individually
 and in mixed order; visible yaw and mirrored antenna motion; requested versus
