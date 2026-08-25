@@ -1,5 +1,10 @@
 # Official Simulation Fixed Case Suite
 
+> Historical evidence: this run used one 2 ms Soma physics step per 20 ms
+> control period. Its structural suite evidence remains valid, but its Soma
+> tracking and settling metrics are superseded by the
+> [cadence correction report](official-simulation-cadence-correction-report.md).
+
 This committed report was generated from a clean suite run after implementing
 the fixed three-case plan. It is structural representative evidence; raw logs
 and JSONL traces remain in ignored `output/` directories.

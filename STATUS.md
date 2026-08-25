@@ -38,6 +38,15 @@ per-case lifecycle evidence, and validates two clean runs. The committed
 contains the representative multi-case evidence; generated raw evidence
 remains under ignored `output/`.
 
+A cadence audit subsequently found that the original Soma comparison advanced
+one 2 ms MuJoCo step per 20 ms control period, so simulation time ran at one
+tenth of wall time. The Plant now validates an integral physics schedule at
+startup and advances ten substeps per Reachy control period. Product simulation
+commands use Rust release binaries. Two corrected clean suites show Soma and
+the official backend both settling the commanded yaw and antenna axes in about
+80 ms with nearly identical RMS errors. The full root-cause and before/after
+evidence is in the [cadence correction report](docs/measurements/official-simulation-cadence-correction-report.md).
+
 When the reviewed device arrives, stop the official daemon before running:
 
 ```bash
@@ -71,6 +80,7 @@ readability remains the final gate.
 - Active comparison/hardware state: [bootstrap capsule](docs/status/active/bootstrap.md)
 - Preflighted next slice: [official simulation fixed case suite](docs/plans/official-simulation-case-suite-plan.md)
 - Completed suite evidence: [official simulation fixed case suite report](docs/measurements/official-simulation-case-suite-report.md)
+- Corrected comparison evidence: [simulation cadence correction report](docs/measurements/official-simulation-cadence-correction-report.md)
 - Preflighted interim plan: [official simulation comparison](docs/plans/official-simulation-comparison-plan.md)
 - Approved hardware plan: [bootstrap plan](docs/plans/bootstrap-plan.md)
 - Implemented, manual display review pending: [simulation visualization plan](docs/plans/simulation-visualization-plan.md)

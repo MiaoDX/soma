@@ -2,10 +2,10 @@
 
 ## Plan Ledger
 
-- `status`: ACTIVE
-- `current_slice`: align wall-clock control periods with MuJoCo physics time
-- `next_action`: implement startup schedule validation and control-period advancement
-- `evidence`: existing fixed official simulation case suite, then two clean reruns
+- `status`: DONE; cadence correction and release product evidence verified, 2026-08-25
+- `current_slice`: corrected fixed-step cadence and cross-robot MuJoCo adapter precheck
+- `next_action`: none; apply the same validator when another local MuJoCo robot adapter is approved
+- `evidence`: `docs/measurements/official-simulation-cadence-correction-report.md`
 - `no_touch`: public protocol, ControlCore semantics, hardware, generic robot manifests, simulator backends
 - `stop_condition`: stop if cadence correctness requires a public contract or robot-profile abstraction
 

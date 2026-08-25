@@ -1,5 +1,9 @@
 # Soma vs Official Reachy Simulation
 
+> Historical evidence: this run used one 2 ms Soma physics step per 20 ms
+> control period. Its Soma tracking and settling metrics are superseded by the
+> [cadence correction report](official-simulation-cadence-correction-report.md).
+
 This report compares behavior, not bitwise-identical trajectories.
 All actuator values are radians in the fixed nine-actuator order.
 Host monotonic clocks define each implementation's stimulus/observation window.
