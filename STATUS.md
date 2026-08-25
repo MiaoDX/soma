@@ -15,10 +15,18 @@ mirrored antenna motion through that same command path.
 The standalone native N0 probe is implemented and remains strictly read-only.
 No native Plant, bus worker, torque enable, or physical motion is implemented.
 
-## Blocker And Next Action
+## Hardware Blocker And Interim Action
 
 N0 cannot run because no Reachy Mini Lite CH343 device (`1a86:55d3`) is
-connected. Connect the reviewed device, stop the official daemon, and run:
+connected. Hardware work remains blocked and no N0/N1 gate is bypassed.
+
+While waiting for the device, the active bounded child slice is the
+[official simulation comparison plan](docs/plans/official-simulation-comparison-plan.md).
+Its first action is a half-day comparability audit of a pinned, isolated
+official simulator. The implementation must stop with evidence if a defensible
+common 9-actuator trace cannot be established.
+
+When the reviewed device arrives, stop the official daemon before running:
 
 ```bash
 cargo run --bin soma-reachy-probe --
@@ -48,10 +56,11 @@ readability remains the final gate.
 
 ## Active Work
 
-- Hardware bootstrap state: [bootstrap capsule](docs/status/active/bootstrap.md)
+- Active comparison/hardware state: [bootstrap capsule](docs/status/active/bootstrap.md)
+- Preflighted interim plan: [official simulation comparison](docs/plans/official-simulation-comparison-plan.md)
 - Approved hardware plan: [bootstrap plan](docs/plans/bootstrap-plan.md)
 - Implemented, manual display review pending: [simulation visualization plan](docs/plans/simulation-visualization-plan.md)
 - Implemented, desktop interaction review pending: [simulation command-session plan](docs/plans/reachy-command-session.md)
 
-No other robot profile, generic manifest, camera/audio path, or deferred
-production subsystem is active scope.
+No other robot profile, generic manifest, camera/audio path, App framework,
+additional simulator backend, or deferred production subsystem is active scope.

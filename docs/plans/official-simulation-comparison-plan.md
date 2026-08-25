@@ -1,15 +1,15 @@
 # Reachy Official Simulation Comparison Plan
 
-> Status: Planned child slice; execute only after preflight reconciles the
-> active bootstrap capsule, 2026-08-25.
+> Status: Preflight-ready child slice; active bootstrap capsule reconciled,
+> 2026-08-25.
 > Appetite: at most 4 engineering days before Reachy Mini hardware arrives.
 > Parent: `docs/plans/bootstrap-plan.md`, section 5 (Official comparison).
 
 ## Plan Ledger
 
-- `status`: planned; awaiting preflight and active-capsule reconciliation
+- `status`: preflight-ready; approved implementation belongs in a new context
 - `current_slice`: simulation-only official comparison while hardware N0 is blocked
-- `next_action`: run `$intuitive-preflight`, then execute the full plan through `$intuitive-flow`
+- `next_action`: execute the full plan through `$intuitive-flow` in a new context
 - `blocker`: official simulator environment and nine-actuator comparability are unproven
 - `no_touch`: hardware writes, N1 motion, public protocol changes, App framework, Isaac/Genie backend
 - `stop_condition`: D0 cannot reproduce the official path or establish a defensible common trace
@@ -160,7 +160,116 @@ Done means a reviewer can rerun the pinned commands, inspect both raw traces,
 see the capability matrix, and distinguish common scored behavior from
 Soma-only or unavailable semantics without reading adapter internals.
 
+## Execution Preflight
+
+- `Preflight status`: `DRAFT`
+- `Task source`: approved plan and agent-planning-loop review
+- `Canonical source`: `docs/plans/official-simulation-comparison-plan.md`
+- `Route`: durable `$intuitive-flow`, main session owns stage gates and final
+  complete/blocked judgment
+- `Goal`: deliver the full simulation-only Soma-versus-official comparison, or
+  stop at D0 with reproducible blocker evidence
+
+### Scope
+
+- Run D0 through D4 in order and preserve the four-engineering-day appetite.
+- Pin and isolate the official SDK/daemon; do not add it to `soma-client` runtime
+  dependencies.
+- Reuse the existing Soma simulation launcher, fixed actuator profile, public
+  state/command protocol, and headless acceptance scenario.
+- Add only private comparison tooling: official and Soma adapters, one canonical
+  trace fixture, capability-labelled JSONL records, deterministic metric/report
+  generation, focused tests, and one owning run command.
+- Store committed fixtures, schemas, tooling, tests, and a small representative
+  report in the repository. Store raw/generated runs and environment logs under
+  ignored `output/` evidence, with manifests that record exact revisions and
+  commands.
+
+### Non-Goals
+
+All plan non-goals remain binding. In particular: no hardware access or writes,
+public protocol/ControlCore/Plant changes, vendor-daemon patching, direct
+official `MjData` access, App support, head-pose/IK/media work, or Isaac/Genie
+probe/backend.
+
+### Entity Budget
+
+- `reuse`: `scripts/run-sim-scenario`, fixed Reachy actuator constants/assets,
+  existing Protobuf/Zenoh client path, Python test environment, root docs and
+  canonical cargo gates
+- `remove/merge`: none required; keep generated evidence out of human docs and
+  production packages
+- `new`: one private comparison tooling directory/package, one owning script,
+  one canonical trace/schema, two thin adapters, analyzer/report generator,
+  focused fixtures/tests, and ignored `output/` entry; each exists only to keep
+  official dependencies and comparison semantics outside production code
+- `expansion triggers`: any public interface, generic simulator abstraction,
+  second trace family, vendor patch, App/backend work, hardware use, or
+  dependency added to production packages requires re-approval
+
+### Context Package
+
+- `must-read`: this plan; `AGENTS.md` injected guidance;
+  `docs/status/active/bootstrap.md`; `ARCHITECTURE.md`;
+  `docs/architecture/layering-and-trust-boundaries.md` sections on Plant and
+  external simulators; `docs/plans/bootstrap-plan.md` sections 2, 3, and 5;
+  `crates/soma-sim/src/lib.rs`; `crates/soma-runtime/src/bin/robot-rt.rs`;
+  `python/soma_client/scenario.py`;
+  `crates/soma-sim/assets/reachy-mini/UPSTREAM.md`
+- `useful`: `docs/deep-research/fast-open-robot-reference-path.md` Reachy
+  sections and `docs/deep-research/simulation-architecture.md` only when D0
+  needs upstream/interface context
+- `avoid-unless-needed`: unrelated deep research, visualization internals,
+  deferred production architecture, other robot profiles, and historical
+  execution evidence
+
+### Acceptance
+
+- `SUCCESS`: D0 capability audit passes; one canonical trace runs separately
+  against both pinned implementations; raw records validate against the private
+  schema; deterministic analyzer tests pass; the generated report states metric
+  formulas/tolerances/provenance and labels every field by capability; a clean
+  rerun reproduces the report within declared tolerances.
+- `BLOCKED_NEEDS_DECISION`: D0 shows only a vendor patch, direct `MjData` write,
+  public Soma contract change, or non-actuator command surface can establish
+  comparability; stop and return the evidence plus options.
+- `BLOCKED_NEEDS_LOCAL_VALIDATION`: the official simulator product run cannot
+  execute in the available host environment; implementation is not complete or
+  merge-ready until the pinned live gate runs.
+- `INTERMEDIATE_ONLY`: none; a D0 blocker report is a valid stopped outcome,
+  not a successful comparison.
+- `No regressions`: existing Rust gates and `scripts/run-sim-scenario` pass;
+  public protocol and current demo behavior remain unchanged.
+
+### Verification
+
+- `deterministic`: `cargo fmt --all -- --check`;
+  `scripts/cargo-mujoco test --workspace`; comparison analyzer/schema/fixture
+  tests; `git diff --check`
+- `integration`: run both adapters independently against recorded fixtures;
+  validate JSONL/manifests; generate the report twice and compare stable fields
+- `product-run`: run the new owning comparison command from a clean process
+  state, producing both traces and the report; rerun
+  `scripts/run-sim-scenario`
+- `local-live-manual`: required pinned official daemon/SDK + MuJoCo launch and
+  9-actuator round trip in D0; inspect capability matrix, signs/units, warmup,
+  cadence, and report claims against raw traces
+- `optional`: visual trajectory inspection; never substitutes for typed traces
+  and metric checks
+
+### Execution
+
+- `main`: own D0 stop gate, plan ledger/capsule updates, process isolation,
+  scope cuts, verification, commits, and final complete/blocked judgment
+- `worker`: none required by default; bounded read-only upstream inspection or
+  independent report review may be delegated without changing ownership
+- `worker-goal`: none
+- `To execute`: `/goal execute docs/plans/official-simulation-comparison-plan.md with intuitive-flow`
+- `Approval`: `LGTM`, `approve`, or starting the named goal in the new context
+  approves this contract; do not rerun shaping or the planning loop unless D0
+  triggers a stop decision
+
 ## Handoff
 
-After approval, execute the entire plan through `$intuitive-flow`. The plan is
+Execute the entire plan through `$intuitive-flow` in a new context. The plan is
 not an approval to start hardware work or to implement another simulator.
