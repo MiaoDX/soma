@@ -1,23 +1,103 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+visualize=false
+keep_open=false
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/run-sim-scenario [--visualize [--keep-open]] [-h|--help]
+
+Run the fixed Reachy Mini simulation acceptance scenario.
+
+Options:
+  --visualize  Open the observational MuJoCo and Rerun views and pace the
+               scenario for approximately 6 seconds. Both windows close
+               automatically when the scenario finishes.
+  --keep-open  Keep the visual runtime and both views open after the scenario
+               passes. Requires --visualize; press Ctrl-C to stop and clean up.
+  -h, --help   Show this help and exit.
+
+Without --visualize, the scenario runs headless and finishes as quickly as
+possible. MuJoCo camera controls and Rerun timeline navigation are read-only;
+neither viewer can command, pause, step, perturb, or reset the simulation.
+EOF
+}
+
+for argument in "$@"; do
+  case "$argument" in
+    --visualize) visualize=true ;;
+    --keep-open) keep_open=true ;;
+    -h|--help) usage; exit 0 ;;
+    *) usage >&2; exit 2 ;;
+  esac
+done
+
+if $keep_open && ! $visualize; then
+  echo "error: --keep-open requires --visualize" >&2
+  usage >&2
+  exit 2
+fi
+
 repo_root=$(cd "$(dirname "$0")/.." && pwd)
 rt_log=$(mktemp /tmp/soma-robot-rt.XXXXXX.log)
 runtime_log=$(mktemp /tmp/soma-robot-runtime.XXXXXX.log)
+observer_log=$(mktemp /tmp/soma-sim-observer.XXXXXX.log)
+rerun_log=$(mktemp /tmp/soma-rerun.XXXXXX.log)
+snapshot_socket="/tmp/soma-sim-observer.$$.sock"
 
 cleanup() {
-  kill "${rt_pid:-}" "${runtime_pid:-}" 2>/dev/null || true
-  wait "${rt_pid:-}" "${runtime_pid:-}" 2>/dev/null || true
+  if [[ -n ${rerun_pid:-} ]]; then
+    kill -TERM -- "-$rerun_pid" 2>/dev/null || true
+  fi
+  kill "${rt_pid:-}" "${runtime_pid:-}" "${observer_pid:-}" "${rerun_pid:-}" 2>/dev/null || true
+  wait "${rt_pid:-}" "${runtime_pid:-}" "${observer_pid:-}" "${rerun_pid:-}" 2>/dev/null || true
+  rm -f "$snapshot_socket" "$snapshot_socket.lock" "$snapshot_socket.ready" "$snapshot_socket.ready.lock"
 }
 trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
-"$repo_root/scripts/cargo-mujoco" build --quiet --bin robot-rt --bin robot-runtime
+if $visualize; then
+  "$repo_root/scripts/cargo-mujoco" build --quiet -p soma-runtime --features sim-visualization --bin robot-rt --bin robot-runtime --bin robot-sim-observer
+else
+  "$repo_root/scripts/cargo-mujoco" build --quiet --bin robot-rt --bin robot-runtime
+fi
 
 export LD_LIBRARY_PATH="$repo_root/.mujoco/mujoco-3.9.0/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-"$repo_root/target/debug/robot-rt" >"$rt_log" 2>&1 &
-rt_pid=$!
 "$repo_root/target/debug/robot-runtime" >"$runtime_log" 2>&1 &
 runtime_pid=$!
+
+if $visualize; then
+  rerun_version=$(cd "$repo_root/python" && UV_DEFAULT_INDEX=https://pypi.org/simple uv run --extra visualization rerun --version)
+  if [[ $rerun_version != "rerun-cli 0.36.2 "* ]]; then
+    echo "expected Rerun viewer 0.36.2, got: $rerun_version" >&2
+    exit 1
+  fi
+  rerun_port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')
+  (cd "$repo_root/python" && exec setsid env UV_DEFAULT_INDEX=https://pypi.org/simple uv run --extra visualization rerun --bind 127.0.0.1 --port "$rerun_port" --expect-data-soon) >"$rerun_log" 2>&1 &
+  rerun_pid=$!
+  for _ in $(seq 1 100); do
+    if (exec 3<>/dev/tcp/127.0.0.1/"$rerun_port") 2>/dev/null; then break; fi
+    if ! kill -0 "$rerun_pid" 2>/dev/null; then cat "$rerun_log" >&2; exit 1; fi
+    sleep 0.1
+  done
+  "$repo_root/target/debug/robot-sim-observer" --snapshot-socket "$snapshot_socket" --rerun-endpoint "rerun+http://127.0.0.1:$rerun_port/proxy" >"$observer_log" 2>&1 &
+  observer_pid=$!
+  for _ in $(seq 1 100); do
+    [[ -S $snapshot_socket && -f $snapshot_socket.ready ]] && break
+    if ! kill -0 "$observer_pid" 2>/dev/null; then cat "$observer_log" >&2; exit 1; fi
+    sleep 0.1
+  done
+  if [[ ! -S $snapshot_socket || ! -f $snapshot_socket.ready ]] || ! kill -0 "$observer_pid" 2>/dev/null; then
+    cat "$observer_log" >&2
+    exit 1
+  fi
+  "$repo_root/target/debug/robot-rt" --observe-socket "$snapshot_socket" >"$rt_log" 2>&1 &
+else
+  "$repo_root/target/debug/robot-rt" >"$rt_log" 2>&1 &
+fi
+rt_pid=$!
 
 for _ in $(seq 1 50); do
   if [[ -S /tmp/soma-robot-rt.sock && -S /tmp/soma-robot-runtime.sock ]] &&
@@ -33,4 +113,26 @@ if ! kill -0 "$rt_pid" "$runtime_pid" 2>/dev/null ||
 fi
 
 cd "$repo_root/python"
-timeout 15 uv run python -m soma_client.scenario
+if $visualize; then
+  set +e
+  timeout 30 env UV_DEFAULT_INDEX=https://pypi.org/simple uv run python -m soma_client.scenario --visualize
+  scenario_status=$?
+  set -e
+  visualization_status=0
+  if ! kill -0 "$observer_pid" 2>/dev/null || ! kill -0 "$rerun_pid" 2>/dev/null; then
+    cat "$observer_log" "$rerun_log" >&2
+    visualization_status=1
+  fi
+  if [[ $scenario_status -ne 0 ]]; then exit "$scenario_status"; fi
+  if $keep_open && [[ $visualization_status -eq 0 ]]; then
+    echo "scenario passed; keeping MuJoCo and Rerun open (press Ctrl-C to stop)"
+    while kill -0 "$rt_pid" "$runtime_pid" "$observer_pid" "$rerun_pid" 2>/dev/null; do
+      sleep 1
+    done
+    echo "a visualization process exited while --keep-open was active" >&2
+    visualization_status=1
+  fi
+  exit "$visualization_status"
+else
+  timeout 15 env UV_DEFAULT_INDEX=https://pypi.org/simple uv run python -m soma_client.scenario
+fi

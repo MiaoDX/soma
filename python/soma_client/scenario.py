@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import queue
+import argparse
 import time
 
 import zenoh
@@ -24,7 +25,15 @@ def wait_for(states: queue.Queue, predicate, timeout: float = 5.0):
     raise TimeoutError("expected state transition was not observed")
 
 
+def pace(enabled: bool, seconds: float) -> None:
+    if enabled:
+        time.sleep(seconds)
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--visualize", action="store_true")
+    args = parser.parse_args()
     config = zenoh.Config.from_json5(
         """{
           mode: "client",
@@ -38,6 +47,7 @@ def main() -> None:
             initial = wait_for(states, lambda state: len(state.positions_rad) == 9)
             old_timeline = initial.timeline
             start_yaw = initial.positions_rad[0]
+            pace(args.visualize, 1.0)
 
             positions = list(initial.positions_rad)
             positions[0] += 0.2
@@ -58,14 +68,17 @@ def main() -> None:
             assert accepted.health == soma_pb2.PLANT_HEALTH_HEALTHY
             assert accepted.state_age_ns > 0
             wait_for(states, lambda state: abs(state.positions_rad[0] - start_yaw) > 0.01)
+            pace(args.visualize, 2.0)
             held = wait_for(states, lambda state: state.expiry_transition)
             assert held.applied_source == soma_pb2.APPLIED_SOURCE_MEASURED_POSITION_HOLD
+            pace(args.visualize, 1.0)
 
             session.put(
                 COMMAND_KEY,
                 soma_pb2.RtRequest(reset=True).SerializeToString(),
             )
             reset = wait_for(states, lambda state: state.timeline != old_timeline)
+            pace(args.visualize, 2.0)
 
             old_command = soma_pb2.RtRequest(
                 target=soma_pb2.ActuatorTarget(

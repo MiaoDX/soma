@@ -16,6 +16,26 @@ pub const COMMAND_KEY: &str = "soma/reachy/command";
 pub const STATE_KEY: &str = "soma/reachy/state";
 pub const MAX_MESSAGE_SIZE: usize = 4096;
 
+pub struct BestEffortDatagram {
+    socket: UnixDatagram,
+    destination: String,
+}
+
+impl BestEffortDatagram {
+    pub fn new(destination: impl Into<String>) -> io::Result<Self> {
+        let socket = UnixDatagram::unbound()?;
+        socket.set_nonblocking(true)?;
+        Ok(Self {
+            socket,
+            destination: destination.into(),
+        })
+    }
+
+    pub fn try_send(&self, payload: &[u8]) -> bool {
+        self.socket.send_to(payload, &self.destination).is_ok()
+    }
+}
+
 pub struct OwnedDatagram {
     pub socket: UnixDatagram,
     _lock: File,
@@ -146,5 +166,40 @@ mod tests {
         drop(first);
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(format!("{path}.lock"));
+    }
+
+    #[test]
+    fn best_effort_datagram_drops_when_receiver_is_missing_or_closed() {
+        let path = format!("/tmp/soma-best-effort-test-{}.sock", std::process::id());
+        let sender = BestEffortDatagram::new(&path).unwrap();
+        assert!(!sender.try_send(b"missing"));
+        let receiver = UnixDatagram::bind(&path).unwrap();
+        assert!(sender.try_send(b"present"));
+        drop(receiver);
+        let _ = std::fs::remove_file(&path);
+        assert!(!sender.try_send(b"closed"));
+    }
+
+    #[test]
+    fn best_effort_datagram_never_blocks_when_receiver_buffer_is_full() {
+        let path = format!(
+            "/tmp/soma-best-effort-full-test-{}.sock",
+            std::process::id()
+        );
+        let receiver = UnixDatagram::bind(&path).unwrap();
+        let sender = BestEffortDatagram::new(&path).unwrap();
+        let mut dropped = false;
+        for _ in 0..100_000 {
+            if !sender.try_send(&[0_u8; 1024]) {
+                dropped = true;
+                break;
+            }
+        }
+        assert!(
+            dropped,
+            "a saturated receive buffer must produce a nonblocking drop"
+        );
+        drop(receiver);
+        let _ = std::fs::remove_file(path);
     }
 }

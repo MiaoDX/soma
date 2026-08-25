@@ -1,6 +1,8 @@
 # MuJoCo And Rerun Visualization Plan
 
-> Status: Proposed, revised for Rerun support, awaiting approval, 2026-08-24.
+> Status: Implemented; deterministic, headless, Xvfb, camera-interaction, and
+> independent-sink-closure gates pass. Manual desktop motion/dashboard
+> readability review remains pending, 2026-08-24.
 > This is an optional simulation developer surface. It does not resume or alter
 > the hardware-gated bootstrap work in `docs/status/active/bootstrap.md`.
 
