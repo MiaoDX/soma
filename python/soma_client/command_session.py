@@ -158,12 +158,25 @@ def _run(keys: Iterable[str] | None) -> None:
     machine = CommandSession()
     states: queue.Queue = queue.Queue(maxsize=64)
     bounded = iter(keys) if keys is not None else None
+    terminal = None
     with zenoh.open(_config()) as session:
         with session.declare_subscriber(STATE_KEY, lambda sample: states.put_nowait(sample)):
             old_terminal = None
             if bounded is None:
-                old_terminal = termios.tcgetattr(sys.stdin)
-                tty.setcbreak(sys.stdin.fileno())
+                try:
+                    # The launcher supervises this process in the background,
+                    # where stdin is /dev/null. Reopen the controlling TTY so
+                    # interactive input remains available.
+                    terminal = open("/dev/tty", "r")
+                    old_terminal = termios.tcgetattr(terminal)
+                    tty.setcbreak(terminal.fileno())
+                except (OSError, termios.error) as error:
+                    if terminal is not None:
+                        terminal.close()
+                    raise RuntimeError(
+                        "interactive mode requires a controlling terminal; "
+                        "use --keys KEYS for a non-interactive session"
+                    ) from error
             try:
                 while True:
                     try:
@@ -183,15 +196,17 @@ def _run(keys: Iterable[str] | None) -> None:
                             key = next(bounded)
                         except StopIteration:
                             return
-                    elif bounded is None and select.select([sys.stdin], [], [], 0)[0]:
-                        key = sys.stdin.read(1)
+                    elif bounded is None and select.select([terminal], [], [], 0)[0]:
+                        key = terminal.read(1)
                     if key is not None:
                         request = machine.command_for_key(key)
                         if request is not None:
                             session.put(COMMAND_KEY, request.SerializeToString())
             finally:
                 if old_terminal is not None:
-                    termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_terminal)
+                    termios.tcsetattr(terminal, termios.TCSADRAIN, old_terminal)
+                if terminal is not None:
+                    terminal.close()
 
 
 def main() -> None:
@@ -202,7 +217,10 @@ def main() -> None:
         help="bounded non-interactive key sequence for integration testing",
     )
     args = parser.parse_args()
-    _run(args.keys)
+    try:
+        _run(args.keys)
+    except RuntimeError as error:
+        parser.error(str(error))
 
 
 if __name__ == "__main__":
