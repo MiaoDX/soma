@@ -8,13 +8,12 @@ from reachy_mini.io.protocol import SetAntennasCmd, SetHeadJointsCmd
 from reachy_mini.io.ws_client import WSClient
 
 from .common import (
-    DWELL_S,
-    SAMPLE_PERIOD_S,
-    TRACE_DELTAS_RAD,
-    WARMUP_S,
+    load_suite,
     manifest,
     monotonic_ns,
     sample,
+    select_case,
+    validate_movement,
     write_jsonl,
 )
 
@@ -29,13 +28,19 @@ def main() -> None:
     parser.add_argument("--host", default="host.docker.internal")
     parser.add_argument("--port", type=int, default=18000)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--suite", type=Path, required=True)
+    parser.add_argument("--case", required=True)
     args = parser.parse_args()
+    suite = load_suite(args.suite)
+    case = select_case(suite, args.case)
     client = WSClient(args.host, args.port)
     try:
         client.wait_for_connection(timeout=10.0)
-        time.sleep(WARMUP_S)
+        warmup_started = time.monotonic()
+        time.sleep(suite["warmup_s"])
+        warmup_actual_s = time.monotonic() - warmup_started
         initial = positions(client)
-        target = [value + delta for value, delta in zip(initial, TRACE_DELTAS_RAD)]
+        target = [value + delta for value, delta in zip(initial, case["deltas_rad"])]
         sent_ns = monotonic_ns()
         client.send_command(SetHeadJointsCmd(joints=target[:7]))
         client.send_command(SetAntennasCmd(antennas=target[7:]))
@@ -48,28 +53,29 @@ def main() -> None:
                     "commit": "b7e686d994a178353ebf81ea935de82ce65af733",
                     "mujoco": "3.3.0",
                 },
-                initial,
+                initial, suite, case, warmup_actual_s, sent_ns,
             )
         ]
-        deadline = time.monotonic() + DWELL_S
-        while time.monotonic() < deadline:
+        period_ns = int(suite["sample_period_s"] * 1_000_000_000)
+        for planned_index in range(suite["sample_count"]):
+            deadline_ns = sent_ns + (planned_index + 1) * period_ns
+            remaining = (deadline_ns - monotonic_ns()) / 1_000_000_000
+            if remaining > 0:
+                time.sleep(remaining)
+            observed_ns = monotonic_ns()
             records.append(
                 sample(
                     "official",
-                    monotonic_ns(),
+                    observed_ns,
                     sent_ns,
                     target,
                     positions(client),
+                    planned_index,
+                    deadline_ns,
                     vendor_timestamp="UNAVAILABLE",
                 )
             )
-            time.sleep(SAMPLE_PERIOD_S)
-        moved = [
-            abs(actual - start)
-            for actual, start in zip(records[-1]["measured_positions_rad"], initial)
-        ]
-        if max(moved[index] for index in (0, 7, 8)) < 0.05:
-            raise RuntimeError("official public SDK commands produced no observed motion")
+        validate_movement(initial, records[1:], case["commanded_indexes"])
         write_jsonl(args.output, records)
     finally:
         client.disconnect()

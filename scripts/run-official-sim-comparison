@@ -1,11 +1,26 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -uo pipefail
 
 repo_root=$(cd "$(dirname "$0")/.." && pwd)
-run_dir=${1:-"$repo_root/output/official-sim-comparison"}
-run_dir=$(realpath -m "$run_dir")
+suite="$repo_root/comparison/official_sim/suite.json"
+if [[ $# -gt 1 ]]; then
+  echo "usage: $0 [new-output-directory]" >&2
+  exit 2
+fi
+if [[ $# -eq 1 ]]; then
+  run_dir=$(realpath -m "$1")
+else
+  run_dir="$repo_root/output/official-sim-suite-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+fi
+if [[ -e $run_dir ]]; then
+  echo "output path already exists: $run_dir" >&2
+  exit 2
+fi
+mkdir -p "$run_dir"
+
 image=soma-reachy-official:v1.9.0
 official_container=soma-official-comparison
+suite_failed=0
 
 # shellcheck source=scripts/sim-stack.sh
 source "$repo_root/scripts/sim-stack.sh"
@@ -18,46 +33,120 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-mkdir -p "$run_dir"
-docker build -t "$image" "$repo_root/comparison/official_sim"
+write_status() {
+  local path=$1 case_id=$2 case_order=$3 status=$4 reason=$5 started=$6 soma_ready=$7 soma_shutdown=$8 official_ready=$9 official_shutdown=${10} finished=${11}
+  python3 - "$path" "$case_id" "$case_order" "$status" "$reason" "$started" "$soma_ready" "$soma_shutdown" "$official_ready" "$official_shutdown" "$finished" <<'PY'
+import json, sys
+from pathlib import Path
+path, case_id, order, status, reason, started, soma_ready, soma_shutdown, official_ready, official_shutdown, finished = sys.argv[1:]
+value = {
+    "schema_version": 1, "case_id": case_id, "case_order": int(order), "status": status,
+    "failure_reason": reason or None, "started_at": started, "finished_at": finished or None,
+    "stages": {
+        "soma": {"readiness_at": soma_ready or None, "shutdown_outcome": soma_shutdown or None},
+        "official": {"readiness_at": official_ready or None, "shutdown_outcome": official_shutdown or None},
+    },
+    "artifacts": {"soma": "soma.jsonl", "official": "official.jsonl", "soma_log": "soma-adapter.log", "official_log": "official-adapter.log", "daemon_log": "official-daemon.log"},
+}
+for implementation in ("soma", "official"):
+    trace = Path(path).parent / f"{implementation}.jsonl"
+    if trace.exists():
+        manifest = json.loads(trace.read_text().splitlines()[0])
+        value["stages"][implementation].update({
+            "warmup_actual_s": manifest.get("warmup_actual_s"),
+            "command_sent_monotonic_ns": manifest.get("command_sent_monotonic_ns"),
+            "initial_positions_rad": manifest.get("initial_positions_rad"),
+        })
+Path(path).write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
+PY
+}
 
-sim_stack_start "$repo_root" false official-comparison
-(
-  cd "$repo_root/python"
-  PYTHONPATH="$repo_root:$repo_root/python" UV_DEFAULT_INDEX=https://pypi.org/simple \
-    uv run python -m comparison.official_sim.soma_adapter \
-    --output "$run_dir/soma.jsonl"
+docker build -t "$image" "$repo_root/comparison/official_sim" >"$run_dir/docker-build.log" 2>&1 || {
+  echo "official image build failed; see $run_dir/docker-build.log" >&2
+  exit 1
+}
+cp "$suite" "$run_dir/suite.json"
+
+mapfile -t cases < <(PYTHONPATH="$repo_root" python3 - "$suite" <<'PY'
+import sys
+from pathlib import Path
+from comparison.official_sim.common import load_suite
+for order, case in enumerate(load_suite(Path(sys.argv[1]))["cases"]):
+    print(f"{order}\t{case['id']}")
+PY
 )
-sim_stack_cleanup
 
-docker run -d --name "$official_container" \
-  -p 127.0.0.1:18000:18000 -e MUJOCO_GL=egl \
-  -v "$repo_root:/workspace:ro" -v "$run_dir:/evidence" "$image" \
-  reachy-mini-daemon --sim --headless --no-media --no-wake-up-on-start \
-  --no-goto-sleep-on-stop --no-preload-datasets --fastapi-host 0.0.0.0 \
-  --fastapi-port 18000 >"$run_dir/official-container-id.txt"
+for entry in "${cases[@]}"; do
+  IFS=$'\t' read -r case_order case_id <<<"$entry"
+  case_dir="$run_dir/$(printf '%02d' "$case_order")-$case_id"
+  mkdir -p "$case_dir"
+  started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  soma_ready= soma_shutdown= official_ready= official_shutdown= reason=
+  status=success
+  write_status "$case_dir/case-status.json" "$case_id" "$case_order" running "" "$started" "" "" "" "" ""
 
-for _ in $(seq 1 100); do
-  if docker logs "$official_container" 2>&1 | grep -q 'Failed to start daemon'; then
-    docker logs "$official_container" >"$run_dir/official-daemon.log" 2>&1
-    exit 1
+  if sim_stack_start "$repo_root" false "official-comparison-$case_order"; then
+    soma_ready=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    if [[ ${SOMA_OFFICIAL_SIM_INJECT_FAILURE:-} == "$case_id" ]]; then
+      printf '%s\n' "injected adapter failure for orchestration verification" >"$case_dir/soma-adapter.log"
+      status=failed; reason="injected Soma adapter failure"
+    elif ! (cd "$repo_root/python" && timeout 30s env PYTHONPATH="$repo_root:$repo_root/python" UV_DEFAULT_INDEX=https://pypi.org/simple \
+      uv run python -m comparison.official_sim.soma_adapter --suite "$suite" --case "$case_id" --output "$case_dir/soma.jsonl") \
+      >"$case_dir/soma-adapter.log" 2>&1; then
+      status=failed; reason="Soma adapter failed or timed out"
+    fi
+  else
+    status=failed; reason="Soma stack readiness failed"
   fi
-  if docker logs "$official_container" 2>&1 | grep -q 'Daemon started successfully'; then
-    break
+  cp "${sim_stack_rt_log:-/dev/null}" "$case_dir/soma-rt.log" 2>/dev/null || true
+  cp "${sim_stack_runtime_log:-/dev/null}" "$case_dir/soma-runtime.log" 2>/dev/null || true
+  sim_stack_cleanup
+  soma_shutdown=clean
+
+  if [[ $status == success ]]; then
+    docker rm -f "$official_container" >/dev/null 2>&1 || true
+    if docker run -d --name "$official_container" -p 127.0.0.1:18000:18000 -e MUJOCO_GL=egl \
+      -v "$repo_root:/workspace:ro" -v "$case_dir:/evidence" "$image" \
+      reachy-mini-daemon --sim --headless --no-media --no-wake-up-on-start \
+      --no-goto-sleep-on-stop --no-preload-datasets --fastapi-host 0.0.0.0 --fastapi-port 18000 \
+      >"$case_dir/official-container-id.txt" 2>"$case_dir/official-container-start.log"; then
+      for _ in $(seq 1 100); do
+        docker logs "$official_container" >"$case_dir/official-daemon.log" 2>&1 || true
+        grep -q 'Daemon started successfully' "$case_dir/official-daemon.log" && break
+        grep -q 'Failed to start daemon' "$case_dir/official-daemon.log" && break
+        docker inspect "$official_container" --format '{{.State.Running}}' 2>/dev/null | grep -q true || break
+        sleep 0.1
+      done
+      docker logs "$official_container" >"$case_dir/official-daemon.log" 2>&1 || true
+      if grep -q 'Daemon started successfully' "$case_dir/official-daemon.log"; then
+        official_ready=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+        if ! timeout 30s docker exec "$official_container" python -m comparison.official_sim.official_adapter \
+          --host 127.0.0.1 --suite /workspace/comparison/official_sim/suite.json --case "$case_id" \
+          --output /evidence/official.jsonl >"$case_dir/official-adapter.log" 2>&1; then
+          status=failed; reason="official adapter failed or timed out"
+        fi
+      else
+        status=failed; reason="official daemon readiness failed"
+      fi
+    else
+      status=failed; reason="official container start failed"
+    fi
+  else
+    printf '%s\n' "official stage skipped after Soma failure" >"$case_dir/official-adapter.log"
   fi
-  docker inspect "$official_container" --format '{{.State.Running}}' | grep -q true || {
-    docker logs "$official_container" >"$run_dir/official-daemon.log" 2>&1
-    exit 1
-  }
-  sleep 0.1
+  docker rm -f "$official_container" >/dev/null 2>&1 && official_shutdown=clean || official_shutdown=not-started
+  finished=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  write_status "$case_dir/case-status.json" "$case_id" "$case_order" "$status" "$reason" "$started" "$soma_ready" "$soma_shutdown" "$official_ready" "$official_shutdown" "$finished"
+  if [[ $status != success ]]; then
+    suite_failed=1
+    echo "$case_id failed: $reason" >&2
+  fi
 done
-docker logs "$official_container" >"$run_dir/official-daemon.log" 2>&1
-grep -q 'Daemon started successfully' "$run_dir/official-daemon.log"
 
-docker exec "$official_container" python -m comparison.official_sim.official_adapter \
-  --host 127.0.0.1 --output /evidence/official.jsonl
-
-PYTHONPATH="$repo_root" python3 -m comparison.official_sim.analyze \
-  --soma "$run_dir/soma.jsonl" --official "$run_dir/official.jsonl" \
-  --json "$run_dir/metrics.json" --report "$run_dir/report.md"
-echo "comparison complete: $run_dir/report.md"
+if ! PYTHONPATH="$repo_root" python3 -m comparison.official_sim.analyze \
+  --suite "$suite" --run-dir "$run_dir" --json "$run_dir/metrics.json" --report "$run_dir/report.md"; then
+  echo "suite report generation failed" >&2
+  exit 1
+fi
+echo "comparison suite complete: $run_dir/report.md"
+exit "$suite_failed"

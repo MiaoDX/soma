@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "actuator_order": [
+    "yaw_body",
+    "stewart_1",
+    "stewart_2",
+    "stewart_3",
+    "stewart_4",
+    "stewart_5",
+    "stewart_6",
+    "right_antenna",
+    "left_antenna"
+  ],
+  "units": "radians",
+  "warmup_s": 1.0,
+  "sample_period_s": 0.02,
+  "dwell_s": 2.0,
+  "representative_case": "combined-yaw-antennas",
+  "cases": [
+    {
+      "id": "yaw-step",
+      "deltas_rad": [0.15, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    },
+    {
+      "id": "mirrored-antennas",
+      "deltas_rad": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.15, -0.15]
+    },
+    {
+      "id": "combined-yaw-antennas",
+      "deltas_rad": [0.15, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.15, -0.15]
+    }
+  ]
+}

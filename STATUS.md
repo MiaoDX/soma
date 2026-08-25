@@ -31,9 +31,12 @@ generated raw evidence remains under ignored `output/`. Hardware N0/N1 gates
 remain unchanged.
 
 A follow-up [fixed case suite plan](docs/plans/official-simulation-case-suite-plan.md)
-has completed its planning loop and execution preflight but has not started
-implementation. It will extend the same private owning command to run three
-predeclared yaw, antenna, and combined cases without outcome-based selection.
+is implemented. The private owning command runs three predeclared yaw,
+antenna, and combined cases without outcome-based selection, preserves
+per-case lifecycle evidence, and validates two clean runs. The committed
+[suite report](docs/measurements/official-simulation-case-suite-report.md)
+contains the representative multi-case evidence; generated raw evidence
+remains under ignored `output/`.
 
 When the reviewed device arrives, stop the official daemon before running:
 
@@ -67,6 +70,7 @@ readability remains the final gate.
 
 - Active comparison/hardware state: [bootstrap capsule](docs/status/active/bootstrap.md)
 - Preflighted next slice: [official simulation fixed case suite](docs/plans/official-simulation-case-suite-plan.md)
+- Completed suite evidence: [official simulation fixed case suite report](docs/measurements/official-simulation-case-suite-report.md)
 - Preflighted interim plan: [official simulation comparison](docs/plans/official-simulation-comparison-plan.md)
 - Approved hardware plan: [bootstrap plan](docs/plans/bootstrap-plan.md)
 - Implemented, manual display review pending: [simulation visualization plan](docs/plans/simulation-visualization-plan.md)

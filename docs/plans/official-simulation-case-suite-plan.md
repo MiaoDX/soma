@@ -6,9 +6,9 @@
 
 ## Plan Ledger
 
-- `status`: planning loop converged; execution preflight ready for new-context approval
-- `current_slice`: extend the completed one-trace comparison into a fixed three-case evidence suite
-- `next_action`: execute the full preflight in one new context through `$intuitive-flow`
+- `status`: DONE; S0-S3 implemented and verified, 2026-08-25
+- `current_slice`: fixed three-case evidence suite committed with reproducible live evidence
+- `next_action`: none; await hardware N0 and keep suite command available for fresh evidence
 - `no_touch`: hardware, N0/N1, public protocol, production runtime dependencies, generic trace framework, result-driven case selection
 - `stop_condition`: stop if a case cannot share the fixed nine-actuator public command/state mapping or requires unsafe/undefined Stewart targets
 
@@ -201,7 +201,7 @@ status to link the suite report without deleting the parent evidence.
 
 ## Execution Preflight
 
-Preflight status: DRAFT
+Preflight status: COMPLETE
 
 Task source: approved fixed-case-suite plan and converged agent-planning-loop
 review.
