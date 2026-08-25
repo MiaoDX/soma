@@ -30,56 +30,18 @@ while (($#)); do
 done
 
 repo_root=$(cd "$(dirname "$0")/.." && pwd)
-rt_log=$(mktemp /tmp/soma-teleop-rt.XXXXXX.log)
-runtime_log=$(mktemp /tmp/soma-teleop-runtime.XXXXXX.log)
-observer_log=$(mktemp /tmp/soma-teleop-observer.XXXXXX.log)
-rerun_log=$(mktemp /tmp/soma-teleop-rerun.XXXXXX.log)
-snapshot_socket="/tmp/soma-teleop-observer.$$.sock"
+# shellcheck source=scripts/sim-stack.sh
+source "$repo_root/scripts/sim-stack.sh"
 cleanup() {
-  kill -TERM -- "-${rerun_pid:-}" 2>/dev/null || true
-  kill "${session_pid:-}" "${rt_pid:-}" "${runtime_pid:-}" "${observer_pid:-}" "${rerun_pid:-}" 2>/dev/null || true
-  wait "${session_pid:-}" "${rt_pid:-}" "${runtime_pid:-}" "${observer_pid:-}" "${rerun_pid:-}" 2>/dev/null || true
-  rm -f "$snapshot_socket" "$snapshot_socket.lock" "$snapshot_socket.ready" "$snapshot_socket.ready.lock"
+  kill "${session_pid:-}" 2>/dev/null || true
+  wait "${session_pid:-}" 2>/dev/null || true
+  sim_stack_cleanup
 }
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-if $visualize; then
-  "$repo_root/scripts/cargo-mujoco" build --quiet -p soma-runtime --features sim-visualization --bin robot-rt --bin robot-runtime --bin robot-sim-observer
-else
-  "$repo_root/scripts/cargo-mujoco" build --quiet --bin robot-rt --bin robot-runtime
-fi
-export LD_LIBRARY_PATH="$repo_root/.mujoco/mujoco-3.9.0/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-"$repo_root/target/debug/robot-runtime" >"$runtime_log" 2>&1 & runtime_pid=$!
-
-if $visualize; then
-  rerun_port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')
-  (cd "$repo_root/python" && exec setsid env UV_DEFAULT_INDEX=https://pypi.org/simple uv run --extra visualization rerun --bind 127.0.0.1 --port "$rerun_port" --expect-data-soon) >"$rerun_log" 2>&1 & rerun_pid=$!
-  for _ in $(seq 1 100); do
-    (exec 3<>/dev/tcp/127.0.0.1/"$rerun_port") 2>/dev/null && break
-    kill -0 "$rerun_pid" 2>/dev/null || { cat "$rerun_log" >&2; exit 1; }
-    sleep 0.1
-  done
-  "$repo_root/target/debug/robot-sim-observer" --snapshot-socket "$snapshot_socket" --rerun-endpoint "rerun+http://127.0.0.1:$rerun_port/proxy" >"$observer_log" 2>&1 & observer_pid=$!
-  for _ in $(seq 1 100); do
-    [[ -S $snapshot_socket && -f $snapshot_socket.ready ]] && break
-    kill -0 "$observer_pid" 2>/dev/null || { cat "$observer_log" >&2; exit 1; }
-    sleep 0.1
-  done
-  [[ -S $snapshot_socket && -f $snapshot_socket.ready ]] || { cat "$observer_log" >&2; exit 1; }
-  "$repo_root/target/debug/robot-rt" --observe-socket "$snapshot_socket" >"$rt_log" 2>&1 & rt_pid=$!
-else
-  "$repo_root/target/debug/robot-rt" >"$rt_log" 2>&1 & rt_pid=$!
-fi
-for _ in $(seq 1 50); do
-  if [[ -S /tmp/soma-robot-rt.sock && -S /tmp/soma-robot-runtime.sock ]] && (exec 3<>/dev/tcp/127.0.0.1/7447) 2>/dev/null; then break; fi
-  sleep 0.1
-done
-if ! kill -0 "$rt_pid" "$runtime_pid" 2>/dev/null || ! (exec 3<>/dev/tcp/127.0.0.1/7447) 2>/dev/null; then
-  cat "$rt_log" "$runtime_log" >&2
-  exit 1
-fi
+sim_stack_start "$repo_root" "$visualize" teleop
 session_args=()
 [[ -n $keys ]] && session_args+=(--keys "$keys")
 cd "$repo_root/python"
@@ -88,8 +50,8 @@ if [[ -n $keys ]]; then
 else
   env UV_DEFAULT_INDEX=https://pypi.org/simple uv run python -m soma_client.command_session & session_pid=$!
 fi
-children=("$session_pid" "$rt_pid" "$runtime_pid")
-$visualize && children+=("$observer_pid" "$rerun_pid")
+children=("$session_pid" "$sim_stack_rt_pid" "$sim_stack_runtime_pid")
+$visualize && children+=("$sim_stack_observer_pid" "$sim_stack_rerun_pid")
 set +e
 wait -n -p finished_pid "${children[@]}"
 status=$?
@@ -98,5 +60,6 @@ if [[ $finished_pid == "$session_pid" ]]; then
   exit "$status"
 fi
 echo "simulation child $finished_pid exited while the command session was active" >&2
-cat "$rt_log" "$runtime_log" "$observer_log" "$rerun_log" >&2
+cat "$sim_stack_rt_log" "$sim_stack_runtime_log" \
+  "$sim_stack_observer_log" "$sim_stack_rerun_log" >&2
 exit 1
