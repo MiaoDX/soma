@@ -1,16 +1,16 @@
 # Reachy Official Simulation Comparison Plan
 
-> Status: Preflight-ready child slice; active bootstrap capsule reconciled,
-> 2026-08-25.
+> Status: D0 blocked on local official-simulator prerequisites, 2026-08-25.
 > Appetite: at most 4 engineering days before Reachy Mini hardware arrives.
 > Parent: `docs/plans/bootstrap-plan.md`, section 5 (Official comparison).
 
 ## Plan Ledger
 
-- `status`: preflight-ready; approved implementation belongs in a new context
+- `status`: D0 `BLOCKED_NEEDS_LOCAL_VALIDATION`; implementation stopped at the required gate
 - `current_slice`: simulation-only official comparison while hardware N0 is blocked
-- `next_action`: execute the full plan through `$intuitive-flow` in a new context
-- `blocker`: official simulator environment and nine-actuator comparability are unproven
+- `next_action`: provide an isolated host/container with GObject introspection prerequisites, then rerun the pinned D0 launch and mapping probe
+- `blocker`: official v1.9.0 install fails because `gobject-introspection-1.0` development metadata is unavailable; nine-actuator comparability remains unproven
+- `evidence`: `docs/measurements/official-simulation-d0-blocker.md`
 - `no_touch`: hardware writes, N1 motion, public protocol changes, App framework, Isaac/Genie backend
 - `stop_condition`: D0 cannot reproduce the official path or establish a defensible common trace
 

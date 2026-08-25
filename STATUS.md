@@ -20,11 +20,14 @@ No native Plant, bus worker, torque enable, or physical motion is implemented.
 N0 cannot run because no Reachy Mini Lite CH343 device (`1a86:55d3`) is
 connected. Hardware work remains blocked and no N0/N1 gate is bypassed.
 
-While waiting for the device, the active bounded child slice is the
-[official simulation comparison plan](docs/plans/official-simulation-comparison-plan.md).
-Its first action is a half-day comparability audit of a pinned, isolated
-official simulator. The implementation must stop with evidence if a defensible
-common 9-actuator trace cannot be established.
+While waiting for the device, the bounded
+[official simulation comparison plan](docs/plans/official-simulation-comparison-plan.md)
+is stopped at its D0 local-validation gate. The pinned Reachy Mini v1.9.0
+install cannot build its `pygobject` dependency because this host lacks
+GObject-introspection development metadata. The
+[D0 blocker evidence](docs/measurements/official-simulation-d0-blocker.md)
+records the exact environment and reproduction commands. D1 tooling must not
+start until a live official daemon and public-SDK nine-actuator mapping pass.
 
 When the reviewed device arrives, stop the official daemon before running:
 
