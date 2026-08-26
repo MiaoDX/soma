@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package soma.v1;
+
+message ActuatorTarget {
+  repeated float positions_rad = 1;
+  uint64 sequence = 2;
+  uint64 timeline = 3;
+  uint64 issued_at_ns = 4;
+  uint64 ttl_ns = 5;
+}
+
+message RtRequest {
+  oneof request {
+    ActuatorTarget target = 1;
+    bool reset = 2;
+  }
+}
+
+enum AppliedSource {
+  APPLIED_SOURCE_UNSPECIFIED = 0;
+  APPLIED_SOURCE_TARGET = 1;
+  APPLIED_SOURCE_MEASURED_POSITION_HOLD = 2;
+}
+
+enum CommandDisposition {
+  COMMAND_DISPOSITION_UNSPECIFIED = 0;
+  COMMAND_DISPOSITION_NO_COMMAND = 1;
+  COMMAND_DISPOSITION_ACCEPTED = 2;
+  COMMAND_DISPOSITION_REJECTED = 3;
+}
+
+enum RejectionReason {
+  REJECTION_REASON_UNSPECIFIED = 0;
+  REJECTION_REASON_TIMELINE = 1;
+  REJECTION_REASON_SEQUENCE = 2;
+  REJECTION_REASON_EXPIRED = 3;
+}
+
+enum PlantHealth {
+  PLANT_HEALTH_UNSPECIFIED = 0;
+  PLANT_HEALTH_HEALTHY = 1;
+  PLANT_HEALTH_STALE_STATE = 2;
+  PLANT_HEALTH_COMMUNICATION_FAULT = 3;
+  PLANT_HEALTH_CONFIGURATION_MISMATCH = 4;
+}
+
+message ActuatorState {
+  repeated float positions_rad = 1;
+  uint64 sequence = 2;
+  uint64 timeline = 3;
+  uint64 timestamp_ns = 4;
+  uint64 state_age_ns = 5;
+  AppliedSource applied_source = 6;
+  uint64 applied_sequence = 7;
+  bool expiry_transition = 8;
+  CommandDisposition command_disposition = 9;
+  RejectionReason rejection_reason = 10;
+  PlantHealth health = 11;
+  uint64 capture_monotonic_ns = 12;
+}

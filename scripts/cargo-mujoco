@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root=$(cd "$(dirname "$0")/.." && pwd)
+export MUJOCO_DOWNLOAD_DIR="${MUJOCO_DOWNLOAD_DIR:-$repo_root/.mujoco}"
+export LD_LIBRARY_PATH="$MUJOCO_DOWNLOAD_DIR/mujoco-3.9.0/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+exec cargo "$@"

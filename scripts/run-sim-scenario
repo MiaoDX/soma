@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root=$(cd "$(dirname "$0")/.." && pwd)
+rt_log=$(mktemp /tmp/soma-robot-rt.XXXXXX.log)
+runtime_log=$(mktemp /tmp/soma-robot-runtime.XXXXXX.log)
+
+cleanup() {
+  kill "${rt_pid:-}" "${runtime_pid:-}" 2>/dev/null || true
+  wait "${rt_pid:-}" "${runtime_pid:-}" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+"$repo_root/scripts/cargo-mujoco" build --quiet --bin robot-rt --bin robot-runtime
+
+export LD_LIBRARY_PATH="$repo_root/.mujoco/mujoco-3.9.0/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+"$repo_root/target/debug/robot-rt" >"$rt_log" 2>&1 &
+rt_pid=$!
+"$repo_root/target/debug/robot-runtime" >"$runtime_log" 2>&1 &
+runtime_pid=$!
+
+for _ in $(seq 1 50); do
+  if [[ -S /tmp/soma-robot-rt.sock && -S /tmp/soma-robot-runtime.sock ]] &&
+      (exec 3<>/dev/tcp/127.0.0.1/7447) 2>/dev/null; then
+    break
+  fi
+  sleep 0.1
+done
+if ! kill -0 "$rt_pid" "$runtime_pid" 2>/dev/null ||
+    ! (exec 3<>/dev/tcp/127.0.0.1/7447) 2>/dev/null; then
+  cat "$rt_log" "$runtime_log" >&2
+  exit 1
+fi
+
+cd "$repo_root/python"
+timeout 15 uv run python -m soma_client.scenario

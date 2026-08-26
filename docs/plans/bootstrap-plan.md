@@ -7,6 +7,15 @@
 > dependency for the native hardware path. The 9-actuator public command, N1
 > physical-actuation gate, and four-way official comparison are approved.
 
+## Execution Status
+
+Status: ACTIVE. The fixed profile, `ControlCore`, pinned `ReachySimPlant`, two
+Rust process boundary, Protobuf/loopback Zenoh transport, and Python acceptance
+scenario are implemented. `scripts/run-sim-scenario` proves the complete
+simulation acceptance flow. Remaining required work is the hardware N0/N1
+gates, native bus worker and staged motion, followed by the four-way official
+comparison.
+
 ## Goal
 
 Build one small end-to-end system that can command the same Reachy Mini profile

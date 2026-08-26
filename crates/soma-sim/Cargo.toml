@@ -1,0 +1,13 @@
+[package]
+name = "soma-sim"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+mujoco-rs = { version = "5.0.0", features = ["auto-download-mujoco"] }
+soma-core = { path = "../soma-core" }
+
+[lib]
+name = "soma_sim"
+path = "src/lib.rs"

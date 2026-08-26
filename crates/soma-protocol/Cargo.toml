@@ -1,0 +1,16 @@
+[package]
+name = "soma-protocol"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+build = "build.rs"
+
+[dependencies]
+prost = "0.14"
+
+[build-dependencies]
+prost-build = "0.14"
+
+[lib]
+name = "soma_protocol"
+path = "src/lib.rs"

@@ -24,3 +24,4 @@ build/
 *.mcap
 *.log
 .env
+.mujoco/
