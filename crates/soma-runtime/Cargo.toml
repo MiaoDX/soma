@@ -17,6 +17,7 @@ zenoh = "=1.10.0"
 
 [features]
 sim-visualization = ["dep:rerun", "soma-sim/viewer"]
+sim-showcase = ["sim-visualization", "soma-sim/showcase"]
 
 [[bin]]
 name = "robot-rt"

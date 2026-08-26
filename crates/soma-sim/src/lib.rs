@@ -7,6 +7,11 @@ use std::time::Duration;
 use mujoco_rs::prelude::{MjData, MjModel};
 #[cfg(feature = "viewer")]
 use mujoco_rs::viewer::MjViewer;
+#[cfg(feature = "showcase")]
+use mujoco_rs::{
+    renderer::{png, MjRenderer},
+    wrappers::mj_visualization::MjvCamera,
+};
 use soma_core::{
     ActuatorPositions, Lifecycle, Plant, PlantHealth, PositionApplication, ReachyActuatorState,
     ACTUATOR_COUNT,
@@ -30,6 +35,55 @@ pub const SNAPSHOT_VERSION: u16 = 1;
 pub const SNAPSHOT_NQ: usize = 37;
 pub const SNAPSHOT_NV: usize = 30;
 pub const SNAPSHOT_LEN: usize = 4 + 2 + 2 + 2 + 8 * 4 + 8 * (SNAPSHOT_NQ + SNAPSHOT_NV);
+
+#[cfg(feature = "showcase")]
+pub struct ReachySimRenderer {
+    data: MjData<Arc<MjModel>>,
+    renderer: MjRenderer,
+}
+
+#[cfg(feature = "showcase")]
+impl ReachySimRenderer {
+    pub const WIDTH: usize = 640;
+    pub const HEIGHT: usize = 480;
+
+    pub fn launch(path: impl AsRef<Path>) -> Result<Self, SimError> {
+        let model =
+            Arc::new(MjModel::from_xml(path).map_err(|error| SimError::Load(error.to_string()))?);
+        if model.camera("studio_close").map(|camera| camera.id) != Some(0) {
+            return Err(SimError::Load(
+                "fixed camera id 0 is not scene camera studio_close".into(),
+            ));
+        }
+        let data = MjData::new(model.clone());
+        let renderer = MjRenderer::builder()
+            .width(Self::WIDTH as u32)
+            .height(Self::HEIGHT as u32)
+            .camera(MjvCamera::new_fixed(0))
+            .png_compression(png::Compression::Balanced)
+            .build(model)
+            .map_err(|error| SimError::Load(error.to_string()))?;
+        Ok(Self { data, renderer })
+    }
+
+    pub fn render_png(
+        &mut self,
+        snapshot: &ReachySimSnapshot,
+        path: impl AsRef<Path>,
+    ) -> Result<(), SimError> {
+        self.data.qpos_mut().copy_from_slice(&snapshot.qpos);
+        self.data.qvel_mut().copy_from_slice(&snapshot.qvel);
+        self.data.set_time(snapshot.simulation_time_ns as f64 / 1e9);
+        self.data.forward();
+        self.renderer
+            .sync_data(&mut self.data)
+            .and_then(|_| self.renderer.render())
+            .map_err(|error| SimError::Load(error.to_string()))?;
+        self.renderer
+            .save_rgb(path)
+            .map_err(|error| SimError::Load(error.to_string()))
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReachySimSnapshot {
