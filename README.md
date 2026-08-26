@@ -74,6 +74,9 @@ absent, and serial exclusivity is demonstrated.
 
 ## Documentation
 
+- [Current status](STATUS.md)
+- [Architecture map](ARCHITECTURE.md)
+- [Human documentation index](docs/human/README.md)
 - [Reference architecture](docs/architecture/reference-architecture.md)
 - [Layering and trust boundaries](docs/architecture/layering-and-trust-boundaries.md)
 - [Security threat model](docs/architecture/security-threat-model.md)

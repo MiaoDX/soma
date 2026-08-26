@@ -96,8 +96,9 @@ The concrete key hierarchy, secure-boot chain, TPM/TEE use, developer credential
 
 M1 is explicitly `insecure-local-dev`: its public endpoint binds only to
 loopback and implements no authentication, TLS, signing, trust store, secure
-boot, anti-rollback, key rotation or revocation. `source_id` provides evidence
-attribution only and must not be presented as authenticated identity.
+boot, anti-rollback, key rotation or revocation. The current schema carries no
+`source_id`; if attribution is added before authentication, it must be presented
+as evidence only and never as authenticated identity.
 
 This profile cannot be used for non-local control, external distribution,
 physical actuation or OTA. Any of those triggers reopens the relevant threat
