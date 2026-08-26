@@ -49,12 +49,22 @@ impl ReachyActuatorTarget {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PositionApplication {
+    Target,
+    MeasuredPositionHold,
+}
+
 /// The bounded cyclic boundary implemented by simulation and native Plant adapters.
 pub trait Plant {
     type Error;
 
     fn read_state(&mut self) -> Result<ReachyActuatorState, Self::Error>;
-    fn apply_positions(&mut self, positions_rad: ActuatorPositions) -> Result<(), Self::Error>;
+    fn apply_positions(
+        &mut self,
+        positions_rad: ActuatorPositions,
+        application: PositionApplication,
+    ) -> Result<(), Self::Error>;
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -181,8 +191,14 @@ impl ControlCore {
             },
         };
 
+        let application = match applied.command {
+            AppliedCommand::Target { .. } => PositionApplication::Target,
+            AppliedCommand::MeasuredPositionHold { .. } => {
+                PositionApplication::MeasuredPositionHold
+            }
+        };
         plant
-            .apply_positions(applied.positions_rad)
+            .apply_positions(applied.positions_rad, application)
             .map_err(ControlError::Apply)?;
 
         Ok(ControlTick {
@@ -208,6 +224,7 @@ mod tests {
     struct TestPlant {
         state: ReachyActuatorState,
         applied: ActuatorPositions,
+        application: Option<PositionApplication>,
     }
 
     impl TestPlant {
@@ -222,6 +239,7 @@ mod tests {
                     health: PlantHealth::Healthy,
                 },
                 applied: [0.0; ACTUATOR_COUNT],
+                application: None,
             }
         }
     }
@@ -233,8 +251,13 @@ mod tests {
             Ok(self.state)
         }
 
-        fn apply_positions(&mut self, positions_rad: ActuatorPositions) -> Result<(), Self::Error> {
+        fn apply_positions(
+            &mut self,
+            positions_rad: ActuatorPositions,
+            application: PositionApplication,
+        ) -> Result<(), Self::Error> {
             self.applied = positions_rad;
+            self.application = Some(application);
             Ok(())
         }
     }
@@ -265,6 +288,7 @@ mod tests {
         assert_eq!(tick.command_result, CommandResult::Accepted { sequence: 4 });
         assert_eq!(tick.applied.command, AppliedCommand::Target { sequence: 4 });
         assert_eq!(plant.applied, [1.0; ACTUATOR_COUNT]);
+        assert_eq!(plant.application, Some(PositionApplication::Target));
         assert_eq!(tick.measured.lifecycle, Lifecycle::Enabled);
         assert_eq!(tick.measured.health, PlantHealth::Healthy);
     }
@@ -316,6 +340,10 @@ mod tests {
             AppliedCommand::MeasuredPositionHold { sequence: 3 }
         );
         assert!(expired.applied.expiry_transition);
+        assert_eq!(
+            plant.application,
+            Some(PositionApplication::MeasuredPositionHold)
+        );
 
         plant.state.positions_rad = [0.5; ACTUATOR_COUNT];
         let held = core.tick(&mut plant, None, 111).unwrap();

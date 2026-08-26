@@ -49,6 +49,55 @@ The first run downloads the pinned Rust and Python dependencies plus MuJoCo
 3.9.0. The scenario proves state delivery, actuator movement, command expiry to
 measured-position hold, reset timeline change, and old-timeline rejection.
 
+For an interactive simulation command session, run:
+
+```bash
+scripts/run-sim-teleop
+```
+
+Press `A`/`D` for discrete body-yaw nudges and `Q`/`E` for mirrored antenna
+nudges. Each event sends one complete nine-position target with a 250 ms TTL;
+the client does not continuously resend. Add `--visualize` for the same
+read-only MuJoCo and Rerun views, or use `--keys ADQE` as the bounded
+non-interactive integration route. `Ctrl-C` stops every process and removes
+every socket owned by the command.
+
+For the optional live simulation views, run:
+
+```bash
+scripts/run-sim-scenario --visualize
+```
+
+This installs the locked `rerun-sdk==0.36.2` visualization extra, starts its
+viewer on an ephemeral loopback port, and opens both the MuJoCo model window and
+a prearranged Rerun dashboard. The scenario is paced to show the initial pose,
+yaw motion, TTL transition to measured-position hold, reset, and old-timeline
+rejection. Closing either viewer does not stop the scenario or the other sink.
+
+`robot-rt` and `ReachySimPlant` remain authoritative. MuJoCo receives a private,
+lossy copy of the complete generalized state and cannot write back. Rerun reads
+the existing public command/state topics plus that snapshot timing evidence; it
+does not admit commands or invent a safety-output stage. Viewer pixels and rows
+are observational evidence, while the typed state and scenario assertions are
+the correctness oracle. Snapshot and Rerun queue loss is surfaced explicitly,
+and raw `qpos`/`qvel` are intentionally not expanded into default dashboard
+plots.
+The Rerun `program_time` axis starts at observer launch (`0s`); producer and
+receive timestamps are first aligned in the host monotonic clock domain and
+then displayed relative to that common start, rather than as host uptime.
+
+To inspect the windows after the acceptance scenario finishes, keep the visual
+runtime alive until `Ctrl-C`:
+
+```bash
+scripts/run-sim-scenario --visualize --keep-open
+```
+
+Visual mode requires an active desktop display. For automated GUI startup
+checks, `xvfb-run -a scripts/run-sim-scenario --visualize` is supported, but a
+virtual display does not replace human review of motion readability, camera
+interaction, or dashboard semantics.
+
 With a powered Reachy Mini Lite connected, run the read-only N0 audit before
 any hardware implementation or motion:
 
