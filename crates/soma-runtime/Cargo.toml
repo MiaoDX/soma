@@ -1,0 +1,23 @@
+[package]
+name = "soma-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+fs2 = "0.4"
+libc = "0.2"
+prost = "0.14"
+soma-core = { path = "../soma-core" }
+soma-protocol = { path = "../soma-protocol" }
+soma-sim = { path = "../soma-sim" }
+tokio = { version = "1.47", features = ["macros", "net", "rt-multi-thread", "signal", "time"] }
+zenoh = "=1.10.0"
+
+[[bin]]
+name = "robot-rt"
+path = "src/bin/robot-rt.rs"
+
+[[bin]]
+name = "robot-runtime"
+path = "src/bin/robot-runtime.rs"
