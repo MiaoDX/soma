@@ -31,6 +31,10 @@ The model is intentionally high level. Detailed mechanisms require ADRs and impl
 
 ## Trust boundaries
 
+The following diagram and invariants describe a qualified deployment profile.
+M1's deliberately narrower exception is defined in "M1 development profile"
+below and cannot be promoted beyond loopback.
+
 ```text
 untrusted / partially trusted
 
@@ -62,7 +66,7 @@ The boundary between `robot-runtime` and `robot-rt` is both a timing boundary an
 
 | Boundary | Invariant |
 | --- | --- |
-| Client to runtime | No client commands or acquires a protected resource without authenticated, authorized, current authority. |
+| Client to runtime | Outside `insecure-local-dev`, no client commands or acquires a protected resource without authenticated, authorized, current authority. |
 | Lease and lifecycle | Old leases, generations, timelines, and expired commands never regain authority after restart, reset, revocation, or reassignment. |
 | Runtime to RT | `robot-rt` accepts only bounded, version-compatible messages and independently validates freshness, mode, state, and `SA-3` constraints. |
 | Resource exhaustion | Network, middleware, SDK, diagnostics, recording, and fleet load cannot block the periodic RT path or renew command validity through queueing. |
@@ -88,11 +92,30 @@ device firmware         device-specific update and recovery authority
 
 The concrete key hierarchy, secure-boot chain, TPM/TEE use, developer credentials, rotation, revocation, and recovery ceremony are target-dependent ADRs.
 
+## M1 development profile
+
+M1 is explicitly `insecure-local-dev`: its public endpoint binds only to
+loopback and implements no authentication, TLS, signing, trust store, secure
+boot, anti-rollback, key rotation or revocation. `source_id` provides evidence
+attribution only and must not be presented as authenticated identity.
+
+This profile cannot be used for non-local control, external distribution,
+physical actuation or OTA. Any of those triggers reopens the relevant threat
+analysis and requires concrete trust and cryptographic mechanisms before the
+capability is enabled.
+
 ## Validation posture
 
-V0 includes functional positive and negative tests for the signed development artifact verifier because that verifier is itself a planned feature. A broader protocol security abuse-case suite, fuzzing, penetration testing, long-duration denial-of-service testing, production key ceremonies, and physical debug-interface validation are explicitly deferred to security qualification after the runtime and target platform exist.
+M1 validates only that the loopback-only development profile cannot be
+mistaken for a qualified deployment profile. Cryptographic verifier tests,
+protocol security abuse cases, fuzzing, penetration testing, long-duration
+denial-of-service testing, production key ceremonies, and physical
+debug-interface validation are deferred until a non-local, distribution,
+physical-actuation or OTA trigger exists.
 
-Deferral does not weaken the invariants above. It limits what V0 may claim: architecture reviewed, mechanisms partially implemented, production security not yet qualified.
+Deferral does not weaken the long-term invariants above. It limits what M1 may
+claim: architecture reviewed, local development only, no security mechanism
+implemented or qualified.
 
 ## Out of scope
 

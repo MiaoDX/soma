@@ -1,9 +1,8 @@
 # Architecture Diagrams
 
-These SVGs are the canonical visual summary of the reference architecture and
-the current plan. If a diagram and the prose in `docs/architecture/` or
-`docs/plans/` disagree, treat it as a documentation bug and fix whichever one
-is wrong — do not assume either is automatically correct.
+These SVGs are derived visual overviews of the reference architecture and
+current plan. Markdown in `docs/architecture/` and `docs/plans/` is
+authoritative. If a diagram disagrees with that prose, update the diagram.
 
 - [`soma-stack.svg`](soma-stack.svg) — responsibility layers (L-2..L5), the
   `robotd` deployment unit, the three Plant implementations, and the
@@ -14,10 +13,11 @@ is wrong — do not assume either is automatically correct.
   authority owns each transition, and what gets recorded. Companion to the
   "Requested, admitted, safety-output, applied" section of the
   [reference architecture](../reference-architecture.md).
-- [`soma-roadmap.svg`](soma-roadmap.svg) — M0 through M4, what each milestone
-  gates or triggers, and what is explicitly out of scope for Milestone 1.
+- [`soma-roadmap.svg`](soma-roadmap.svg) — the current thin happy path and the
+  concrete triggers required before recovery, evidence, hardware, or product
+  work becomes implementation scope.
   Companion to the [bootstrap plan](../../plans/bootstrap-plan.md).
 
-Regenerate rather than hand-edit where practical; these were produced as flat
-SVG (no external font or script dependency) so they render identically in
-light and dark GitHub themes and can be opened directly in a browser.
+The diagrams are manually maintained flat SVGs with no external font or script
+dependency, so they render consistently and can be opened directly in a
+browser. Keep them concise; contract detail belongs in the Markdown sources.

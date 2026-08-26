@@ -129,7 +129,12 @@ This separation prevents simulation-only capabilities from leaking into deployab
 
 ## Runtime separation
 
-`robotd` is the supervised deployment unit and on-robot service identity, not a monolithic-process requirement. Its baseline deployment consists of `robot-rt`, `robot-runtime`, and supervision that owns startup order, health monitoring, restart policy, and coordinated lifecycle transitions. The supervisor may be an init-system configuration or a dedicated process, but it must preserve the same externally visible failure and recovery semantics.
+`robotd` is the future supervised deployment unit and on-robot service identity,
+not a monolithic-process requirement. Its baseline deployment consists of
+`robot-rt`, `robot-runtime`, and supervision that owns startup order, health
+monitoring, restart policy, and coordinated lifecycle transitions. The first
+runnable slice implements the two process roles but deliberately defers the
+supervisor and recovery contract until the happy path is stable.
 
 ### `robot-rt`
 
@@ -153,10 +158,10 @@ Constraints:
 
 ### `robot-runtime`
 
-Responsibilities:
+Eventual responsibilities:
 
 - public protocol;
-- identity and authentication;
+- source attribution and, after the local development profile, identity and authentication;
 - control leases and arbitration;
 - actions and long-running tasks;
 - capability discovery;
@@ -165,7 +170,13 @@ Responsibilities:
 - external communication;
 - OTA and observability coordination.
 
-The two processes communicate through bounded shared-memory mailboxes. State publication may drop stale samples rather than block the real-time producer. Commands must carry timing-mode/local-deadline, sequence, Plant-timeline, runtime-generation, and ownership metadata. Loss or restart of `robot-runtime` must be handled by local `robot-rt` and lower safety authorities without unexpected motion.
+The two processes communicate through bounded shared-memory mailboxes. State
+publication may drop stale samples rather than block the real-time producer.
+The first slice carries sequence, local TTL, and Plant timeline. Timing modes,
+runtime generation, ownership metadata, and restart recovery are added when the
+corresponding behavior is implemented. In the eventual deployed contract, loss
+or restart of `robot-runtime` must be handled by local `robot-rt` and lower
+safety authorities without unexpected motion.
 
 ## Communication planes
 
@@ -177,11 +188,15 @@ Direct calls and fixed-size structs only.
 
 ### RT ↔ runtime plane
 
-Bounded shared-memory mailboxes with fixed-layout messages. The behavioral contract is stable; a time-boxed spike will choose between a minimal SPSC implementation and a mature community implementation without changing the public Robot Protocol.
+Bounded shared-memory mailboxes with fixed-layout messages. The first runnable
+slice uses a provisional minimal SPSC implementation and performs only a
+development-machine smoke measurement. Recovery semantics, cross-version ABI,
+target budgets, and dependency comparisons reopen when measured load or target
+hardware makes them concrete.
 
 ### Local bulk-data plane
 
-Shared-memory blob pools or a zero-copy IPC framework such as iceoryx2 for camera frames, point clouds, and other large payloads.
+Shared-memory blob pools or a zero-copy IPC framework such as iceoryx2 for camera frames, point clouds, and other large payloads. Public messages carry descriptors or handles for this data rather than embedding bulk bytes in the control schema.
 
 ### Distributed robot protocol
 
@@ -196,40 +211,48 @@ Rationale:
 
 Cyclone DDS remains relevant when native DDS interoperability is a product requirement, especially for ROS 2 or Unitree-style ecosystems.
 
-V0 does not require a transport bake-off before implementation. A comparative benchmark is triggered if Zenoh misses a declared Performance Envelope, creates an operational problem, or native DDS interoperability becomes a product requirement.
+The first slice does not require a transport bake-off. A comparative benchmark
+is triggered if Zenoh misses a measured need, creates an operational problem,
+or native DDS interoperability becomes a product requirement.
 
 ## Public Robot Protocol
 
-The public contract should be independent of ROS 2.
+The public contract should be independent of ROS 2. Protobuf is the provisional
+wire schema and Zenoh the first loopback binding. The initial schema contains
+only the happy-path command, state, and reset messages and carries no
+compatibility promise. Compatibility and version negotiation begin when Soma
+has a released artifact or external consumer. This does not replace the RT
+plane's fixed-layout messages.
 
 It should explicitly model:
 
 - **State streams** — joint state, IMU, odometry, power, health;
 - **Command streams** — velocity, low-level research commands, teleoperation;
-- **RPC** — short transactions and configuration;
-- **Actions** — cancellable long-running operations with progress;
+- **RPC** — short transactions and configuration when a concrete workflow needs them;
+- **Actions** — cancellable long-running operations with progress when a concrete workflow needs them;
 - **Events** — faults, lifecycle transitions, lease loss, safety intervention;
-- **Leases** — control ownership and arbitration;
-- **Capabilities** — feature and hardware discovery;
-- **Version negotiation** — protocol and schema compatibility.
+- **Leases** — ownership and arbitration once more than one command source exists;
+- **Capabilities** — feature and hardware discovery once implementations vary;
+- **Version negotiation** — protocol and schema compatibility once an external contract exists.
 
-Commands should include at least:
+The first slice includes only immediate commands with a local TTL, sequence,
+and Plant timeline. Richer timing and ownership metadata are added when their
+trigger exists. The eventual command contract should include at least:
 
 ```text
 robot_id
 plant_timeline_id
 sequence
 lease_id
-source_id
-timing target: immediate / synchronized time / Plant-timeline tick + phase
-required clock domain and sync quality where scheduled
+source_id (attribution, not authenticated identity in M1)
+timing target: immediate / Plant-timeline tick + phase
 client_created_time (evidence only)
 server_receive_time and derived local deadline
 control_mode
 payload
 ```
 
-The system should distinguish **requested**, **admitted**, **safety-output**, and **applied** commands. Admission records `SA-4` protocol/identity/lease/mode/timing decisions; safety output records `SA-3` validation, clipping, or substitution; applied evidence records what reached the Plant/HAL and any observable lower-authority constraint.
+The system should distinguish **requested**, **admitted**, **safety-output**, and **applied** commands. Admission records `SA-4` protocol/source/lease/mode/timing decisions; safety output records `SA-3` validation, clipping, or substitution; applied evidence records what reached the Plant/HAL and any observable lower-authority constraint. M1 supports `ImmediateTiming` and `TickTargetTiming`; `ScheduledTiming` returns a typed unsupported result until synchronized-time control is reopened.
 
 ## Time model
 
@@ -370,7 +393,7 @@ The software safety path should validate:
 
 Hardware E-stop, STO, brakes, and power cutoff remain outside the Linux application safety path.
 
-Security should include device identity, signed artifacts, authenticated control sessions, capability-level authorization, auditability, and a long-term secure-boot/update trust chain. The high-level threats, trust boundaries, and invariants are defined in [Security Threat Model](security-threat-model.md); detailed mechanisms remain ADR and implementation work.
+Before non-local control, external distribution, physical actuation or OTA, security must include device identity, signed artifacts, authenticated control sessions, capability-level authorization, auditability, and a secure-boot/update trust chain appropriate to the target. M1 is instead loopback-only `insecure-local-dev` and implements none of those cryptographic mechanisms. The high-level threats, trust boundaries, and invariants are defined in [Security Threat Model](security-threat-model.md); detailed mechanisms remain triggered ADR and implementation work.
 
 ## Open architectural questions
 
@@ -384,6 +407,6 @@ The current reference architecture is a working thesis. Important questions stil
 - which safety responsibilities belong in the host versus dedicated safety hardware;
 - how much low-level control should be exposed to external research users;
 - OTA/recovery strategy across heterogeneous robot electronics;
-- the policy/inference-to-RT boundary: timeout policy, interpolation ownership, observation-time alignment, and action chunking — see [`policy-runtime-interface.md`](../deep-research/policy-runtime-interface.md) and `D-19`.
+- the deferred policy/inference questions: observation-time alignment and action chunking, reopened with a representative policy workload — see [`policy-runtime-interface.md`](../deep-research/policy-runtime-interface.md) and `D-19`.
 
 These questions should be resolved through Deep Research, benchmarks, ADRs, SIL/HIL tests, and eventually physical reference robots.

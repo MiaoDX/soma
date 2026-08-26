@@ -1,0 +1,9 @@
+[package]
+name = "soma-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "soma_core"
+path = "src/lib.rs"
