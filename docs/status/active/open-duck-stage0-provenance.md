@@ -42,3 +42,19 @@ Loaded with `onnxruntime==1.24.4` using `CPUExecutionProvider` and `numpy==2.4.0
 Observation segment meanings, action scaling, reset fill, phase convention,
 and event ordering remain hypotheses until the golden tick is independently
 reconstructed from licensed/public facts.
+
+## Hard-stop finding
+
+The Apache-2.0 repository's `experiments/v2/onnx_AWD_mujoco.py` and
+`onnx_AWD_mujoco_motor_control.py` do not establish the contract required by
+the approved plan. They build observations from projected gravity, all 16
+joint positions, all 16 joint velocities, two contacts, 16 previous actions,
+and three commands. One path pads that 83-value vector with 18 zeros to reach
+101. Both initialize 16-action state, while the pinned checkpoint inspected
+above emits 14 actions. The source therefore neither defines the plan's named
+101-field ledger nor a coherent 14-action-to-16-actuator application rule.
+
+The plan forbids copying or translating the unlicensed Runtime/Playground
+implementation and requires stopping when the licensed source set cannot
+establish exact semantics. Stage 0 is consequently blocked before rollout and
+before any shared or Reachy code change.
