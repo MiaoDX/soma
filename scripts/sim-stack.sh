@@ -15,15 +15,15 @@ sim_stack_start() {
   sim_stack_snapshot_socket="/tmp/soma-${name}-observer.$$.sock"
 
   if $visualize; then
-    "$repo_root/scripts/cargo-mujoco" build --quiet -p soma-runtime \
+    "$repo_root/scripts/cargo-mujoco" build --quiet --release -p soma-runtime \
       --features sim-visualization --bin robot-rt --bin robot-runtime \
       --bin robot-sim-observer
   else
-    "$repo_root/scripts/cargo-mujoco" build --quiet --bin robot-rt --bin robot-runtime
+    "$repo_root/scripts/cargo-mujoco" build --quiet --release --bin robot-rt --bin robot-runtime
   fi
 
   export LD_LIBRARY_PATH="$repo_root/.mujoco/mujoco-3.9.0/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-  "$repo_root/target/debug/robot-runtime" >"$sim_stack_runtime_log" 2>&1 &
+  "$repo_root/target/release/robot-runtime" >"$sim_stack_runtime_log" 2>&1 &
   sim_stack_runtime_pid=$!
 
   if $visualize; then
@@ -44,7 +44,7 @@ sim_stack_start() {
       kill -0 "$sim_stack_rerun_pid" 2>/dev/null || { cat "$sim_stack_rerun_log" >&2; return 1; }
       sleep 0.1
     done
-    "$repo_root/target/debug/robot-sim-observer" \
+    "$repo_root/target/release/robot-sim-observer" \
       --snapshot-socket "$sim_stack_snapshot_socket" \
       --rerun-endpoint "rerun+http://127.0.0.1:$sim_stack_rerun_port/proxy" \
       >"$sim_stack_observer_log" 2>&1 &
@@ -59,10 +59,10 @@ sim_stack_start() {
       cat "$sim_stack_observer_log" >&2
       return 1
     fi
-    "$repo_root/target/debug/robot-rt" --observe-socket "$sim_stack_snapshot_socket" \
+    "$repo_root/target/release/robot-rt" --observe-socket "$sim_stack_snapshot_socket" \
       >"$sim_stack_rt_log" 2>&1 &
   else
-    "$repo_root/target/debug/robot-rt" >"$sim_stack_rt_log" 2>&1 &
+    "$repo_root/target/release/robot-rt" >"$sim_stack_rt_log" 2>&1 &
   fi
   sim_stack_rt_pid=$!
 

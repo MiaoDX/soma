@@ -11,6 +11,8 @@ use soma_runtime::{
 };
 use soma_sim::{ReachySimPlant, REACHY_SCENE_PATH};
 
+const CONTROL_PERIOD: Duration = Duration::from_millis(20);
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
     let observation = match (args.next().as_deref(), args.next()) {
@@ -27,10 +29,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let socket = &owned.socket;
     socket.set_nonblocking(true)?;
 
-    let mut plant = ReachySimPlant::load(REACHY_SCENE_PATH)
+    let mut plant = ReachySimPlant::load(REACHY_SCENE_PATH, CONTROL_PERIOD)
         .map_err(|error| format!("load Reachy model: {error:?}"))?;
     let mut core = ControlCore::new();
-    let period = Duration::from_millis(20);
     let mut next_tick = Instant::now();
     let mut pending = None;
     let mut buffer = [0_u8; MAX_MESSAGE_SIZE];
@@ -61,7 +62,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let tick = core
             .tick(&mut plant, pending.take(), now_ns)
             .map_err(|error| format!("control tick: {error:?}"))?;
-        plant.step();
+        plant.advance_control_period();
         if let Some(observation_socket) = &observation {
             let snapshot = plant.snapshot(monotonic_ns()).encode();
             observation_socket.try_send(&snapshot);
@@ -73,7 +74,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Err(error) => return Err(error.into()),
         }
 
-        next_tick += period;
+        next_tick += CONTROL_PERIOD;
         thread::sleep(next_tick.saturating_duration_since(Instant::now()));
     }
 }

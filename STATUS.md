@@ -15,10 +15,39 @@ mirrored antenna motion through that same command path.
 The standalone native N0 probe is implemented and remains strictly read-only.
 No native Plant, bus worker, torque enable, or physical motion is implemented.
 
-## Blocker And Next Action
+## Hardware Blocker And Interim Action
 
 N0 cannot run because no Reachy Mini Lite CH343 device (`1a86:55d3`) is
-connected. Connect the reviewed device, stop the official daemon, and run:
+connected. Hardware work remains blocked and no N0/N1 gate is bypassed.
+
+While waiting for the device, the bounded
+[official simulation comparison plan](docs/plans/official-simulation-comparison-plan.md)
+has completed its simulation-only D0-D3 slice. The private owning command
+builds an isolated, pinned Reachy Mini v1.9.0 image with Git LFS assets, runs
+Soma and the official daemon separately, records capability-labelled JSONL,
+and generates deterministic motion/timing metrics. The representative report
+is [here](docs/measurements/official-simulation-representative-report.md);
+generated raw evidence remains under ignored `output/`. Hardware N0/N1 gates
+remain unchanged.
+
+A follow-up [fixed case suite plan](docs/plans/official-simulation-case-suite-plan.md)
+is implemented. The private owning command runs three predeclared yaw,
+antenna, and combined cases without outcome-based selection, preserves
+per-case lifecycle evidence, and validates two clean runs. The committed
+[suite report](docs/measurements/official-simulation-case-suite-report.md)
+contains the representative multi-case evidence; generated raw evidence
+remains under ignored `output/`.
+
+A cadence audit subsequently found that the original Soma comparison advanced
+one 2 ms MuJoCo step per 20 ms control period, so simulation time ran at one
+tenth of wall time. The Plant now validates an integral physics schedule at
+startup and advances ten substeps per Reachy control period. Product simulation
+commands use Rust release binaries. Two corrected clean suites show Soma and
+the official backend both settling the commanded yaw and antenna axes in about
+80 ms with nearly identical RMS errors. The full root-cause and before/after
+evidence is in the [cadence correction report](docs/measurements/official-simulation-cadence-correction-report.md).
+
+When the reviewed device arrives, stop the official daemon before running:
 
 ```bash
 cargo run --bin soma-reachy-probe --
@@ -48,10 +77,14 @@ readability remains the final gate.
 
 ## Active Work
 
-- Hardware bootstrap state: [bootstrap capsule](docs/status/active/bootstrap.md)
+- Active comparison/hardware state: [bootstrap capsule](docs/status/active/bootstrap.md)
+- Preflighted next slice: [official simulation fixed case suite](docs/plans/official-simulation-case-suite-plan.md)
+- Completed suite evidence: [official simulation fixed case suite report](docs/measurements/official-simulation-case-suite-report.md)
+- Corrected comparison evidence: [simulation cadence correction report](docs/measurements/official-simulation-cadence-correction-report.md)
+- Preflighted interim plan: [official simulation comparison](docs/plans/official-simulation-comparison-plan.md)
 - Approved hardware plan: [bootstrap plan](docs/plans/bootstrap-plan.md)
 - Implemented, manual display review pending: [simulation visualization plan](docs/plans/simulation-visualization-plan.md)
 - Implemented, desktop interaction review pending: [simulation command-session plan](docs/plans/reachy-command-session.md)
 
-No other robot profile, generic manifest, camera/audio path, or deferred
-production subsystem is active scope.
+No other robot profile, generic manifest, camera/audio path, App framework,
+additional simulator backend, or deferred production subsystem is active scope.

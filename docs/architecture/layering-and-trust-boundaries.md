@@ -118,6 +118,16 @@ flowchart LR
 
 In hard-real-time hardware mode the Plant call has a bounded deadline and never waits for an external RPC. A local in-process SIL runner may reuse `ControlCore` and `SA-3` semantics under virtual time without claiming production hard-RT scheduling evidence. In simulation lockstep, a virtual-time scheduler may pause advancement between ticks, but external simulator work still does not execute in the production periodic control section.
 
+Every local fixed-step physics adapter must validate its cadence before the
+first control tick. The control period must be a positive integral multiple of
+the model physics timestep, and one adapter advance must execute exactly that
+many physics substeps. A mismatch is a configuration error, not permission to
+run simulation time slower or faster than the declared scheduler. This check
+belongs to the simulation adapter seam rather than the generic `Plant` trait,
+because a hardware Plant has no physics timestep. New MuJoCo robot adapters
+reuse the shared schedule validator and add a model-specific expected-substep
+test before they are admitted to a product scenario.
+
 The Simulation Control Interface (`reset`, `step`, snapshot, randomization, ground truth, and fault injection) remains separate from the deployable Robot Protocol. A simulator can expose both interfaces without allowing simulation-only operations to leak into physical applications.
 
 ## Batch RL is a semantic compatibility target

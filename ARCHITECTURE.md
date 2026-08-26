@@ -24,6 +24,13 @@ The same bounded `Plant` and `ControlCore` contracts are intended to serve a
 future native Reachy hardware Plant. That path is not implemented: the current
 hardware surface stops at the standalone read-only N0 probe.
 
+The local MuJoCo adapter validates simulation cadence when it loads a model.
+One control period must be a positive integral number of physics timesteps;
+advancing the Plant then executes exactly that many substeps. This simulation
+contract stays outside the generic hardware-facing `Plant` trait, but every
+future MuJoCo robot adapter must pass the same startup precheck so a mismatched
+time scale cannot run silently.
+
 ## Implementation Language Selection
 
 Language follows ownership and execution guarantees, not the feature label
