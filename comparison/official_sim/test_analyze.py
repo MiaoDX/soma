@@ -8,9 +8,16 @@ from pathlib import Path
 
 from .analyze import actuator_metrics, render_suite, suite_results
 from .common import ACTUATORS, load_suite, select_case, validate_movement
+from .soma_adapter import sample_state
 
 
 class AnalyzerTest(unittest.TestCase):
+    def test_soma_sampling_initializes_its_delayed_state_fallback(self) -> None:
+        initial = object()
+        update = object()
+        self.assertIs(sample_state(initial, None), initial)
+        self.assertIs(sample_state(initial, update), update)
+
     def test_metrics_use_target_minus_measured_trace(self) -> None:
         rows = []
         for index, measured in enumerate([0.0, 0.05, 0.1, 0.1]):

@@ -10,6 +10,7 @@ soma-core = { path = "../soma-core" }
 
 [features]
 viewer = ["mujoco-rs/viewer"]
+showcase = ["mujoco-rs/renderer"]
 
 [lib]
 name = "soma_sim"

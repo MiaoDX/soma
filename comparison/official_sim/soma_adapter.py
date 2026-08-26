@@ -24,6 +24,10 @@ COMMAND_KEY = "soma/reachy/command"
 STATE_KEY = "soma/reachy/state"
 
 
+def sample_state(previous, latest):
+    return previous if latest is None else latest
+
+
 def receive(states: queue.Queue, timeout: float = 5.0):
     item = states.get(timeout=timeout)
     return soma_pb2.ActuatorState.FromString(bytes(item.payload))
@@ -76,6 +80,7 @@ def main() -> None:
                 )
             ]
             period_ns = int(suite["sample_period_s"] * 1_000_000_000)
+            state = initial_state
             for planned_index in range(suite["sample_count"]):
                 deadline_ns = sent_ns + (planned_index + 1) * period_ns
                 latest = None
@@ -87,8 +92,7 @@ def main() -> None:
                         break
                 while not states.empty():
                     latest = receive(states, 0.1)
-                if latest is not None:
-                    state = latest
+                state = sample_state(state, latest)
                 observed_ns = monotonic_ns()
                 records.append(
                     sample(

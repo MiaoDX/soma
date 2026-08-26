@@ -1,9 +1,10 @@
 use std::fs::{File, OpenOptions};
-use std::io;
+use std::io::{self, Write};
 use std::os::unix::net::UnixDatagram;
 use std::path::Path;
 
 use fs2::FileExt;
+use prost::Message;
 use soma_core::{
     AppliedCommand, CommandResult, ControlTick, PlantHealth as CorePlantHealth,
     ReachyActuatorTarget, RejectionReason as CoreRejectionReason,
@@ -43,7 +44,7 @@ pub struct OwnedDatagram {
 
 pub fn bind_owned_datagram(path: &str) -> io::Result<OwnedDatagram> {
     let lock_path = format!("{path}.lock");
-    let lock = OpenOptions::new()
+    let mut lock = OpenOptions::new()
         .create(true)
         .truncate(false)
         .read(true)
@@ -52,6 +53,8 @@ pub fn bind_owned_datagram(path: &str) -> io::Result<OwnedDatagram> {
     lock.try_lock_exclusive().map_err(|_| {
         io::Error::new(io::ErrorKind::AddrInUse, format!("{path} is already owned"))
     })?;
+    lock.set_len(0)?;
+    writeln!(lock, "{}", std::process::id())?;
     match std::fs::remove_file(path) {
         Ok(()) => {}
         Err(error) if error.kind() == io::ErrorKind::NotFound => {}
@@ -74,7 +77,13 @@ pub fn monotonic_ns() -> u64 {
     time.tv_sec as u64 * 1_000_000_000 + time.tv_nsec as u64
 }
 
-pub fn decode_target(request: v1::RtRequest, now_ns: u64) -> Option<ReachyActuatorTarget> {
+pub fn stamp_request_received(request: &mut v1::RtRequest, received_ns: u64) {
+    if let Some(rt_request::Request::Target(target)) = request.request.as_mut() {
+        target.issued_at_ns = received_ns;
+    }
+}
+
+pub fn decode_target(request: v1::RtRequest) -> Option<ReachyActuatorTarget> {
     let rt_request::Request::Target(target) = request.request? else {
         return None;
     };
@@ -83,12 +92,12 @@ pub fn decode_target(request: v1::RtRequest, now_ns: u64) -> Option<ReachyActuat
         positions_rad,
         sequence: target.sequence,
         timeline: target.timeline,
-        issued_at_ns: now_ns,
+        issued_at_ns: target.issued_at_ns,
         ttl_ns: target.ttl_ns,
     })
 }
 
-pub fn encode_state(tick: ControlTick, state_age_ns: u64) -> v1::ActuatorState {
+pub fn update_state(state: &mut v1::ActuatorState, tick: ControlTick, state_age_ns: u64) {
     let (applied_source, applied_sequence) = match tick.applied.command {
         AppliedCommand::Target { sequence } => (v1::AppliedSource::Target as i32, sequence),
         AppliedCommand::MeasuredPositionHold { sequence } => {
@@ -113,25 +122,37 @@ pub fn encode_state(tick: ControlTick, state_age_ns: u64) -> v1::ActuatorState {
             },
         ),
     };
-    v1::ActuatorState {
-        positions_rad: tick.measured.positions_rad.to_vec(),
-        sequence: tick.measured.sequence,
-        timeline: tick.measured.timeline,
-        timestamp_ns: tick.measured.timestamp_ns,
-        state_age_ns,
-        applied_source,
-        applied_sequence,
-        expiry_transition: tick.applied.expiry_transition,
-        command_disposition: command_disposition as i32,
-        rejection_reason: rejection_reason as i32,
-        health: match tick.measured.health {
-            CorePlantHealth::Healthy => v1::PlantHealth::Healthy,
-            CorePlantHealth::StaleState => v1::PlantHealth::StaleState,
-            CorePlantHealth::CommunicationFault => v1::PlantHealth::CommunicationFault,
-            CorePlantHealth::ConfigurationMismatch => v1::PlantHealth::ConfigurationMismatch,
-        } as i32,
-        capture_monotonic_ns: monotonic_ns(),
-    }
+    state.positions_rad.clear();
+    state
+        .positions_rad
+        .extend_from_slice(&tick.measured.positions_rad);
+    state.sequence = tick.measured.sequence;
+    state.timeline = tick.measured.timeline;
+    state.timestamp_ns = tick.measured.timestamp_ns;
+    state.state_age_ns = state_age_ns;
+    state.applied_source = applied_source;
+    state.applied_sequence = applied_sequence;
+    state.expiry_transition = tick.applied.expiry_transition;
+    state.command_disposition = command_disposition as i32;
+    state.rejection_reason = rejection_reason as i32;
+    state.health = match tick.measured.health {
+        CorePlantHealth::Healthy => v1::PlantHealth::Healthy,
+        CorePlantHealth::StaleState => v1::PlantHealth::StaleState,
+        CorePlantHealth::CommunicationFault => v1::PlantHealth::CommunicationFault,
+        CorePlantHealth::ConfigurationMismatch => v1::PlantHealth::ConfigurationMismatch,
+    } as i32;
+    state.capture_monotonic_ns = monotonic_ns();
+}
+
+pub fn encode_state_into(
+    state: &mut v1::ActuatorState,
+    tick: ControlTick,
+    state_age_ns: u64,
+    payload: &mut Vec<u8>,
+) -> Result<(), prost::EncodeError> {
+    update_state(state, tick, state_age_ns);
+    payload.clear();
+    state.encode(payload)
 }
 
 #[cfg(test)]
@@ -139,8 +160,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn target_requires_exactly_nine_positions_and_uses_rt_receive_time() {
-        let request = v1::RtRequest {
+    fn runtime_receive_time_is_preserved_through_rt_decode() {
+        let mut request = v1::RtRequest {
             request: Some(rt_request::Request::Target(v1::ActuatorTarget {
                 positions_rad: vec![0.0; 9],
                 sequence: 2,
@@ -149,9 +170,48 @@ mod tests {
                 ttl_ns: 50,
             })),
         };
-        let decoded = decode_target(request, 900).unwrap();
+        stamp_request_received(&mut request, 900);
+        let decoded = decode_target(request).unwrap();
         assert_eq!(decoded.issued_at_ns, 900);
         assert_eq!(decoded.positions_rad.len(), 9);
+        assert!(decoded.is_expired(950));
+    }
+
+    #[test]
+    fn periodic_state_encoding_reuses_preallocated_storage() {
+        use soma_core::{AppliedControl, Lifecycle, PlantHealth, ReachyActuatorState};
+
+        let tick = ControlTick {
+            measured: ReachyActuatorState {
+                positions_rad: [0.1; 9],
+                sequence: 1,
+                timeline: 2,
+                timestamp_ns: 3,
+                lifecycle: Lifecycle::Enabled,
+                health: PlantHealth::Healthy,
+            },
+            command_result: CommandResult::NoCommand,
+            applied: AppliedControl {
+                positions_rad: [0.1; 9],
+                command: AppliedCommand::MeasuredPositionHold { sequence: 1 },
+                expiry_transition: false,
+            },
+        };
+        let mut state = v1::ActuatorState {
+            positions_rad: Vec::with_capacity(9),
+            ..Default::default()
+        };
+        let mut payload = Vec::with_capacity(MAX_MESSAGE_SIZE);
+
+        encode_state_into(&mut state, tick, 0, &mut payload).unwrap();
+        let positions_ptr = state.positions_rad.as_ptr();
+        let payload_ptr = payload.as_ptr();
+        encode_state_into(&mut state, tick, 0, &mut payload).unwrap();
+
+        assert_eq!(state.positions_rad.as_ptr(), positions_ptr);
+        assert_eq!(payload.as_ptr(), payload_ptr);
+        assert_eq!(state.positions_rad.capacity(), 9);
+        assert_eq!(payload.capacity(), MAX_MESSAGE_SIZE);
     }
 
     #[test]
@@ -163,6 +223,10 @@ mod tests {
             Err(error) => error,
         };
         assert_eq!(second_error.kind(), io::ErrorKind::AddrInUse);
+        assert_eq!(
+            std::fs::read_to_string(format!("{path}.lock")).unwrap(),
+            format!("{}\n", std::process::id())
+        );
         drop(first);
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(format!("{path}.lock"));

@@ -1,0 +1,69 @@
+name: Simulation showcase
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/simulation-showcase.yml
+      - Cargo.lock
+      - Cargo.toml
+      - crates/**
+      - docs/showcase/**
+      - proto/**
+      - python/**
+      - scripts/build-sim-showcase
+      - scripts/cargo-mujoco
+      - scripts/verify-sim-showcase
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: 0.9.27
+          enable-cache: true
+          cache-dependency-glob: python/uv.lock
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+            .mujoco
+          key: simulation-showcase-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'python/uv.lock') }}
+          restore-keys: simulation-showcase-${{ runner.os }}-
+      - name: Install native rendering dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libegl1-mesa-dev libgl1-mesa-dev libwayland-dev libxkbcommon-dev
+      - name: Build verified report
+        run: scripts/build-sim-showcase output/simulation-showcase
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: output/simulation-showcase
+
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

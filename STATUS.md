@@ -1,6 +1,6 @@
 # Soma Status
 
-Updated: 2026-08-25
+Updated: 2026-08-26
 
 ## Current State
 
@@ -11,6 +11,12 @@ and thin Python scenario client. An optional feature-gated observer provides
 lossy read-only MuJoCo and Rerun views without changing the headless path.
 The simulation also has a discrete terminal command session for body yaw and
 mirrored antenna motion through that same command path.
+
+A reproducible simulation showcase command now captures a fixed-camera MuJoCo
+poster and VP9 WebM plus a real Rerun archive from the authoritative scenario,
+then verifies and packages them as a static report. The README carries the
+stable poster and Pages link. Local generation is proven; the first live Pages
+deployment remains pending a successful workflow run from `main`.
 
 The standalone native N0 probe is implemented and remains strictly read-only.
 No native Plant, bus worker, torque enable, or physical motion is implemented.
@@ -66,6 +72,7 @@ scripts/run-sim-scenario --visualize  # requires a desktop display
 scripts/run-sim-teleop
 scripts/run-sim-teleop --visualize    # requires a desktop display
 scripts/run-sim-teleop --keys ADQE    # bounded integration route
+scripts/build-sim-showcase output/simulation-showcase
 ```
 
 The scenario verifies typed state delivery, actuator movement, TTL expiry to
@@ -74,6 +81,10 @@ Visual mode adds paced MuJoCo motion and a Rerun evidence dashboard. Automated
 Xvfb startup, camera interaction, independent sink closure, scenario
 continuation, and teardown pass. Live human review of motion and dashboard
 readability remains the final gate.
+
+The showcase build creates a new output directory containing `index.html`, a
+MuJoCo poster and motion video, `evidence.rrd`, and machine-readable provenance.
+It runs `scripts/verify-sim-showcase` before reporting success.
 
 ## Active Work
 
@@ -85,6 +96,7 @@ readability remains the final gate.
 - Approved hardware plan: [bootstrap plan](docs/plans/bootstrap-plan.md)
 - Implemented, manual display review pending: [simulation visualization plan](docs/plans/simulation-visualization-plan.md)
 - Implemented, desktop interaction review pending: [simulation command-session plan](docs/plans/reachy-command-session.md)
+- Completed locally, live `main` deployment pending: [simulation showcase plan](docs/plans/simulation-showcase.md)
 
 No other robot profile, generic manifest, camera/audio path, App framework,
 additional simulator backend, or deferred production subsystem is active scope.

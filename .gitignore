@@ -26,4 +26,5 @@ build/
 *.log
 .env
 .mujoco/
+MUJOCO_LOG.TXT
 /.serena/project.yml

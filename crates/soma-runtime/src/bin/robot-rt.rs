@@ -6,7 +6,7 @@ use prost::Message;
 use soma_core::ControlCore;
 use soma_protocol::v1::{self, rt_request};
 use soma_runtime::{
-    bind_owned_datagram, decode_target, encode_state, monotonic_ns, BestEffortDatagram,
+    bind_owned_datagram, decode_target, encode_state_into, monotonic_ns, BestEffortDatagram,
     MAX_MESSAGE_SIZE, RT_SOCKET, RUNTIME_SOCKET,
 };
 use soma_sim::{ReachySimPlant, REACHY_SCENE_PATH};
@@ -35,6 +35,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut next_tick = Instant::now();
     let mut pending = None;
     let mut buffer = [0_u8; MAX_MESSAGE_SIZE];
+    let mut state = v1::ActuatorState {
+        positions_rad: Vec::with_capacity(9),
+        ..Default::default()
+    };
+    let mut payload = Vec::with_capacity(MAX_MESSAGE_SIZE);
 
     loop {
         match socket.recv(&mut buffer) {
@@ -45,7 +50,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 match request.request {
                     Some(rt_request::Request::Reset(true)) => plant.reset(),
                     Some(rt_request::Request::Target(_)) => {
-                        if let Some(target) = decode_target(request, monotonic_ns()) {
+                        if let Some(target) = decode_target(request) {
                             if plant.validate_positions(target.positions_rad).is_ok() {
                                 pending = Some(target);
                             }
@@ -67,7 +72,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let snapshot = plant.snapshot(monotonic_ns()).encode();
             observation_socket.try_send(&snapshot);
         }
-        let payload = encode_state(tick, 0).encode_to_vec();
+        encode_state_into(&mut state, tick, 0, &mut payload)?;
         match socket.send_to(&payload, RUNTIME_SOCKET) {
             Ok(_) => {}
             Err(error) if error.kind() == ErrorKind::NotFound => {}

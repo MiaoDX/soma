@@ -50,7 +50,7 @@ struct Args {
     #[arg(long, default_value_t = 10)]
     timeout_ms: u64,
     #[arg(long, default_value_t = 2)]
-    retries: u8,
+    retries: u16,
 }
 
 #[derive(Serialize)]
@@ -74,7 +74,7 @@ struct MotorReport {
     id: u8,
     name: &'static str,
     latency_us: u128,
-    attempts: u8,
+    attempts: u32,
     model: u16,
     firmware: u8,
     baud_register: u8,
@@ -102,6 +102,14 @@ struct RawRead {
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
     let (device, identity) = resolve_device(args.device)?;
+    let process_inspection = inspect_processes();
+    if !process_inspection.is_empty() {
+        return Err(format!(
+            "official Reachy daemon must be stopped before opening the bus: {}",
+            process_inspection.join(", ")
+        )
+        .into());
+    }
     let timeout = Duration::from_millis(args.timeout_ms);
     let builder = || {
         serialport::new(device.to_string_lossy(), 1_000_000)
@@ -130,7 +138,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             attempts += 1;
             match controller.ping(profile.id) {
                 Ok(value) => break value,
-                Err(error) if attempts <= args.retries => eprintln!(
+                Err(error) if should_retry(attempts, args.retries) => eprintln!(
                     "retry {attempts} for ID {} after ping error: {error}",
                     profile.id
                 ),
@@ -149,7 +157,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         )?);
     }
 
-    let process_inspection = inspect_processes();
     let passed = detected_ids == IDS
         && motors
             .iter()
@@ -180,7 +187,7 @@ fn read_motor(
     controller: &mut Xl330Controller,
     profile: Profile,
     latency: Duration,
-    attempts: u8,
+    attempts: u32,
 ) -> Result<MotorReport, Box<dyn Error>> {
     let registers = [
         (0, 7),
@@ -279,10 +286,16 @@ fn inspect_processes() -> Vec<String> {
         })
         .filter_map(|entry| std::fs::read(entry.path().join("cmdline")).ok())
         .map(|bytes| String::from_utf8_lossy(&bytes).replace('\0', " "))
-        .filter(|command| {
-            command.contains("reachy-mini-daemon") || command.contains("reachy_mini.daemon")
-        })
+        .filter(|command| is_official_daemon_command(command))
         .collect()
+}
+
+fn is_official_daemon_command(command: &str) -> bool {
+    command.contains("reachy-mini-daemon") || command.contains("reachy_mini.daemon")
+}
+
+fn should_retry(attempts: u32, retries: u16) -> bool {
+    attempts <= u32::from(retries)
 }
 
 #[cfg(test)]
@@ -293,5 +306,25 @@ mod tests {
     fn pinned_profile_has_the_expected_ids_and_configuration() {
         assert_eq!(PROFILE.map(|profile| profile.id), IDS);
         assert!(PROFILE.iter().all(|profile| profile.min <= profile.max));
+    }
+
+    #[test]
+    fn official_daemon_commands_are_rejected_before_bus_access() {
+        assert!(is_official_daemon_command(
+            "/usr/bin/reachy-mini-daemon --robot-version lite"
+        ));
+        assert!(is_official_daemon_command(
+            "python -m reachy_mini.daemon.app"
+        ));
+        assert!(!is_official_daemon_command(
+            "cargo run --bin soma-reachy-probe"
+        ));
+    }
+
+    #[test]
+    fn maximum_retry_count_does_not_wrap_the_attempt_counter() {
+        assert!(should_retry(255, u16::MAX));
+        assert!(should_retry(256, u16::MAX));
+        assert!(!should_retry(u32::from(u16::MAX) + 1, u16::MAX));
     }
 }

@@ -3,8 +3,8 @@ use std::io::ErrorKind;
 use prost::Message;
 use soma_protocol::v1;
 use soma_runtime::{
-    bind_owned_datagram, monotonic_ns, COMMAND_KEY, MAX_MESSAGE_SIZE, RT_SOCKET, RUNTIME_SOCKET,
-    STATE_KEY,
+    bind_owned_datagram, monotonic_ns, stamp_request_received, COMMAND_KEY, MAX_MESSAGE_SIZE,
+    RT_SOCKET, RUNTIME_SOCKET, STATE_KEY,
 };
 use tokio::net::UnixDatagram;
 use zenoh::Config;
@@ -30,10 +30,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             sample = subscriber.recv_async() => {
                 let sample = sample?;
                 let bytes = sample.payload().to_bytes();
-                if bytes.len() > MAX_MESSAGE_SIZE || v1::RtRequest::decode(bytes.as_ref()).is_err() {
+                if bytes.len() > MAX_MESSAGE_SIZE {
                     continue;
                 }
-                match socket.send_to(bytes.as_ref(), RT_SOCKET).await {
+                let Ok(mut request) = v1::RtRequest::decode(bytes.as_ref()) else {
+                    continue;
+                };
+                stamp_request_received(&mut request, monotonic_ns());
+                let payload = request.encode_to_vec();
+                match socket.send_to(&payload, RT_SOCKET).await {
                     Ok(_) => {}
                     Err(error) if error.kind() == ErrorKind::NotFound => {}
                     Err(error) => return Err(error.into()),
