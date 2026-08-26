@@ -1,8 +1,17 @@
 # Reachy Mini Simulation Showcase
 
-> Plan status: ACTIVE
+> Plan status: DONE; local pipeline and publication workflow verified, 2026-08-26
 > Last updated: 2026-08-26
 > Control plane: `/root`
+
+## Plan Ledger
+
+- `status`: DONE; local artifact pipeline, report, README integration, and Pages workflow implemented
+- `current_slice`: real MuJoCo poster/WebM and Rerun archive generated and verified from the fixed scenario
+- `next_action`: merge to `main` and verify the first live Pages deployment
+- `evidence`: `scripts/verify-sim-showcase`, responsive browser screenshots, and the generated ignored `output/simulation-showcase/`
+- `no_touch`: public protocol, Plant/RT semantics, robot profile, hardware gates, repository settings
+- `stop_condition`: reopen before any hardware claim, additional robot/backend, or interactive report control
 
 ## Goal
 
@@ -55,7 +64,8 @@ profiles, or deployment target requires renewed approval.
 4. The existing headless and interactive visualization commands retain their
    behavior and acceptance assertions.
 5. The Pages workflow runs the owning command, validates the report, uploads a
-   Pages artifact, and deploys only from the default branch or manual dispatch.
+   Pages artifact, and deploys only from the default branch; manual dispatch on
+   another branch builds without deployment.
 6. README shows the committed poster, accurately labels simulation-only scope,
    and links to the stable Pages report.
 
@@ -83,7 +93,9 @@ real-time semantics, robot profile, hardware gate, or GitHub repository settings
 If native window capture is nondeterministic, replace it with fixed offscreen
 rendering rather than weakening the media acceptance criteria.
 
-## Current Slice
+## Completion
 
-Implement and verify the local artifact pipeline first; then add Pages and
-README integration. No work is parked inside the accepted scope.
+The complete local artifact pipeline, responsive report, README integration,
+and Pages workflow are implemented. The only remaining operational check is a
+successful deployment from `main`, which requires repository permissions and
+cannot be established by a feature-branch run.

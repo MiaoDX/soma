@@ -40,9 +40,9 @@ requested/measured state and event timeline as read-only evidence.
 
 [Open the generated simulation report](https://miaodx.github.io/soma/) for the
 motion video, downloadable Rerun recording, fixed-case comparison, and exact
-commit provenance. GitHub Pages rebuilds the report from the authoritative
-acceptance scenario on `main`; the committed poster keeps the result visible
-when the generated site is unavailable.
+commit provenance. The GitHub Pages workflow rebuilds the report from the
+authoritative acceptance scenario on `main`; the committed poster keeps the
+result visible before or between successful deployments.
 
 Run the visual acceptance scenario locally:
 

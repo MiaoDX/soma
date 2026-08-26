@@ -41,6 +41,25 @@ measured-position hold, timeline reset, and old-timeline rejection. Product
 simulation scripts build and launch `target/release` binaries. Unit tests and
 Clippy retain their normal Cargo profiles.
 
+Build the static Reachy Mini simulation report into a new directory with:
+
+```bash
+scripts/build-sim-showcase output/simulation-showcase
+```
+
+The owning command runs the authoritative scenario, captures the fixed
+offscreen MuJoCo camera and Rerun archive, encodes the WebM, generates
+provenance, and invokes `scripts/verify-sim-showcase`. To validate an existing
+report without rebuilding it, run:
+
+```bash
+scripts/verify-sim-showcase output/simulation-showcase
+```
+
+The builder intentionally refuses an existing output path. The Pages workflow
+uses the same command and deploys only from `main`; a manual run on another
+branch proves the build but skips deployment.
+
 For every new local MuJoCo robot adapter, pass its control period into the
 shared physics-schedule validator during model load. Add tests proving the
 model's exact substeps per control period, rejection of a non-integral cadence,
