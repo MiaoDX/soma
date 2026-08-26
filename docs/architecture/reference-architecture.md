@@ -1,6 +1,8 @@
 # Soma Reference Architecture
 
-> Status: Canonical architecture. This document states the current system thesis; unresolved implementation choices remain provisional until an ADR records evidence and consequences.
+> Status: Canonical target architecture. Current bootstrap implementations are
+> called out explicitly; unmarked mechanisms describe the target thesis and
+> remain provisional until implementation evidence or an ADR fixes them.
 
 ## Purpose
 
@@ -45,7 +47,8 @@ L3  Locomotion, manipulation, perception, navigation, reusable policies
 robotd supervised deployment unit (spans L2 and L1)
 L2  robot-runtime (Rust, non-RT)
       Auth | Arbitration | Actions | Diagnostics | Recorder | OTA
-        │ fixed-layout shared memory / SPSC mailboxes
+        │ target: fixed-layout shared memory / SPSC mailboxes
+        │ current bootstrap: bounded exclusive Unix datagrams
         ▼
 L1  robot-rt (Rust, RT)
       ControlCore | Estimator | Controller | SA-3 | Watchdog
@@ -170,13 +173,15 @@ Eventual responsibilities:
 - external communication;
 - OTA and observability coordination.
 
-The two processes communicate through bounded shared-memory mailboxes. State
-publication may drop stale samples rather than block the real-time producer.
-The first slice carries sequence, local TTL, and Plant timeline. Timing modes,
-runtime generation, ownership metadata, and restart recovery are added when the
-corresponding behavior is implemented. In the eventual deployed contract, loss
-or restart of `robot-runtime` must be handled by local `robot-rt` and lower
-safety authorities without unexpected motion.
+The current bootstrap uses bounded, nonblocking, exclusively owned Unix
+datagrams between the two processes. State publication may drop stale samples
+rather than block the control owner. Shared-memory mailboxes remain the target
+for a measured real-time deployment, not a claim about the current code. The
+first slice carries sequence, local TTL, and Plant timeline; runtime generation,
+ownership metadata, and restart recovery are added only when their behavior is
+implemented. In the eventual deployed contract, loss or restart of
+`robot-runtime` must be handled by local `robot-rt` and lower safety authorities
+without unexpected motion.
 
 ## Communication planes
 
@@ -188,11 +193,12 @@ Direct calls and fixed-size structs only.
 
 ### RT ↔ runtime plane
 
-Bounded shared-memory mailboxes with fixed-layout messages. The first runnable
-slice uses a provisional minimal SPSC implementation and performs only a
-development-machine smoke measurement. Recovery semantics, cross-version ABI,
-target budgets, and dependency comparisons reopen when measured load or target
-hardware makes them concrete.
+The first runnable slice uses provisional bounded Unix datagrams with exclusive
+socket ownership and fixed maximum message size. It proves the process and
+backpressure boundary on a development machine; it does not claim a shared-
+memory ABI or target real-time qualification. Shared-memory/SPSC design,
+recovery semantics, cross-version ABI, target budgets, and dependency
+comparisons reopen when measured load or target hardware makes them concrete.
 
 ### Local bulk-data plane
 
@@ -236,8 +242,9 @@ It should explicitly model:
 - **Version negotiation** — protocol and schema compatibility once an external contract exists.
 
 The first slice includes only immediate commands with a local TTL, sequence,
-and Plant timeline. Richer timing and ownership metadata are added when their
-trigger exists. The eventual command contract should include at least:
+and Plant timeline. It does not carry lease, source, runtime-generation, or
+scheduled-timing metadata. Those fields belong to the eventual command contract
+and are added only when their trigger exists:
 
 ```text
 robot_id
@@ -252,7 +259,13 @@ control_mode
 payload
 ```
 
-The system should distinguish **requested**, **admitted**, **safety-output**, and **applied** commands. Admission records `SA-4` protocol/source/lease/mode/timing decisions; safety output records `SA-3` validation, clipping, or substitution; applied evidence records what reached the Plant/HAL and any observable lower-authority constraint. M1 supports `ImmediateTiming` and `TickTargetTiming`; `ScheduledTiming` returns a typed unsupported result until synchronized-time control is reopened.
+The target system should distinguish **requested**, **admitted**,
+**safety-output**, and **applied** commands. Admission records `SA-4`
+protocol/source/lease/mode/timing decisions; safety output records `SA-3`
+validation, clipping, or substitution; applied evidence records what reached
+the Plant/HAL and any observable lower-authority constraint. The current
+bootstrap exposes immediate command admission and applied-source evidence only;
+tick-target and synchronized scheduled timing are deferred.
 
 ## Time model
 
@@ -295,7 +308,13 @@ ControlProfile             controller tuning and ordinary operational limits
 SafetyProfile              independently governed safety-authoritative limits/behavior
 ```
 
-V0 uses a minimal `ProductModelManifest` alongside backend-native URDF, MJCF, and USD artifacts. A validator checks shared identity, joints, frames, units, transmissions, and declared compatibility; it does not attempt lossless cross-format generation. A model compiler is a later option only where repeated, proven transformations justify it. The public `RobotManifest` is a composed runtime projection for SDK discovery, not another writable source of truth. Separately, L0 reports inventory and health while L2 produces an ephemeral `RuntimeCapabilitySnapshot`; that snapshot references the activation-set hashes but does not enter the product-model or `RobotManifest` hash.
+The current bootstrap uses one pinned Reachy profile expressed directly in
+Rust constants and the backend-native MJCF assets. It deliberately has no
+generic `ProductModelManifest` or validator. Those artifacts reopen only after
+a second active embodiment or another concrete compatibility need exists. At
+that point, a public `RobotManifest` may be a composed runtime projection for
+SDK discovery rather than another writable source of truth, and a model
+compiler remains justified only by repeated proven transformations.
 
 All relevant artifacts should carry stable identifiers such as:
 
