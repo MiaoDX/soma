@@ -3,7 +3,8 @@ set -euo pipefail
 if [[ $# -ne 1 ]]; then echo "usage: scripts/verify-sim-showcase OUTPUT_DIR" >&2; exit 2; fi
 repo_root=$(cd "$(dirname "$0")/.." && pwd)
 output_dir=$(realpath "$1")
-ffmpeg=$(python3 -c 'import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())')
+ffmpeg=$(cd "$repo_root/python" && UV_DEFAULT_INDEX=https://pypi.org/simple \
+  uv run --extra visualization python -c 'import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())')
 python3 - "$output_dir" "$ffmpeg" <<'PY'
 import json,pathlib,re,subprocess,sys
 d=pathlib.Path(sys.argv[1]); ffmpeg=sys.argv[2]
