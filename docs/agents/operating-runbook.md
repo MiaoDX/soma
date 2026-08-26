@@ -37,7 +37,15 @@ scripts/run-sim-scenario
 
 `scripts/run-sim-scenario` builds both runtime processes, starts the local
 Zenoh path, runs the Python client, and verifies movement, TTL expiry to
-measured-position hold, timeline reset, and old-timeline rejection.
+measured-position hold, timeline reset, and old-timeline rejection. Product
+simulation scripts build and launch `target/release` binaries. Unit tests and
+Clippy retain their normal Cargo profiles.
+
+For every new local MuJoCo robot adapter, pass its control period into the
+shared physics-schedule validator during model load. Add tests proving the
+model's exact substeps per control period, rejection of a non-integral cadence,
+and one advance's simulation-time delta. Do not compensate for an invalid time
+scale by tuning actuator gains.
 
 ## Hardware Gate
 

@@ -46,8 +46,9 @@ scripts/run-sim-scenario
 ```
 
 The first run downloads the pinned Rust and Python dependencies plus MuJoCo
-3.9.0. The scenario proves state delivery, actuator movement, command expiry to
-measured-position hold, reset timeline change, and old-timeline rejection.
+3.9.0 and builds the robot runtime in release mode. The scenario proves state
+delivery, actuator movement, command expiry to measured-position hold, reset
+timeline change, and old-timeline rejection.
 
 For an interactive simulation command session, run:
 

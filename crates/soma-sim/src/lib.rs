@@ -2,6 +2,7 @@
 
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 use mujoco_rs::prelude::{MjData, MjModel};
 #[cfg(feature = "viewer")]
@@ -148,9 +149,59 @@ impl ReachySimViewer {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum PhysicsScheduleError {
+    ZeroControlPeriod,
+    InvalidPhysicsTimestep {
+        physics_timestep_s: f64,
+    },
+    NonIntegralSubsteps {
+        control_period_s: f64,
+        physics_timestep_s: f64,
+    },
+}
+
+/// Validated integer relationship between one control period and physics steps.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PhysicsSchedule {
+    substeps_per_control_period: usize,
+}
+
+impl PhysicsSchedule {
+    pub fn new(
+        control_period: Duration,
+        physics_timestep_s: f64,
+    ) -> Result<Self, PhysicsScheduleError> {
+        if control_period.is_zero() {
+            return Err(PhysicsScheduleError::ZeroControlPeriod);
+        }
+        if !physics_timestep_s.is_finite() || physics_timestep_s <= 0.0 {
+            return Err(PhysicsScheduleError::InvalidPhysicsTimestep { physics_timestep_s });
+        }
+        let control_period_s = control_period.as_secs_f64();
+        let ratio = control_period_s / physics_timestep_s;
+        let rounded = ratio.round();
+        let tolerance = 1e-9 * ratio.max(1.0);
+        if rounded < 1.0 || rounded > usize::MAX as f64 || (ratio - rounded).abs() > tolerance {
+            return Err(PhysicsScheduleError::NonIntegralSubsteps {
+                control_period_s,
+                physics_timestep_s,
+            });
+        }
+        Ok(Self {
+            substeps_per_control_period: rounded as usize,
+        })
+    }
+
+    pub fn substeps_per_control_period(self) -> usize {
+        self.substeps_per_control_period
+    }
+}
+
 #[derive(Debug)]
 pub enum SimError {
     Load(String),
+    PhysicsSchedule(PhysicsScheduleError),
     WrongModelSize {
         qpos: usize,
         qvel: usize,
@@ -172,6 +223,7 @@ pub enum SimError {
 
 pub struct ReachySimPlant {
     data: MjData<Arc<MjModel>>,
+    physics_schedule: PhysicsSchedule,
     timeline: u64,
     sequence: u64,
     limits: [[f32; 2]; ACTUATOR_COUNT],
@@ -179,9 +231,11 @@ pub struct ReachySimPlant {
 }
 
 impl ReachySimPlant {
-    pub fn load(path: impl AsRef<Path>) -> Result<Self, SimError> {
+    pub fn load(path: impl AsRef<Path>, control_period: Duration) -> Result<Self, SimError> {
         let model =
             Arc::new(MjModel::from_xml(path).map_err(|error| SimError::Load(error.to_string()))?);
+        let physics_schedule = PhysicsSchedule::new(control_period, model.opt().timestep)
+            .map_err(SimError::PhysicsSchedule)?;
         if (
             model.nq() as usize,
             model.nv() as usize,
@@ -219,6 +273,7 @@ impl ReachySimPlant {
         let limited = std::array::from_fn(|index| model.jnt_limited()[joint_ids[index]]);
         Ok(Self {
             data: MjData::new(model),
+            physics_schedule,
             timeline: 1,
             sequence: 0,
             limits,
@@ -232,8 +287,14 @@ impl ReachySimPlant {
         self.sequence = 0;
     }
 
-    pub fn step(&mut self) {
-        self.data.step();
+    pub fn advance_control_period(&mut self) {
+        for _ in 0..self.physics_schedule.substeps_per_control_period() {
+            self.data.step();
+        }
+    }
+
+    pub fn physics_schedule(&self) -> PhysicsSchedule {
+        self.physics_schedule
     }
 
     pub fn snapshot(&self, capture_monotonic_ns: u64) -> ReachySimSnapshot {
@@ -345,19 +406,51 @@ mod tests {
     use soma_core::{AppliedCommand, ControlCore, ReachyActuatorTarget};
     use std::path::PathBuf;
 
+    const CONTROL_PERIOD: Duration = Duration::from_millis(20);
+
     fn scene() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/reachy-mini/scene.xml")
     }
 
     #[test]
     fn pinned_reachy_model_loads_with_the_expected_dimensions() {
-        let plant = ReachySimPlant::load(scene()).unwrap();
+        let plant = ReachySimPlant::load(scene(), CONTROL_PERIOD).unwrap();
         assert_eq!(plant.model_dimensions(), (37, 30, 9));
+        assert_eq!(plant.physics_schedule().substeps_per_control_period(), 10);
+    }
+
+    #[test]
+    fn physics_schedule_rejects_invalid_robot_cadence_before_execution() {
+        assert_eq!(
+            PhysicsSchedule::new(Duration::ZERO, 0.002),
+            Err(PhysicsScheduleError::ZeroControlPeriod)
+        );
+        for timestep in [0.0, -0.002, f64::NAN, f64::INFINITY] {
+            assert!(matches!(
+                PhysicsSchedule::new(CONTROL_PERIOD, timestep),
+                Err(PhysicsScheduleError::InvalidPhysicsTimestep { .. })
+            ));
+        }
+        for timestep in [0.03, 0.003] {
+            assert!(matches!(
+                PhysicsSchedule::new(CONTROL_PERIOD, timestep),
+                Err(PhysicsScheduleError::NonIntegralSubsteps { .. })
+            ));
+        }
+    }
+
+    #[test]
+    fn advancing_once_covers_one_validated_control_period() {
+        let mut plant = ReachySimPlant::load(scene(), CONTROL_PERIOD).unwrap();
+        let before = plant.snapshot(0).simulation_time_ns;
+        plant.advance_control_period();
+        let after = plant.snapshot(0).simulation_time_ns;
+        assert_eq!(after - before, CONTROL_PERIOD.as_nanos() as u64);
     }
 
     #[test]
     fn target_moves_the_model_and_reset_changes_the_timeline() {
-        let mut plant = ReachySimPlant::load(scene()).unwrap();
+        let mut plant = ReachySimPlant::load(scene(), CONTROL_PERIOD).unwrap();
         let before = plant.read_state().unwrap();
         let mut target = before.positions_rad;
         target[0] += 0.2;
@@ -365,7 +458,7 @@ mod tests {
             .apply_positions(target, PositionApplication::Target)
             .unwrap();
         for _ in 0..100 {
-            plant.step();
+            plant.advance_control_period();
         }
         let moved = plant.read_state().unwrap();
         assert!((moved.positions_rad[0] - before.positions_rad[0]).abs() > 0.01);
@@ -378,7 +471,7 @@ mod tests {
 
     #[test]
     fn control_core_expires_to_measured_position_hold_on_the_real_model() {
-        let mut plant = ReachySimPlant::load(scene()).unwrap();
+        let mut plant = ReachySimPlant::load(scene(), CONTROL_PERIOD).unwrap();
         let initial = plant.read_state().unwrap();
         let mut positions = initial.positions_rad;
         positions[0] += 0.1;
@@ -391,7 +484,7 @@ mod tests {
         };
         let mut core = ControlCore::new();
         core.tick(&mut plant, Some(command), 9).unwrap();
-        plant.step();
+        plant.advance_control_period();
         let expired = core.tick(&mut plant, None, 10).unwrap();
         assert!(matches!(
             expired.applied.command,
@@ -402,7 +495,7 @@ mod tests {
 
     #[test]
     fn plant_rejects_targets_outside_the_pinned_model_limits() {
-        let mut plant = ReachySimPlant::load(scene()).unwrap();
+        let mut plant = ReachySimPlant::load(scene(), CONTROL_PERIOD).unwrap();
         let mut target = plant.read_state().unwrap().positions_rad;
         target[0] = f32::INFINITY;
         assert!(matches!(
@@ -416,7 +509,7 @@ mod tests {
 
     #[test]
     fn measured_hold_clamps_model_limit_overshoot_but_target_remains_strict() {
-        let plant = ReachySimPlant::load(scene()).unwrap();
+        let plant = ReachySimPlant::load(scene(), CONTROL_PERIOD).unwrap();
         let mut overshoot = [0.0; ACTUATOR_COUNT];
         overshoot[0] = 2.8254294;
 
@@ -436,7 +529,7 @@ mod tests {
 
     #[test]
     fn measured_hold_rejects_non_finite_values() {
-        let plant = ReachySimPlant::load(scene()).unwrap();
+        let plant = ReachySimPlant::load(scene(), CONTROL_PERIOD).unwrap();
         let mut positions = [0.0; ACTUATOR_COUNT];
         positions[0] = f32::NAN;
         assert!(plant
@@ -446,7 +539,7 @@ mod tests {
 
     #[test]
     fn ttl_hold_survives_a_dynamics_overshoot_on_the_real_model() {
-        let mut plant = ReachySimPlant::load(scene()).unwrap();
+        let mut plant = ReachySimPlant::load(scene(), CONTROL_PERIOD).unwrap();
         let initial = plant.read_state().unwrap();
         let command = ReachyActuatorTarget {
             positions_rad: [0.0; ACTUATOR_COUNT],
@@ -475,7 +568,7 @@ mod tests {
 
     #[test]
     fn snapshot_round_trip_preserves_full_generalized_state() {
-        let plant = ReachySimPlant::load(scene()).unwrap();
+        let plant = ReachySimPlant::load(scene(), CONTROL_PERIOD).unwrap();
         let snapshot = plant.snapshot(123);
         let decoded = ReachySimSnapshot::decode(&snapshot.encode()).unwrap();
         assert_eq!(decoded, snapshot);
@@ -483,7 +576,7 @@ mod tests {
 
     #[test]
     fn snapshot_rejects_bad_length_version_dimensions_and_non_finite_values() {
-        let plant = ReachySimPlant::load(scene()).unwrap();
+        let plant = ReachySimPlant::load(scene(), CONTROL_PERIOD).unwrap();
         let snapshot = plant.snapshot(123);
         let encoded = snapshot.encode();
         assert!(ReachySimSnapshot::decode(&encoded[..encoded.len() - 1]).is_err());
