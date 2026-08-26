@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+visualize=false
+keys=""
+usage() {
+  cat <<'EOF'
+Usage: scripts/run-sim-teleop [--visualize] [--keys KEYS] [-h|--help]
+
+Run the fixed Reachy Mini simulation command session.
+
+Options:
+  --visualize  Open the existing observational MuJoCo and Rerun views.
+  --keys KEYS  Run a bounded session (for example --keys ADQE).
+  -h, --help   Show this help and exit.
+
+Without --keys, the terminal reads discrete case-insensitive key events. Each
+A/D body-yaw or Q/E mirrored-antenna event emits one complete nine-position
+command with a 250 ms TTL. Ctrl-C cleans up all owned processes and sockets.
+Viewers remain observational and cannot command or mutate the simulation.
+EOF
+}
+while (($#)); do
+  case "$1" in
+    --visualize) visualize=true; shift ;;
+    --keys) [[ $# -ge 2 ]] || { usage >&2; exit 2; }; keys=$2; shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    *) usage >&2; exit 2 ;;
+  esac
+done
+
+repo_root=$(cd "$(dirname "$0")/.." && pwd)
+# shellcheck source=scripts/sim-stack.sh
+source "$repo_root/scripts/sim-stack.sh"
+cleanup() {
+  kill "${session_pid:-}" 2>/dev/null || true
+  wait "${session_pid:-}" 2>/dev/null || true
+  sim_stack_cleanup
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+sim_stack_start "$repo_root" "$visualize" teleop
+session_args=()
+[[ -n $keys ]] && session_args+=(--keys "$keys")
+cd "$repo_root/python"
+if [[ -n $keys ]]; then
+  timeout 30 env UV_DEFAULT_INDEX=https://pypi.org/simple uv run python -m soma_client.command_session "${session_args[@]}" & session_pid=$!
+else
+  env UV_DEFAULT_INDEX=https://pypi.org/simple uv run python -m soma_client.command_session & session_pid=$!
+fi
+children=("$session_pid" "$sim_stack_rt_pid" "$sim_stack_runtime_pid")
+$visualize && children+=("$sim_stack_observer_pid" "$sim_stack_rerun_pid")
+set +e
+wait -n -p finished_pid "${children[@]}"
+status=$?
+set -e
+if [[ $finished_pid == "$session_pid" ]]; then
+  exit "$status"
+fi
+echo "simulation child $finished_pid exited while the command session was active" >&2
+cat "$sim_stack_rt_log" "$sim_stack_runtime_log" \
+  "$sim_stack_observer_log" "$sim_stack_rerun_log" >&2
+exit 1

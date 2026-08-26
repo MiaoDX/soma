@@ -8,11 +8,15 @@ license.workspace = true
 fs2 = "0.4"
 libc = "0.2"
 prost = "0.14"
+rerun = { version = "=0.36.2", default-features = false, features = ["sdk"], optional = true }
 soma-core = { path = "../soma-core" }
 soma-protocol = { path = "../soma-protocol" }
 soma-sim = { path = "../soma-sim" }
 tokio = { version = "1.47", features = ["macros", "net", "rt-multi-thread", "signal", "time"] }
 zenoh = "=1.10.0"
+
+[features]
+sim-visualization = ["dep:rerun", "soma-sim/viewer"]
 
 [[bin]]
 name = "robot-rt"
@@ -21,3 +25,8 @@ path = "src/bin/robot-rt.rs"
 [[bin]]
 name = "robot-runtime"
 path = "src/bin/robot-runtime.rs"
+
+[[bin]]
+name = "robot-sim-observer"
+path = "src/bin/robot-sim-observer.rs"
+required-features = ["sim-visualization"]

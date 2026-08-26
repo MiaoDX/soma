@@ -8,6 +8,9 @@ license.workspace = true
 mujoco-rs = { version = "5.0.0", features = ["auto-download-mujoco"] }
 soma-core = { path = "../soma-core" }
 
+[features]
+viewer = ["mujoco-rs/viewer"]
+
 [lib]
 name = "soma_sim"
 path = "src/lib.rs"
