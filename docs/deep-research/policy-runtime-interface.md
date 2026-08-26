@@ -1,7 +1,8 @@
 # Policy/Inference to Real-Time Interface
 
-> Status: Deep Research. Seeded from architecture review; needs a bounded
-> experiment before any part of it becomes an ADR.
+> Status: M1a contract narrowed by D-19. Interpolation ownership, command TTL,
+> `control_mode -> SafeBehavior`, and lineage are current scope. Observation
+> alignment and action chunking are deferred until a real policy workload.
 
 ## Question
 
@@ -21,17 +22,17 @@ about the boundary one level higher — between whatever is producing the
 schema, normalization, history length, rate) but does not define its runtime
 behavior.
 
-This is not a hypothetical concern for a later milestone. `SafetyProfile`
+This was not a hypothetical concern for a later milestone. `SafetyProfile`
 already claims ownership of "safe behavior" under fault conditions
 (`safety-and-fault-architecture.md`). A missed or late policy inference is a
-fault condition. Until this document has an answer, that fault path is
-undefined, and no `SA-3` implementation can claim to handle it.
+fault condition. D-19 therefore freezes the M1a subset below before an `SA-3`
+implementation claims to handle it.
 
 ## Findings
 
-### The four unresolved questions
+### The M1a contract and deferred questions
 
-1. **Timeout policy.** When no new command arrives before an RT tick needs
+1. **Command TTL and safe behavior.** When no new command arrives before an RT tick needs
    one, what does `robot-rt` do — hold the last accepted command, decay it
    toward a safe target, extrapolate, or switch to a named fallback
    controller? This must be a `SafetyProfile`-governed decision, not an
@@ -44,6 +45,15 @@ undefined, and no `SA-3` implementation can claim to handle it.
    it is inside the `SA-3` envelope and must be validated as such; if it sits
    in `robot-runtime`, `robot-rt` never sees the low-rate signal and cannot
    reason about its staleness directly.
+
+These two decisions are frozen before the mailbox layout. M1a records the
+chosen interpolation owner, a bounded TTL, an explicit mapping from each
+supported `control_mode` to a named `SafeBehavior`, and the resulting
+requested/admitted/safety-output/applied lineage.
+
+The following questions are real but deferred because M1 has no trained policy
+or training/deployment pipeline to validate them against:
+
 3. **Observation time alignment.** History-buffer assembly for the policy
    needs a defined alignment (capture-time vs. tick-time) and a defined
    behavior for a missing frame. Training-time and deployment-time alignment
@@ -60,11 +70,11 @@ noted here but out of scope until a real inference workload exists.
 
 ### Why this cannot wait for real hardware or a real model
 
-The four questions above are pure control-and-timing semantics; none of them
-require a trained policy, a GPU, or physical hardware to answer. They can be
-exercised with a synthetic command source that produces a value at a fixed
-low rate — a lookup table or a sine wave is sufficient to force every
-timeout, interpolation, and staleness code path.
+Interpolation, TTL, safe-behavior selection and lineage are pure
+control-and-timing semantics; none requires a trained policy, a GPU or
+physical hardware. A lookup table or sine wave at a fixed low rate is enough
+to force those paths. Observation alignment and chunking, by contrast, are
+not frozen without a representative model and pipeline.
 
 ## Alternatives
 
@@ -81,9 +91,9 @@ than leaving it as an application-code choice.
 
 ## Implications for Soma
 
-- Add a `command_staleness_policy` (or equivalent) field to `SafetyProfile`,
-  scoped by embodiment class, with hold/decay/fallback/inhibit as the
-  initial enum.
+- Add a bounded command TTL and `control_mode -> SafeBehavior` mapping to
+  `SafetyProfile`; hold/decay/fallback/inhibit are candidate behaviors rather
+  than a requirement to implement all four in M1a.
 - Decide interpolator ownership before the RT/runtime mailbox layout is
   finalized; changing it later changes the mailbox contract.
 - Extend the requested/admitted/safety-output/applied command lineage
@@ -96,15 +106,15 @@ than leaving it as an application-code choice.
   paths to exist before hardware or a real policy arrive. See the
   `cadence-source-decimation` row proposed in the bootstrap plan's
   verification matrix.
+- Do not put observation alignment or action chunks into the M1 mailbox or
+  public schema. Reopen them when a representative policy workload exists.
 
 ## Trade-offs
 
-Answering these questions now, before a real model exists, costs design time
-against artifacts nobody can yet evaluate empirically. Not answering them
-means `SafetyProfile`'s "safe behavior under fault" claim has an unaddressed
-fault class through V0 and M2, and the mailbox/interpolator boundary risks
-being fixed by accident rather than by decision once real integration work
-starts.
+Freezing interpolation, TTL, safe behavior and lineage now prevents the
+mailbox boundary from being set accidentally and closes the stale-command
+fault path. Deferring alignment and chunking avoids designing a policy
+pipeline that M1 cannot evaluate empirically.
 
 ## Sources
 

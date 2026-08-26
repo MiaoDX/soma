@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 744" width="1120" height="744" role="img" aria-label="Soma milestone roadmap from M0 architecture convergence through M1a and M1b no-hardware spine to hardware and fleet milestones, showing what triggers each one">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 826" width="1120" height="826" role="img" aria-label="Soma roadmap from the current happy-path slice to trigger-based recovery, evidence, hardware, and product work">
   <style>
     .t  { font-family: "Inter", "Helvetica Neue", -apple-system, "Segoe UI", system-ui, sans-serif; fill: #12171D; }
     .m  { font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace; }
@@ -13,22 +13,25 @@
     .eb { font-size: 9.5px; font-weight: 700; letter-spacing: 1.1px; fill: #79838C; }
   </style>
 
-  <rect width="1120" height="744" fill="#F5F6F7"/>
-  <rect x="0.5" y="0.5" width="1119" height="743" fill="none" stroke="#D6DBDF"/>
+  <rect width="1120" height="826" fill="#F5F6F7"/>
+  <rect x="0.5" y="0.5" width="1119" height="825" fill="none" stroke="#D6DBDF"/>
 
   <text class="t h1" x="44" y="36">Milestones — and what opens each one</text>
-  <text class="t h2" x="44" y="58">Only M0 and M1 are current scope. Later milestones are designed but closed; each names the trigger that reopens it, so scope cannot drift in by ambition.</text>
+  <text class="t h2" x="44" y="58">Only the thin M1 happy path is current implementation scope. Every later capability needs a concrete trigger before it becomes a task.</text>
 
   <!-- bands -->
   <g>
-    <path d="M60 106 L52 106 L52 350 L60 350" fill="none" stroke="#2B4B8E" stroke-width="1.25"/>
-    <text class="t bnd" x="46" y="228" transform="rotate(-90 46 228)" text-anchor="middle" fill="#2B4B8E">CURRENT SCOPE</text>
+    <path d="M60 188 L52 188 L52 260 L60 260" fill="none" stroke="#2B4B8E" stroke-width="1.25"/>
+    <text class="t bnd" x="46" y="224" transform="rotate(-90 46 224)" text-anchor="middle" fill="#2B4B8E">CURRENT SCOPE</text>
 
-    <path d="M60 362 L52 362 L52 524 L60 524" fill="none" stroke="#97690A" stroke-width="1.25"/>
-    <text class="t bnd" x="46" y="443" transform="rotate(-90 46 443)" text-anchor="middle" fill="#97690A">NEEDS HARDWARE</text>
+    <path d="M60 270 L52 270 L52 424 L60 424" fill="none" stroke="#7C868F" stroke-width="1.25"/>
+    <text class="t bnd" x="46" y="347" transform="rotate(-90 46 347)" text-anchor="middle" fill="#7C868F">NEEDS A TRIGGER</text>
 
-    <path d="M60 536 L52 536 L52 616 L60 616" fill="none" stroke="#7C868F" stroke-width="1.25"/>
-    <text class="t bnd" x="46" y="576" transform="rotate(-90 46 576)" text-anchor="middle" fill="#7C868F">NEEDS A PRODUCT</text>
+    <path d="M60 444 L52 444 L52 606 L60 606" fill="none" stroke="#97690A" stroke-width="1.25"/>
+    <text class="t bnd" x="46" y="525" transform="rotate(-90 46 525)" text-anchor="middle" fill="#97690A">NEEDS HARDWARE</text>
+
+    <path d="M60 618 L52 618 L52 698 L60 698" fill="none" stroke="#7C868F" stroke-width="1.25"/>
+    <text class="t bnd" x="46" y="658" transform="rotate(-90 46 658)" text-anchor="middle" fill="#7C868F">NEEDS A PRODUCT</text>
   </g>
 
   <!-- M0 -->
@@ -38,69 +41,80 @@
     <text class="t nm" x="132" y="126">Architecture convergence</text>
     <rect x="952" y="113" width="118" height="17" rx="2" fill="#E6ECF8" stroke="#2B4B8E" stroke-width="1"/>
     <text class="t m bg" x="1011" y="125.5" text-anchor="middle" fill="#1E3568">DOCUMENTS</text>
-    <text class="t gt" x="90" y="147">Exit — one meaning per term for Plant, timeline, generation, capability, and safety authority. Every P0 decision is accepted, provisional with a reversal trigger, or assigned an experiment.</text>
-    <text class="t rt" x="90" y="165">Produces the Decision Register, the threat model, the verification matrix, and the Performance Envelope template.</text>
+    <text class="t gt" x="90" y="147">Complete — long-term boundaries and vocabulary are documented. They guide the current slice without making every future concern implementation scope.</text>
+    <text class="t rt" x="90" y="165">Research remains available as evidence; the thin Decision Register contains only choices that constrain current work.</text>
   </g>
 
-  <!-- M1a -->
+  <!-- M1 -->
   <g>
     <rect x="72" y="188" width="3" height="72" fill="#16656E"/>
-    <text class="t m id" x="90" y="208" fill="#0E4A51">M1a</text>
-    <text class="t nm" x="132" y="208" fill="#0E4A51">It runs</text>
+    <text class="t m id" x="90" y="208" fill="#0E4A51">M1</text>
+    <text class="t nm" x="132" y="208" fill="#0E4A51">Thin end-to-end happy path</text>
     <rect x="952" y="195" width="118" height="17" rx="2" fill="#DFEFF0" stroke="#16656E" stroke-width="1"/>
     <text class="t m bg" x="1011" y="207.5" text-anchor="middle" fill="#0E4A51">SIL</text>
-    <text class="t gt" x="90" y="229">Gate — Python acquires a lease and commands MuJoCo through separate <tspan class="m">robot-runtime</tspan> and <tspan class="m">robot-rt</tspan> processes. Reset issues a new Plant timeline and refuses the stale command.</text>
-    <text class="t rt" x="90" y="247">Command lineage stays visible end to end. The first executable proof that the architecture is a system and not a vocabulary.</text>
+    <text class="t gt" x="90" y="229">Gate — Python commands MuJoCo through separate <tspan class="m">robot-runtime</tspan> and <tspan class="m">robot-rt</tspan> processes. TTL selects SafeBehavior; reset rejects the stale Plant timeline.</text>
+    <text class="t rt" x="90" y="247">One model, client, command mode and local profile. No compatibility, release, recovery, or qualification promise.</text>
   </g>
 
-  <!-- M1b -->
+  <!-- Recovery trigger -->
   <g>
     <rect x="72" y="270" width="3" height="72" fill="#16656E"/>
-    <text class="t m id" x="90" y="290" fill="#0E4A51">M1b</text>
-    <text class="t nm" x="132" y="290" fill="#0E4A51">It is credible</text>
+    <text class="t m id" x="90" y="290" fill="#4A545E">NEXT?</text>
+    <text class="t nm" x="154" y="290">Recovery and qualification</text>
     <rect x="952" y="277" width="118" height="17" rx="2" fill="#DFEFF0" stroke="#16656E" stroke-width="1"/>
     <text class="t m bg" x="1011" y="289.5" text-anchor="middle" fill="#0E4A51">SIL · HOST</text>
-    <text class="t gt" x="90" y="311">Gate — runtime restart and lease reacquisition, bounded IPC under overflow and ABI mismatch, a recorder that cannot silently perturb control, and a signed-artifact verifier.</text>
-    <text class="t rt" x="90" y="329">Plus hardware-free adapter conformance and an installable candidate. Failure has to be visible, not absent.</text>
+    <text class="t gt" x="90" y="311">Trigger — the happy path is stable and recovery is the next observed need, or representative target hardware is selected.</text>
+    <text class="t rt" x="90" y="329">Then add supervision, restart/reconnect, IPC recovery, packaging, and target-derived budgets. None is an automatic sequel.</text>
+  </g>
+
+  <!-- Evidence trigger -->
+  <g>
+    <rect x="72" y="352" width="3" height="72" fill="#16656E"/>
+    <text class="t m id" x="90" y="372" fill="#4A545E">NEXT?</text>
+    <text class="t nm" x="154" y="372">Durable evidence and replay</text>
+    <rect x="952" y="359" width="118" height="17" rx="2" fill="#DFEFF0" stroke="#16656E" stroke-width="1"/>
+    <text class="t m bg" x="1011" y="371.5" text-anchor="middle" fill="#0E4A51">SIL · HOST</text>
+    <text class="t gt" x="90" y="393">Trigger — a debugging or reproducibility workflow needs durable evidence, or the native graph is complex enough for a real Copper comparison.</text>
+    <text class="t rt" x="90" y="411">Then choose the smallest useful recording and replay contract from observed needs.</text>
   </g>
 
   <!-- M2 -->
   <g>
-    <rect x="72" y="362" width="3" height="72" fill="#97690A"/>
-    <text class="t m id" x="90" y="382" fill="#5A3F00">M2</text>
-    <text class="t nm" x="132" y="382" fill="#5A3F00">First accessible robot boundary</text>
-    <rect x="952" y="369" width="118" height="17" rx="2" fill="#FCF1D3" stroke="#97690A" stroke-width="1"/>
-    <text class="t m bg" x="1011" y="381.5" text-anchor="middle" fill="#5A3F00">HIL · PHYSICAL</text>
-    <text class="t gt" x="90" y="403">Trigger — hardware becomes accessible and a real need justifies it. Classify the boundary as a <tspan class="m">NativePlantAdapter</tspan> or a <tspan class="m">ManagedMotionGateway</tspan>, then rerun the M1 scenarios.</text>
-    <text class="t rt" x="90" y="421">A managed vendor motion boundary never inherits Soma SA-3 coverage. Inaccessible layers are published as unknown, not inferred.</text>
+    <rect x="72" y="444" width="3" height="72" fill="#97690A"/>
+    <text class="t m id" x="90" y="464" fill="#5A3F00">M2</text>
+    <text class="t nm" x="132" y="464" fill="#5A3F00">First accessible robot boundary</text>
+    <rect x="952" y="451" width="118" height="17" rx="2" fill="#FCF1D3" stroke="#97690A" stroke-width="1"/>
+    <text class="t m bg" x="1011" y="463.5" text-anchor="middle" fill="#5A3F00">HIL · PHYSICAL</text>
+    <text class="t gt" x="90" y="485">Trigger — hardware becomes accessible and a real need justifies it. Classify the boundary as a <tspan class="m">NativePlantAdapter</tspan> or a <tspan class="m">ManagedMotionGateway</tspan>, then rerun the M1 scenarios.</text>
+    <text class="t rt" x="90" y="503">A managed vendor motion boundary never inherits Soma SA-3 coverage. Inaccessible layers are published as unknown, not inferred.</text>
   </g>
 
   <!-- M3 -->
   <g>
-    <rect x="72" y="444" width="3" height="72" fill="#97690A"/>
-    <text class="t m id" x="90" y="464" fill="#5A3F00">M3</text>
-    <text class="t nm" x="132" y="464" fill="#5A3F00">Owner-controlled lower stack</text>
-    <rect x="952" y="451" width="118" height="17" rx="2" fill="#FCF1D3" stroke="#97690A" stroke-width="1"/>
-    <text class="t m bg" x="1011" y="463.5" text-anchor="middle" fill="#5A3F00">HIL · PHYSICAL</text>
-    <text class="t gt" x="90" y="485">Trigger — Soma owns hardware or an accessible bench. Constrained single actuator, then a synchronized multi-axis fixture, with firmware and HAL owned for every claimed layer.</text>
-    <text class="t rt" x="90" y="503">Independent stop or energy-control path chosen by hazard analysis. Must not require rewriting the M1 public contracts.</text>
+    <rect x="72" y="526" width="3" height="72" fill="#97690A"/>
+    <text class="t m id" x="90" y="546" fill="#5A3F00">M3</text>
+    <text class="t nm" x="132" y="546" fill="#5A3F00">Owner-controlled lower stack</text>
+    <rect x="952" y="533" width="118" height="17" rx="2" fill="#FCF1D3" stroke="#97690A" stroke-width="1"/>
+    <text class="t m bg" x="1011" y="545.5" text-anchor="middle" fill="#5A3F00">HIL · PHYSICAL</text>
+    <text class="t gt" x="90" y="567">Trigger — Soma owns hardware or an accessible bench. Constrained single actuator, then a synchronized multi-axis fixture, with firmware and HAL owned for every claimed layer.</text>
+    <text class="t rt" x="90" y="585">Independent stop or energy-control path is chosen by hazard analysis. Early unreleased APIs may still change as physical evidence arrives.</text>
   </g>
 
   <!-- M4 -->
   <g>
-    <rect x="72" y="536" width="3" height="72" fill="#7C868F"/>
-    <text class="t m id" x="90" y="556" fill="#4A545E">M4</text>
-    <text class="t nm" x="132" y="556">Production and fleet qualification</text>
-    <rect x="952" y="543" width="118" height="17" rx="2" fill="#EAEDEF" stroke="#7C868F" stroke-width="1"/>
-    <text class="t m bg" x="1011" y="555.5" text-anchor="middle" fill="#4A545E">DEFERRED</text>
-    <text class="t gt" x="90" y="577">Trigger — something exists that is worth shipping. Provisioning, signing roles, secure boot, anti-rollback, recovery; abuse and fuzz qualification; canary rollout and rollback.</text>
-    <text class="t rt" x="90" y="595">Until then V0 says plainly what it is: architecture reviewed, mechanisms partly implemented, production security not qualified.</text>
+    <rect x="72" y="618" width="3" height="72" fill="#7C868F"/>
+    <text class="t m id" x="90" y="638" fill="#4A545E">M4</text>
+    <text class="t nm" x="132" y="638">Production and fleet qualification</text>
+    <rect x="952" y="625" width="118" height="17" rx="2" fill="#EAEDEF" stroke="#7C868F" stroke-width="1"/>
+    <text class="t m bg" x="1011" y="637.5" text-anchor="middle" fill="#4A545E">DEFERRED</text>
+    <text class="t gt" x="90" y="659">Trigger — something exists that is worth shipping. Provisioning, signing roles, secure boot, anti-rollback, recovery; abuse and fuzz qualification; canary rollout and rollback.</text>
+    <text class="t rt" x="90" y="677">The current slice remains loopback-only local development: no cryptographic mechanism is implemented or security-qualified.</text>
   </g>
 
-  <line x1="72" y1="620" x2="1070" y2="620" stroke="#D6DBDF"/>
-  <text class="t m eb" x="72" y="644">EXPLICITLY OUT OF SCOPE FOR MILESTONE 1</text>
-  <text class="t gt" x="72" y="664">Physical hardware, fieldbus, E-stop, STO, hard-real-time qualification · a universal URDF/MJCF/USD compiler · complete vendor emulators</text>
-  <text class="t gt" x="72" y="681">A mandatory transport bake-off · separate update, health and recorder daemons · Isaac, Genesis, HIL rigs, batch-RL infrastructure, ROS distributions</text>
-  <text class="t gt" x="72" y="698">Fleet rollout, cloud services and UI tooling · plugin ABI and cross-version internal IPC compatibility · any safety-certification claim</text>
-  <text class="t rt" x="72" y="722">All of it is already researched. None of it changes the shape of M1, and each is cheaper to build after the contracts have been measured once.</text>
+  <line x1="72" y1="712" x2="1070" y2="712" stroke="#D6DBDF"/>
+  <text class="t m eb" x="72" y="736">EXPLICITLY OUT OF SCOPE FOR MILESTONE 1</text>
+  <text class="t gt" x="72" y="756">Physical robot, fieldbus, E-stop, STO, hard-real-time actuation qualification · a universal URDF/MJCF/USD compiler · complete vendor emulators</text>
+  <text class="t gt" x="72" y="773">Non-local security, cryptographic trust/update mechanisms · Isaac, Genesis, batch-RL infrastructure, ROS distributions · aarch64 before target selection</text>
+  <text class="t gt" x="72" y="790">Fleet rollout, cloud services and UI tooling · plugin ABI and cross-version internal IPC compatibility · any safety-certification claim</text>
+  <text class="t rt" x="72" y="814">These items reopen only at their named hardware, policy, security, target or product trigger.</text>
 </svg>

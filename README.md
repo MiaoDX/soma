@@ -2,7 +2,9 @@
 
 **A system foundation for embodied intelligence.**
 
-Soma explores a production-grade reference system for Physical AI — a common software and systems foundation that can span different robotic embodiments, from wheeled mobile robots to legged robots and future platforms.
+Soma explores a common software and systems foundation for Physical AI that can
+span different robotic embodiments, from wheeled mobile robots to legged robots
+and future platforms.
 
 The project focuses on the layers beneath application intelligence: hardware abstraction, real-time control, runtime and communication, simulation, safety, deployment, observability, OTA, and ecosystem adapters.
 
@@ -38,7 +40,9 @@ Soma is currently in the **research and architecture** phase. The repository wil
 - **Rust-first systems stack** — Rust for the real-time core, robot runtime, and SDK client where practical.
 - **ROS 2 at the edge** — ROS 2 is an ecosystem adapter, not a dependency of the robot core.
 - **Simulation as a first-class backend** — MuJoCo, Isaac Sim/Lab, Genesis, SIL, and HIL participate in the same system contracts.
-- **Production from day one** — safety, diagnostics, observability, OTA, security, compatibility, and recovery are architecture concerns, not afterthoughts.
+- **Production-shaped, evidence-led growth** — preserve the boundaries that are
+  expensive to undo, and implement qualification, security, compatibility, and
+  operations only when a concrete trigger exists.
 
 ## Documentation
 
