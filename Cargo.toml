@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/soma-core",
+    "crates/soma-probe",
     "crates/soma-protocol",
     "crates/soma-runtime",
     "crates/soma-sim",

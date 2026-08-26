@@ -12,9 +12,10 @@
 Status: ACTIVE. The fixed profile, `ControlCore`, pinned `ReachySimPlant`, two
 Rust process boundary, Protobuf/loopback Zenoh transport, and Python acceptance
 scenario are implemented. `scripts/run-sim-scenario` proves the complete
-simulation acceptance flow. Remaining required work is the hardware N0/N1
-gates, native bus worker and staged motion, followed by the four-way official
-comparison.
+simulation acceptance flow. The standalone read-only N0 probe is implemented
+but cannot be executed without a connected Lite. Remaining required work is
+running N0, approving N1, the native bus worker and staged motion, followed by
+the four-way official comparison.
 
 ## Goal
 
