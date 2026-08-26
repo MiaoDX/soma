@@ -58,3 +58,19 @@ The plan forbids copying or translating the unlicensed Runtime/Playground
 implementation and requires stopping when the licensed source set cannot
 establish exact semantics. Stage 0 is consequently blocked before rollout and
 before any shared or Reachy code change.
+
+## Exhausted licensed-source checks
+
+The full `v2` history was fetched and inspected after the initial finding.
+Commit `981750bd0d160bb7677d162a46dff1b0871c7135`, which introduced
+`BEST_WALK_ONNX_2.onnx`, contains the same 16-joint observation construction,
+18-zero padding, and 14-output incompatibility. Later history contains no
+corrected runner or alternate feature ledger for this checkpoint. The ONNX
+model metadata is empty apart from `tf2onnx` producer/graph identification, so
+it provides no feature order, normalization, action mapping, or reset/event
+semantics.
+
+The Runtime repository still resolves to the plan's inspected commit
+`32037347dc43186a017f2116bcfde7c461b81f54` and still exposes no `LICENSE` at
+its default branch. These checks leave no license-compatible authoritative
+source from which to prove the exact Stage 0 contract.
