@@ -49,6 +49,19 @@ The first run downloads the pinned Rust and Python dependencies plus MuJoCo
 3.9.0. The scenario proves state delivery, actuator movement, command expiry to
 measured-position hold, reset timeline change, and old-timeline rejection.
 
+With a powered Reachy Mini Lite connected, run the read-only N0 audit before
+any hardware implementation or motion:
+
+```bash
+cargo run --bin soma-reachy-probe --
+# Or select a reviewed device explicitly:
+cargo run --bin soma-reachy-probe -- --device /dev/ttyUSB0
+```
+
+The probe never writes a register. It fails unless IDs 10 through 18 match the
+pinned configuration, all torque states are disabled, the official daemon is
+absent, and serial exclusivity is demonstrated.
+
 ## Design direction
 
 - **Embodiment-independent core** — common contracts above hardware-specific HALs.
