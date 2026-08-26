@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ $# -ne 1 ]]; then echo "usage: scripts/verify-sim-showcase OUTPUT_DIR" >&2; exit 2; fi
+repo_root=$(cd "$(dirname "$0")/.." && pwd)
+output_dir=$(realpath "$1")
+ffmpeg=$(cd "$repo_root/python" && UV_DEFAULT_INDEX=https://pypi.org/simple \
+  uv run --extra visualization python -c 'import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())')
+python3 - "$output_dir" "$ffmpeg" <<'PY'
+import json,pathlib,re,subprocess,sys
+d=pathlib.Path(sys.argv[1]); ffmpeg=sys.argv[2]
+required=["index.html","poster.png","motion.webm","evidence.rrd","metadata.json"]
+for name in required:
+ p=d/name
+ assert p.is_file() and p.stat().st_size>0, f"missing or empty {name}"
+png=(d/"poster.png").read_bytes(); assert png[:8]==b"\x89PNG\r\n\x1a\n", "invalid PNG signature"
+assert int.from_bytes(png[16:20],"big")==640 and int.from_bytes(png[20:24],"big")==480, "poster dimensions differ from 640x480"
+raw=subprocess.check_output([ffmpeg,"-hide_banner","-loglevel","error","-i",str(d/"poster.png"),"-f","rawvideo","-pix_fmt","rgb24","-"])
+assert len(set(raw))>16 and any(8<x<247 for x in raw), "poster pixels are blank"
+webm=(d/"motion.webm").read_bytes(); assert webm[:4]==b"\x1aE\xdf\xa3", "invalid WebM EBML signature"
+probe=subprocess.run([ffmpeg,"-hide_banner","-i",str(d/"motion.webm"),"-f","null","-"],stderr=subprocess.PIPE,text=True)
+m=re.search(r"Duration: (\d+):(\d+):(\d+(?:\.\d+)?)",probe.stderr); assert m, "WebM duration unavailable"
+duration=int(m[1])*3600+int(m[2])*60+float(m[3]); assert duration>=6.0, f"WebM too short: {duration}s"
+frame_md5=subprocess.check_output([ffmpeg,"-hide_banner","-loglevel","error","-i",str(d/"motion.webm"),"-f","framemd5","-"],text=True)
+frame_hashes={line.rsplit(",",1)[-1].strip() for line in frame_md5.splitlines() if line and not line.startswith("#")}
+assert len(frame_hashes)>1, "WebM contains no visible frame changes"
+html=(d/"index.html").read_text(); links=re.findall(r'(?:src|href)="([^"]+)"',html)
+for link in links:
+ if "://" not in link and not link.startswith("#"): assert (d/link).is_file(), f"broken local link: {link}"
+meta=json.loads((d/"metadata.json").read_text()); assert meta["scenario_result"]=="passed" and meta["scope"]=="simulation-only"
+assert meta["renderer"]["camera_id"]==0 and meta["renderer"]["camera_name"]=="studio_close"
+text=(html+json.dumps(meta)).lower()
+for claim in ["hardware validated","hardware parity","physical robot","real robot"]: assert claim not in text, f"hardware claim present: {claim}"
+PY
+(cd "$repo_root/python" && UV_DEFAULT_INDEX=https://pypi.org/simple uv run --extra visualization rerun rrd verify "$output_dir/evidence.rrd")
+echo "verified real PNG, WebM, Rerun archive, report links, and provenance"

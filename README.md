@@ -30,6 +30,70 @@ applied — you cannot tell which one, or who to hold responsible.
 
 More diagrams and their relationship to the prose: [`docs/architecture/diagrams/`](docs/architecture/diagrams/).
 
+## Reachy Mini simulation
+
+The first executable Soma profile is Reachy Mini in MuJoCo. The same fixed
+9-actuator command path drives the simulation, while Rerun exposes the
+requested/measured state and event timeline as read-only evidence.
+
+[![Reachy Mini rendered in MuJoCo](docs/media/reachy-mini-simulation.png)](https://miaodx.github.io/soma/)
+
+[Open the generated simulation report](https://miaodx.github.io/soma/) for the
+motion video, downloadable Rerun recording, fixed-case comparison, and exact
+commit provenance. The GitHub Pages workflow rebuilds the report from the
+authoritative acceptance scenario on `main`; the committed poster keeps the
+result visible before or between successful deployments.
+
+Run the visual acceptance scenario locally:
+
+```bash
+cd python && uv sync && cd ..
+scripts/run-sim-scenario --visualize
+```
+
+The paced scenario shows the initial pose, body-yaw and antenna motion, TTL
+expiry to measured-position hold, a timeline reset, and rejection of an old
+timeline. MuJoCo is the 3D view; Rerun is the observability view. The viewers
+are observational only and cannot command, pause, step, perturb, or reset the
+simulation.
+
+For a terminal-driven demo, use `scripts/run-sim-teleop --visualize` and press
+`A`/`D` for body yaw or `Q`/`E` for mirrored antenna nudges. The bounded,
+non-interactive equivalent is:
+
+```bash
+scripts/run-sim-teleop --visualize --keys ADQE
+```
+
+To build and verify the same static report locally:
+
+```bash
+scripts/build-sim-showcase output/simulation-showcase
+```
+
+### What the dashboard proves
+
+Rerun groups requested and measured positions into body yaw, six Stewart
+motors, and two antennae. It also shows command TTL, state age, applied source,
+rejection reason, plant health, timeline changes, and observer drop counters.
+The typed state and scenario assertions remain the correctness oracle; viewer
+pixels are supporting evidence.
+
+### Simulation parity
+
+The corrected fixed-case comparison reaches the same declared behavior as the
+official Reachy simulation backend. These are simulation measurements, not
+hardware claims:
+
+| Case | Actuator | Soma RMS | Official RMS | Soma settling | Official settling |
+| --- | --- | ---: | ---: | ---: | ---: |
+| yaw-step | `yaw_body` | 0.018935 | 0.018948 | 80.062 ms | 80.067 ms |
+| mirrored-antennas | `right_antenna` | 0.017362 | 0.017366 | 80.089 ms | 80.065 ms |
+| combined-yaw-antennas | `yaw_body` | 0.018937 | 0.018950 | 80.098 ms | 80.082 ms |
+
+See the [full cadence-correction report](docs/measurements/official-simulation-cadence-correction-report.md)
+for all six actuator streams, repeatability evidence, and limitations.
+
 ## Status
 
 The Reachy simulation path is executable. A thin Python client sends the fixed

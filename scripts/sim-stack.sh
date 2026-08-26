@@ -3,6 +3,23 @@
 # Private fixed-Reachy lifecycle shared by the scenario and teleop workflows.
 # Callers own the shell and decide how a client or observer failure is reported.
 
+sim_stack_lock_names_pid() {
+  local pid=$1
+  local lock_path=$2
+  [[ -n $pid && -r $lock_path && $(<"$lock_path") == "$pid" ]]
+}
+
+sim_stack_pid_owns_lock() {
+  sim_stack_lock_names_pid "$1" "$2" && kill -0 "$1" 2>/dev/null
+}
+
+sim_stack_fixed_endpoints_owned() {
+  sim_stack_pid_owns_lock "$1" /tmp/soma-robot-rt.sock.lock && \
+    sim_stack_pid_owns_lock "$2" /tmp/soma-robot-runtime.sock.lock && \
+    [[ -S /tmp/soma-robot-rt.sock && -S /tmp/soma-robot-runtime.sock ]] && \
+    (exec 3<>/dev/tcp/127.0.0.1/7447) 2>/dev/null
+}
+
 sim_stack_start() {
   local repo_root=$1
   local visualize=$2
@@ -67,20 +84,22 @@ sim_stack_start() {
   sim_stack_rt_pid=$!
 
   for _ in $(seq 1 50); do
-    if [[ -S /tmp/soma-robot-rt.sock && -S /tmp/soma-robot-runtime.sock ]] && \
-       (exec 3<>/dev/tcp/127.0.0.1/7447) 2>/dev/null; then
+    if sim_stack_fixed_endpoints_owned "$sim_stack_rt_pid" "$sim_stack_runtime_pid"; then
       return 0
     fi
     sleep 0.1
   done
-  if ! kill -0 "$sim_stack_rt_pid" "$sim_stack_runtime_pid" 2>/dev/null || \
-     ! (exec 3<>/dev/tcp/127.0.0.1/7447) 2>/dev/null; then
+  if ! sim_stack_fixed_endpoints_owned "$sim_stack_rt_pid" "$sim_stack_runtime_pid"; then
     cat "$sim_stack_rt_log" "$sim_stack_runtime_log" >&2
     return 1
   fi
 }
 
 sim_stack_cleanup() {
+  local remove_rt_socket=false
+  local remove_runtime_socket=false
+  sim_stack_lock_names_pid "${sim_stack_rt_pid:-}" /tmp/soma-robot-rt.sock.lock && remove_rt_socket=true
+  sim_stack_lock_names_pid "${sim_stack_runtime_pid:-}" /tmp/soma-robot-runtime.sock.lock && remove_runtime_socket=true
   if [[ -n ${sim_stack_rerun_pid:-} ]]; then
     kill -TERM -- "-$sim_stack_rerun_pid" 2>/dev/null || true
   fi
@@ -88,6 +107,8 @@ sim_stack_cleanup() {
     "${sim_stack_observer_pid:-}" "${sim_stack_rerun_pid:-}" 2>/dev/null || true
   wait "${sim_stack_rt_pid:-}" "${sim_stack_runtime_pid:-}" \
     "${sim_stack_observer_pid:-}" "${sim_stack_rerun_pid:-}" 2>/dev/null || true
+  $remove_rt_socket && rm -f /tmp/soma-robot-rt.sock
+  $remove_runtime_socket && rm -f /tmp/soma-robot-runtime.sock
   rm -f "${sim_stack_snapshot_socket:-}" "${sim_stack_snapshot_socket:-}.lock" \
     "${sim_stack_snapshot_socket:-}.ready" "${sim_stack_snapshot_socket:-}.ready.lock"
 }

@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# -ne 1 ]]; then echo "usage: scripts/build-sim-showcase OUTPUT_DIR" >&2; exit 2; fi
+repo_root=$(cd "$(dirname "$0")/.." && pwd)
+source "$repo_root/scripts/sim-stack.sh"
+output_dir=$(realpath -m "$1")
+if [[ -e $output_dir ]]; then
+  echo "output path already exists: $output_dir" >&2
+  exit 2
+fi
+frames_dir="$output_dir/frames"
+socket_path="/tmp/soma-showcase-$$.sock"
+rt_log=$(mktemp /tmp/soma-showcase-rt.XXXXXX.log)
+runtime_log=$(mktemp /tmp/soma-showcase-runtime.XXXXXX.log)
+observer_log=$(mktemp /tmp/soma-showcase-observer.XXXXXX.log)
+
+cleanup() {
+  local remove_rt_socket=false
+  local remove_runtime_socket=false
+  sim_stack_lock_names_pid "${rt_pid:-}" /tmp/soma-robot-rt.sock.lock && remove_rt_socket=true
+  sim_stack_lock_names_pid "${runtime_pid:-}" /tmp/soma-robot-runtime.sock.lock && remove_runtime_socket=true
+  kill "${rt_pid:-}" "${runtime_pid:-}" "${observer_pid:-}" 2>/dev/null || true
+  wait "${rt_pid:-}" "${runtime_pid:-}" "${observer_pid:-}" 2>/dev/null || true
+  $remove_rt_socket && rm -f /tmp/soma-robot-rt.sock
+  $remove_runtime_socket && rm -f /tmp/soma-robot-runtime.sock
+  rm -f "$socket_path" "$socket_path.lock" "$socket_path.ready" "$socket_path.ready.lock" "$rt_log" "$runtime_log" "$observer_log"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+mkdir -p "$frames_dir"
+"$repo_root/scripts/cargo-mujoco" build --quiet --release -p soma-runtime --features sim-showcase --bin robot-rt --bin robot-runtime --bin robot-sim-observer
+export LD_LIBRARY_PATH="$repo_root/.mujoco/mujoco-3.9.0/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+"$repo_root/target/release/robot-runtime" >"$runtime_log" 2>&1 & runtime_pid=$!
+"$repo_root/target/release/robot-sim-observer" --snapshot-socket "$socket_path" --rerun-file "$output_dir/evidence.rrd" --frames-dir "$frames_dir" >"$observer_log" 2>&1 & observer_pid=$!
+for _ in $(seq 1 100); do [[ -S $socket_path && -f $socket_path.ready ]] && break; kill -0 "$observer_pid" 2>/dev/null || { cat "$observer_log" >&2; exit 1; }; sleep 0.1; done
+[[ -S $socket_path && -f $socket_path.ready ]] || { cat "$observer_log" >&2; echo "showcase observer did not become ready" >&2; exit 1; }
+"$repo_root/target/release/robot-rt" --observe-socket "$socket_path" >"$rt_log" 2>&1 & rt_pid=$!
+for _ in $(seq 1 50); do sim_stack_fixed_endpoints_owned "$rt_pid" "$runtime_pid" && break; sleep 0.1; done
+sim_stack_fixed_endpoints_owned "$rt_pid" "$runtime_pid" || { cat "$rt_log" "$runtime_log" >&2; echo "showcase stack did not become ready" >&2; exit 1; }
+(cd "$repo_root/python" && timeout 20 env UV_DEFAULT_INDEX=https://pypi.org/simple uv run python -m soma_client.scenario --visualize)
+wait "$observer_pid" || { cat "$observer_log" >&2; exit 1; }
+
+ffmpeg=$(cd "$repo_root/python" && UV_DEFAULT_INDEX=https://pypi.org/simple \
+  uv run --extra visualization python -c 'import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())')
+cp "$frames_dir/frame-0000.png" "$output_dir/poster.png"
+"$ffmpeg" -hide_banner -loglevel error -framerate 12 -i "$frames_dir/frame-%04d.png" -c:v libvpx-vp9 -pix_fmt yuv420p -an -y "$output_dir/motion.webm"
+rm -rf "$frames_dir"
+commit=$(git -C "$repo_root" rev-parse HEAD)
+generated=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+sed "s/@@COMMIT@@/$commit/g" "$repo_root/docs/showcase/index.template.html" >"$output_dir/index.html"
+python3 - "$output_dir/metadata.json" "$commit" "$generated" <<'PY'
+import json,sys
+json.dump({"schema_version":1,"robot":"Reachy Mini","scope":"simulation-only","scenario":"fixed acceptance scenario","scenario_result":"passed","commit":sys.argv[2],"generated_utc":sys.argv[3],"renderer":{"engine":"mujoco-rs MjRenderer EGL offscreen","camera_id":0,"camera_name":"studio_close","width":640,"height":480},"artifacts":{"poster":"poster.png","motion":"motion.webm","rerun":"evidence.rrd"}},open(sys.argv[1],"w"),indent=2)
+PY
+"$repo_root/scripts/verify-sim-showcase" "$output_dir"
+echo "showcase built and verified: $output_dir"

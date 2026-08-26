@@ -1,6 +1,9 @@
 use std::io::ErrorKind;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, SyncSender, TrySendError};
-use std::thread;
+use std::sync::Arc;
+use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use prost::Message;
@@ -8,6 +11,8 @@ use rerun::blueprint::{Blueprint, StateTimelineView, TextLogView, TimeSeriesView
 use rerun::{RecordingStreamBuilder, Scalars, StateChange, TextLog};
 use soma_protocol::v1::{self, rt_request};
 use soma_runtime::{bind_owned_datagram, monotonic_ns, COMMAND_KEY, STATE_KEY};
+#[cfg(feature = "sim-showcase")]
+use soma_sim::ReachySimRenderer;
 use soma_sim::{
     ReachySimSnapshot, ReachySimViewer, ACTUATOR_NAMES, REACHY_SCENE_PATH, SNAPSHOT_LEN,
 };
@@ -206,7 +211,14 @@ fn emit(
     }
 }
 
-fn start_rerun(endpoint: String) -> Result<SyncSender<Evidence>, Box<dyn std::error::Error>> {
+enum RerunDestination {
+    Grpc(String),
+    File(PathBuf),
+}
+
+fn start_rerun(
+    destination: RerunDestination,
+) -> Result<(SyncSender<Evidence>, JoinHandle<()>), Box<dyn std::error::Error>> {
     let recording_start_ns = monotonic_ns();
     let blueprint = Blueprint::new(Vertical::new([
         TimeSeriesView::new("Body yaw")
@@ -234,11 +246,13 @@ fn start_rerun(endpoint: String) -> Result<SyncSender<Evidence>, Box<dyn std::er
             .into(),
         TextLogView::new("Events").with_origin("events").into(),
     ]));
-    let rec = RecordingStreamBuilder::new("soma_simulation")
-        .with_blueprint(blueprint)
-        .connect_grpc_opts(endpoint)?;
+    let builder = RecordingStreamBuilder::new("soma_simulation").with_blueprint(blueprint);
+    let rec = match destination {
+        RerunDestination::Grpc(endpoint) => builder.connect_grpc_opts(endpoint)?,
+        RerunDestination::File(path) => builder.save(path)?,
+    };
     let (sender, receiver) = mpsc::sync_channel::<Evidence>(32);
-    thread::spawn(move || {
+    let worker = thread::spawn(move || {
         let mut last_timeline = None;
         let mut last_drops = (0, 0);
         while let Ok(evidence) = receiver.recv() {
@@ -314,12 +328,16 @@ fn start_rerun(endpoint: String) -> Result<SyncSender<Evidence>, Box<dyn std::er
         }
         let _ = rec.flush_blocking();
     });
-    Ok(sender)
+    Ok((sender, worker))
 }
 
-fn start_zenoh(sender: SyncSender<Evidence>) -> mpsc::Receiver<()> {
+fn start_zenoh(
+    sender: SyncSender<Evidence>,
+) -> (mpsc::Receiver<()>, Arc<AtomicBool>, JoinHandle<()>) {
     let (ready_tx, ready_rx) = mpsc::sync_channel(1);
-    thread::spawn(move || {
+    let running = Arc::new(AtomicBool::new(true));
+    let worker_running = running.clone();
+    let worker = thread::spawn(move || {
         let runtime = tokio::runtime::Runtime::new().expect("create observer Zenoh runtime");
         runtime.block_on(async move {
             let config = Config::from_json5(r#"{ mode: "client", connect: { endpoints: ["tcp/127.0.0.1:7447"] }, scouting: { multicast: { enabled: false } } }"#).unwrap();
@@ -327,49 +345,68 @@ fn start_zenoh(sender: SyncSender<Evidence>) -> mpsc::Receiver<()> {
             let commands = match session.declare_subscriber(COMMAND_KEY).await { Ok(value) => value, Err(_) => return };
             let states = match session.declare_subscriber(STATE_KEY).await { Ok(value) => value, Err(_) => return };
             let _ = ready_tx.send(());
-            loop {
+            while worker_running.load(Ordering::Relaxed) {
                 tokio::select! {
                     sample = commands.recv_async() => if let Ok(sample) = sample { let observed_ns = monotonic_ns(); let bytes = sample.payload().to_bytes(); let event = v1::RtRequest::decode(bytes.as_ref()).map(|request| Evidence::Command { received_ns: observed_ns, request }).unwrap_or(Evidence::Malformed { observed_ns, kind: "command" }); let _ = sender.try_send(event); },
                     sample = states.recv_async() => if let Ok(sample) = sample { let observed_ns = monotonic_ns(); let bytes = sample.payload().to_bytes(); let event = v1::ActuatorState::decode(bytes.as_ref()).map(Evidence::State).unwrap_or(Evidence::Malformed { observed_ns, kind: "state" }); let _ = sender.try_send(event); },
+                    _ = tokio::time::sleep(Duration::from_millis(20)) => {},
                 }
             }
         });
     });
-    ready_rx
+    (ready_rx, running, worker)
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut args = std::env::args().skip(1);
-    let (socket_path, endpoint, readiness_path) = match (
-        args.next().as_deref(),
-        args.next(),
-        args.next().as_deref(),
-        args.next(),
-    ) {
-        (Some("--snapshot-socket"), Some(path), Some("--rerun-endpoint"), Some(endpoint))
-            if args.next().is_none() =>
+    let args: Vec<_> = std::env::args().skip(1).collect();
+    let (socket_path, destination, frames_dir) = match args.as_slice() {
+        [socket_flag, path, rerun_flag, endpoint]
+            if socket_flag == "--snapshot-socket" && rerun_flag == "--rerun-endpoint" =>
         {
-            let readiness_path = format!("{path}.ready");
-            (path, endpoint, readiness_path)
+            (path.clone(), RerunDestination::Grpc(endpoint.clone()), None)
         }
-        _ => {
-            return Err(
-                "usage: robot-sim-observer --snapshot-socket PATH --rerun-endpoint URL".into(),
+        #[cfg(feature = "sim-showcase")]
+        [socket_flag, path, rerun_flag, archive, frames_flag, frames]
+            if socket_flag == "--snapshot-socket"
+                && rerun_flag == "--rerun-file"
+                && frames_flag == "--frames-dir" =>
+        {
+            std::fs::create_dir_all(frames)?;
+            (
+                path.clone(),
+                RerunDestination::File(PathBuf::from(archive)),
+                Some(PathBuf::from(frames)),
             )
         }
+        _ => return Err("usage: robot-sim-observer --snapshot-socket PATH --rerun-endpoint URL\n       robot-sim-observer --snapshot-socket PATH --rerun-file FILE --frames-dir DIR".into()),
     };
-    let owned = bind_owned_datagram(&socket_path)?;
+    let readiness_path = format!("{socket_path}.ready");
+    let owned = bind_owned_datagram(&socket_path)
+        .map_err(|error| format!("bind showcase snapshot socket {socket_path}: {error}"))?;
     let _cleanup = SocketCleanup(socket_path);
     owned.socket.set_nonblocking(true)?;
-    let rerun = start_rerun(endpoint)?;
-    let zenoh_ready = start_zenoh(rerun.clone());
+    let (rerun, rerun_worker) = start_rerun(destination)?;
+    let (zenoh_ready, zenoh_running, zenoh_worker) = start_zenoh(rerun.clone());
     zenoh_ready
         .recv_timeout(Duration::from_secs(10))
         .map_err(|_| "observer Zenoh subscriptions were not ready")?;
-    let mut viewer = Some(
-        ReachySimViewer::launch(REACHY_SCENE_PATH)
-            .map_err(|error| format!("launch MuJoCo viewer: {error:?}"))?,
-    );
+    let mut viewer = if frames_dir.is_none() {
+        Some(
+            ReachySimViewer::launch(REACHY_SCENE_PATH)
+                .map_err(|error| format!("launch MuJoCo viewer: {error:?}"))?,
+        )
+    } else {
+        None
+    };
+    #[cfg(feature = "sim-showcase")]
+    let mut renderer = frames_dir
+        .as_ref()
+        .map(|_| ReachySimRenderer::launch(REACHY_SCENE_PATH))
+        .transpose()
+        .map_err(|error| format!("launch EGL MuJoCo renderer: {error:?}"))?;
+    let mut first_capture_ns = None;
+    let mut last_frame_ns = 0_u64;
+    let mut frame_index = 0_u32;
     std::fs::write(&readiness_path, b"ready")?;
     let _readiness_cleanup = SocketCleanup(readiness_path);
     let mut buffer = [0_u8; SNAPSHOT_LEN + 1];
@@ -406,11 +443,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         if let Some(snapshot) = newest {
+            first_capture_ns.get_or_insert(snapshot.capture_monotonic_ns);
             if let Some(active) = &mut viewer {
                 active
                     .render(&snapshot)
                     .map_err(|error| format!("render MuJoCo: {error:?}"))?;
             }
+            #[cfg(feature = "sim-showcase")]
+            if let (Some(active), Some(directory)) = (&mut renderer, &frames_dir) {
+                if frame_index == 0
+                    || snapshot.capture_monotonic_ns.saturating_sub(last_frame_ns) >= 66_000_000
+                {
+                    active
+                        .render_png(
+                            &snapshot,
+                            directory.join(format!("frame-{frame_index:04}.png")),
+                        )
+                        .map_err(|error| format!("render showcase frame: {error:?}"))?;
+                    last_frame_ns = snapshot.capture_monotonic_ns;
+                    frame_index += 1;
+                }
+            }
+            let capture_complete = frames_dir.is_some()
+                && first_capture_ns.is_some_and(|start| {
+                    snapshot.capture_monotonic_ns.saturating_sub(start) >= 6_000_000_000
+                });
             if let Err(TrySendError::Full(_)) | Err(TrySendError::Disconnected(_)) =
                 rerun.try_send(Evidence::Snapshot(Box::new(snapshot)))
             {
@@ -421,6 +478,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 snapshot: snapshot_drops,
                 rerun: rerun_drops,
             });
+            if capture_complete {
+                break;
+            }
         }
         if let Some(active) = &mut viewer {
             if !active.running() {
@@ -432,6 +492,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         thread::sleep(Duration::from_millis(10));
     }
+    zenoh_running.store(false, Ordering::Relaxed);
+    zenoh_worker.join().map_err(|_| "Zenoh observer panicked")?;
+    drop(rerun);
+    rerun_worker.join().map_err(|_| "Rerun writer panicked")?;
+    if frames_dir.is_some() && frame_index < 2 {
+        return Err("showcase capture produced fewer than two frames".into());
+    }
+    Ok(())
 }
 
 #[cfg(test)]
