@@ -7,6 +7,23 @@ pub const OPEN_DUCK_TARGET_KEY: &str = "soma/open-duck-v2/target";
 pub const OPEN_DUCK_ACTUATORS: usize = 14;
 pub const OPEN_DUCK_PHYSICS_HZ: u32 = 500;
 pub const OPEN_DUCK_POLICY_HZ: u32 = 50;
+pub const OPEN_DUCK_TARGET_BYTES: usize = 8 * 4 + 14 * 4;
+
+pub fn encode_target(target: &OpenDuckTarget, out: &mut [u8; OPEN_DUCK_TARGET_BYTES]) {
+    out[..8].copy_from_slice(&target.sequence.to_le_bytes());
+    out[8..16].copy_from_slice(&target.timeline.to_le_bytes());
+    out[16..24].copy_from_slice(&target.capture_monotonic_ns.to_le_bytes());
+    out[24..32].copy_from_slice(&target.ttl_ns.to_le_bytes());
+    for (i, value) in target.positions_rad.iter().enumerate() { out[32 + i * 4..36 + i * 4].copy_from_slice(&value.to_le_bytes()); }
+}
+
+pub fn decode_target(bytes: &[u8]) -> Option<OpenDuckTarget> {
+    if bytes.len() != OPEN_DUCK_TARGET_BYTES { return None; }
+    let u64_at = |offset| Some(u64::from_le_bytes(bytes[offset..offset + 8].try_into().ok()?));
+    let mut positions_rad = [0.0; OPEN_DUCK_ACTUATORS];
+    for (i, value) in positions_rad.iter_mut().enumerate() { *value = f32::from_le_bytes(bytes[32 + i * 4..36 + i * 4].try_into().ok()?); }
+    Some(OpenDuckTarget { positions_rad, sequence: u64_at(0)?, timeline: u64_at(8)?, capture_monotonic_ns: u64_at(16)?, ttl_ns: u64_at(24)? })
+}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct OpenDuckTarget {

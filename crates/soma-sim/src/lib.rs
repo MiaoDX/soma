@@ -327,14 +327,14 @@ impl OpenDuckSimPlant {
 impl Plant<OPEN_DUCK_ACTUATOR_COUNT> for OpenDuckSimPlant {
     type Error = SimError;
     fn read_state(&mut self) -> Result<ActuatorState<OPEN_DUCK_ACTUATOR_COUNT>, Self::Error> {
+        self.sequence = self.sequence.wrapping_add(1);
         Ok(ActuatorState { positions_rad: self.positions(), sequence: self.sequence, timeline: self.timeline, timestamp_ns: (self.data.time() * 1e9) as u64, lifecycle: Lifecycle::Enabled, health: PlantHealth::Healthy })
     }
-    fn apply_positions(&mut self, positions_rad: [f32; OPEN_DUCK_ACTUATOR_COUNT], application: PositionApplication) -> Result<(), Self::Error> {
+    fn apply_positions(&mut self, positions_rad: [f32; OPEN_DUCK_ACTUATOR_COUNT], _application: PositionApplication) -> Result<(), Self::Error> {
         for (i, value) in positions_rad.into_iter().enumerate() {
             if !value.is_finite() { return Err(SimError::TargetOutOfRange { name: OPEN_DUCK_ACTUATOR_NAMES[i], value, min: f32::NEG_INFINITY, max: f32::INFINITY }); }
             self.data.ctrl_mut()[i] = value as f64;
         }
-        if matches!(application, PositionApplication::Target) { self.sequence = self.sequence.wrapping_add(1); }
         Ok(())
     }
 }
@@ -603,9 +603,9 @@ mod tests {
         let mut plant = OpenDuckSimPlant::load(Duration::from_millis(2)).unwrap();
         let timeline = plant.read_state().unwrap().timeline;
         let mut core = ControlCore::<OPEN_DUCK_ACTUATOR_COUNT>::new();
-        let target = ActuatorTarget { positions_rad: [0.0; OPEN_DUCK_ACTUATOR_COUNT], sequence: 1, timeline, issued_at_ns: 0, ttl_ns: 1_000_000_000 };
+        let target = ActuatorTarget { positions_rad: [0.0; OPEN_DUCK_ACTUATOR_COUNT], sequence: 3, timeline, issued_at_ns: 0, ttl_ns: 1_000_000_000 };
         let tick = core.tick(&mut plant, Some(target), 1).unwrap();
-        assert_eq!(tick.command_result, soma_core::CommandResult::Accepted { sequence: 1 });
+        assert_eq!(tick.command_result, soma_core::CommandResult::Accepted { sequence: 3 });
         for _ in 0..10 { plant.advance_physics_step(); }
         assert!(plant.read_state().unwrap().timestamp_ns >= 20_000_000);
     }
