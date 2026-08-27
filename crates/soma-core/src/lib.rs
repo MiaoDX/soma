@@ -19,27 +19,30 @@ pub enum PlantHealth {
 }
 
 pub type ActuatorPositions = [f32; ACTUATOR_COUNT];
+pub type ActuatorArray<const N: usize> = [f32; N];
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct ReachyActuatorState {
-    pub positions_rad: ActuatorPositions,
+pub struct ActuatorState<const N: usize> {
+    pub positions_rad: ActuatorArray<N>,
     pub sequence: u64,
     pub timeline: u64,
     pub timestamp_ns: u64,
     pub lifecycle: Lifecycle,
     pub health: PlantHealth,
 }
+pub type ReachyActuatorState = ActuatorState<ACTUATOR_COUNT>;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct ReachyActuatorTarget {
-    pub positions_rad: ActuatorPositions,
+pub struct ActuatorTarget<const N: usize> {
+    pub positions_rad: ActuatorArray<N>,
     pub sequence: u64,
     pub timeline: u64,
     pub issued_at_ns: u64,
     pub ttl_ns: u64,
 }
+pub type ReachyActuatorTarget = ActuatorTarget<ACTUATOR_COUNT>;
 
-impl ReachyActuatorTarget {
+impl<const N: usize> ActuatorTarget<N> {
     pub fn is_expired(self, now_ns: u64) -> bool {
         now_ns.saturating_sub(self.issued_at_ns) >= self.ttl_ns
     }
@@ -56,13 +59,13 @@ pub enum PositionApplication {
 }
 
 /// The bounded cyclic boundary implemented by simulation and native Plant adapters.
-pub trait Plant {
+pub trait Plant<const N: usize> {
     type Error;
 
-    fn read_state(&mut self) -> Result<ReachyActuatorState, Self::Error>;
+    fn read_state(&mut self) -> Result<ActuatorState<N>, Self::Error>;
     fn apply_positions(
         &mut self,
-        positions_rad: ActuatorPositions,
+        positions_rad: ActuatorArray<N>,
         application: PositionApplication,
     ) -> Result<(), Self::Error>;
 }
@@ -93,18 +96,18 @@ pub enum AppliedCommand {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct AppliedControl {
-    pub positions_rad: ActuatorPositions,
+pub struct AppliedControl<const N: usize> {
+    pub positions_rad: ActuatorArray<N>,
     pub command: AppliedCommand,
     /// True only on the tick that an active target expires.
     pub expiry_transition: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct ControlTick {
-    pub measured: ReachyActuatorState,
+pub struct ControlTick<const N: usize> {
+    pub measured: ActuatorState<N>,
     pub command_result: CommandResult,
-    pub applied: AppliedControl,
+    pub applied: AppliedControl<N>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -115,23 +118,23 @@ pub enum ControlError<E> {
 
 /// Minimal stateful command validator and actuator-position controller.
 #[derive(Clone, Copy, Debug, Default)]
-pub struct ControlCore {
+pub struct ControlCore<const N: usize> {
     timeline: Option<u64>,
     last_sequence: Option<u64>,
-    active_target: Option<ReachyActuatorTarget>,
+    active_target: Option<ActuatorTarget<N>>,
 }
 
-impl ControlCore {
+impl<const N: usize> ControlCore<N> {
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn tick<P: Plant>(
+    pub fn tick<P: Plant<N>>(
         &mut self,
         plant: &mut P,
-        command: Option<ReachyActuatorTarget>,
+        command: Option<ActuatorTarget<N>>,
         now_ns: u64,
-    ) -> Result<ControlTick, ControlError<P::Error>> {
+    ) -> Result<ControlTick<N>, ControlError<P::Error>> {
         let measured = plant.read_state().map_err(ControlError::Read)?;
         self.observe_timeline(measured.timeline);
         if self.last_sequence.is_none() {
@@ -244,7 +247,7 @@ mod tests {
         }
     }
 
-    impl Plant for TestPlant {
+    impl Plant<ACTUATOR_COUNT> for TestPlant {
         type Error = ();
 
         fn read_state(&mut self) -> Result<ReachyActuatorState, Self::Error> {

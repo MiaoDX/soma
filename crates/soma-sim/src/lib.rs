@@ -426,7 +426,7 @@ impl ReachySimPlant {
     }
 }
 
-impl Plant for ReachySimPlant {
+impl Plant<{ soma_core::ACTUATOR_COUNT }> for ReachySimPlant {
     type Error = SimError;
 
     fn read_state(&mut self) -> Result<ReachyActuatorState, Self::Error> {

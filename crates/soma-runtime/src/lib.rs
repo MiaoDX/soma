@@ -97,7 +97,7 @@ pub fn decode_target(request: v1::RtRequest) -> Option<ReachyActuatorTarget> {
     })
 }
 
-pub fn update_state(state: &mut v1::ActuatorState, tick: ControlTick, state_age_ns: u64) {
+pub fn update_state(state: &mut v1::ActuatorState, tick: ControlTick<{ soma_core::ACTUATOR_COUNT }>, state_age_ns: u64) {
     let (applied_source, applied_sequence) = match tick.applied.command {
         AppliedCommand::Target { sequence } => (v1::AppliedSource::Target as i32, sequence),
         AppliedCommand::MeasuredPositionHold { sequence } => {
@@ -146,7 +146,7 @@ pub fn update_state(state: &mut v1::ActuatorState, tick: ControlTick, state_age_
 
 pub fn encode_state_into(
     state: &mut v1::ActuatorState,
-    tick: ControlTick,
+    tick: ControlTick<{ soma_core::ACTUATOR_COUNT }>,
     state_age_ns: u64,
     payload: &mut Vec<u8>,
 ) -> Result<(), prost::EncodeError> {
