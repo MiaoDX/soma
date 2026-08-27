@@ -88,7 +88,7 @@ It runs `scripts/verify-sim-showcase` before reporting success.
 
 ## Active Work
 
-- Approved next simulation slice: [Open Duck Mini walk policy](docs/plans/open-duck-mini-walk-policy.md). Stage 0 is ready to vendor the pinned compatibility bundle and freeze same-tick reference evidence; no Duck support is implemented yet.
+- Active gated simulation slice: [Open Duck Mini walk policy](docs/plans/open-duck-mini-walk-policy.md). The fixed Duck Plant, isolated transport, Python ONNX client, lineage/fault evidence, and supervised launcher path are implemented. The published policy passes same-tick reference floors but falls after one 2 ms delayed application, so full asynchronous gait acceptance remains blocked. A bounded replacement-policy training experiment is active; its 10k-step RTX 3090 smoke and checkpoint restore pass, but long training has not started.
 - Active comparison/hardware state: [bootstrap capsule](docs/status/active/bootstrap.md)
 - Preflighted next slice: [official simulation fixed case suite](docs/plans/official-simulation-case-suite-plan.md)
 - Completed suite evidence: [official simulation fixed case suite report](docs/measurements/official-simulation-case-suite-report.md)

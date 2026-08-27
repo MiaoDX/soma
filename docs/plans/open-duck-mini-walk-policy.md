@@ -1,18 +1,18 @@
 # Open Duck Mini Walk Policy Plan
 
-> Status: Approved plan with execution preflight, 2026-08-26. Implementation
-> is intentionally deferred to a new agent window.
+> Status: Implementation reached the Stage 4 asynchronous gait stop gate.
+> A bounded policy-training reshaping experiment was approved on 2026-08-27.
 
 ## Plan Ledger
 
-- `status`: APPROVED; preflight ready for a new execution window
+- `status`: BLOCKED on the published policy; bounded training experiment active
 - `appetite`: gate-bounded; no calendar-duration estimate
-- `current_slice`: planning only
-- `next_action`: start the preflight's `/goal execute ... with intuitive-flow`
-  command in a new agent window
+- `current_slice`: Playground GPU smoke complete; long training not started
+- `next_action`: report smoke evidence, then calibrate production-shaped PPO
+  throughput and memory before a long baseline or latency-aware run
 - `no_touch`: Reachy hardware probe and N0/N1 gates; Open Duck hardware;
-  generic robot manifests; policy training; ROS 2; a third robot; camera, audio,
-  antennas, expression features, and interactive control
+  generic robot manifests; ROS 2; a third robot; camera, audio, antennas,
+  expression features, interactive control, and silent checkpoint replacement
 - `stop_condition`: stop at any gate below; do not start later stages to rescue
   a failed earlier gate or weaken the proof to claim completion
 
@@ -21,6 +21,36 @@
 The user approved reopening the earlier Open Duck deferral on 2026-08-26. This
 is one additional fixed simulation profile, not broad robot support. Reachy
 Mini remains Soma's primary simulation and hardware path.
+
+On 2026-08-27 the user approved a bounded exception to the original
+policy-training non-goal. The published checkpoint passes only under same-tick
+application and falls after one 2 ms delayed application, despite inference
+taking about 0.4 ms. The exception tests whether a newly trained policy can
+meet the existing asynchronous contract; it does not relax the gait floors,
+change the runtime contract, or qualify a model merely because training
+completes.
+
+The pinned Playground commit `b9be205ac64488c23504ca42e5ec790337adeec3`
+has no committed lockfile. Its working training environment is reconstructed
+with Python 3.12, `playground==0.0.5`, `brax==0.12.4`, `jax==0.6.2`, and the
+remaining dependencies restricted to releases available by 2025-08-05. A
+10,240-step RTX 3090 smoke completed and its Orbax checkpoint restored. This is
+training-path evidence only, not a usable walking policy.
+
+### Training experiment contract
+
+- keep checkpoints, TensorBoard data, caches, and temporary source patches
+  outside the Soma worktree until one candidate passes qualification;
+- first run a production-shaped memory/throughput calibration with fixed seed
+  0; do not infer long-run cost from the reduced 256-environment smoke;
+- train one upstream-baseline candidate before changing latency semantics;
+- train one latency-aware candidate that represents Soma action/state timing,
+  with the exact delay distribution and implementation recorded before launch;
+- never replace the frozen published checkpoint silently; candidates remain
+  named experiment artifacts until they pass independent qualification;
+- evaluate each candidate in the direct zero-delay, direct 2 ms, direct 20 ms,
+  and full supervised Soma process paths against the existing posture,
+  displacement, contact, lineage, expiry, and cleanup gates.
 
 The required outcome is:
 
@@ -347,7 +377,7 @@ Acceptance requires all of the following:
   and message age, clean process/endpoint teardown;
 - unchanged Reachy public protocol, runtime behavior, simulations, hardware
   gates, and canonical tests;
-- no Open Duck hardware, training, interactive control, generic robot/policy
+- no Open Duck hardware, interactive control, generic robot/policy
   framework, simultaneous-profile feature, or third embodiment; MuJoCo and
   Rerun visualization remain optional observational outputs.
 
@@ -375,7 +405,8 @@ independent closure, and teardown.
 Parked until this headless outcome passes: interactive velocity input,
 simultaneous Reachy/Open Duck launch, showcase regeneration, generic policy
 bundles, broad launcher refactors, optional filtering, exhaustive
-malformed-model matrices, hardware, training, ROS 2, and any additional robot.
+malformed-model matrices, hardware, training beyond the approved bounded
+experiment, ROS 2, and any additional robot.
 The first accepted Duck rollout also provides optional MuJoCo and Rerun
 visualization, following the existing Reachy Mini observer path; visualization
 is off the cyclic control path and is never the gait oracle.
@@ -417,7 +448,8 @@ Return to the user before:
   bundle/provenance boundary;
 - changing the checkpoint/model pair after Stage 0 starts;
 - changing Reachy's external schema, keys, behavior, hardware gates, or N0/N1;
-- replacing the named hold, adding hardware/training/generic abstractions, or
+- replacing the named hold, expanding training beyond the bounded experiment,
+  adding hardware/generic abstractions, or
   turning a parked item into mandatory scope.
 
 ## Definition Of Done And Handoff
@@ -444,7 +476,7 @@ Scope:
 - Execute Stages 0-4 in order, honoring every hard stop gate.
 - Establish license-compatible provenance, the exact model/policy contract, and a frozen gait case before changing shared code.
 - Deepen only fixed-size actuator admission to const N; then add the fixed Duck Plant, experimental transport, Python policy client, deadline/fault evidence, launcher, optional MuJoCo/Rerun observers, tests, and compact docs.
-Non-goals: Open Duck hardware; policy training; interactive control; simultaneous profiles; ROS 2; generic manifests, registries, device factories, sensor capabilities, observation DSLs, policy bundles, or a third robot; Reachy N0/N1 or public-contract changes. Optional MuJoCo/Rerun observation is in scope but never authoritative.
+Non-goals: Open Duck hardware; policy training beyond the bounded experiment recorded above; interactive control; simultaneous profiles; ROS 2; generic manifests, registries, device factories, sensor capabilities, observation DSLs, policy bundles, or a third robot; Reachy N0/N1 or public-contract changes. Optional MuJoCo/Rerun observation is in scope but never authoritative.
 Entity budget: reuse=ControlCore semantics, soma-core Plant boundary, soma-sim MuJoCo patterns, existing Protobuf/Zenoh/nonblocking Unix datagram transport, Python client, launcher supervision, and Reachy observer patterns; remove/merge=one combined Duck state, one owning launcher, ordinary Plant tests instead of extra runners; new=one provenance/compatibility manifest and frozen case, one fixed Duck profile/Plant, experimental Duck schemas and two process entry points, one Python policy client, one launcher because each is required by the end-to-end proof; expansion triggers=any new abstraction, protocol change, license obligation, checkpoint/model replacement, physical fallback, parked feature, or relaxed gate requires user re-approval.
 Context: must-read=AGENTS.md, docs/plans/open-duck-mini-walk-policy.md, docs/status/active/bootstrap.md, STATUS.md, ARCHITECTURE.md, docs/agents/operating-runbook.md, docs/plans/decision-register.md, crates/soma-core/src/lib.rs, crates/soma-runtime/src/lib.rs, crates/soma-runtime/src/bin/robot-rt.rs, crates/soma-sim/src/lib.rs, proto/soma.proto, python/pyproject.toml; useful=docs/deep-research/fast-open-robot-reference-path.md, docs/deep-research/policy-runtime-interface.md, docs/deep-research/robot-model-manifest-calibration.md; avoid-unless-needed=other historical plans, output traces, retrospectives, and Playground training/full-application code beyond the pinned runner/model compatibility surface.
 
