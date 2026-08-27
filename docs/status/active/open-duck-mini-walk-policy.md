@@ -3,7 +3,7 @@ source_plan: docs/plans/open-duck-mini-walk-policy.md
 control_plane: /root
 latest_intent: execute the approved Open Duck Mini walk-policy plan with intuitive-flow
 current_slice: Stage 0 reference runner implemented; frozen gait floor currently fails
-blocker: independent runner produces 0.0738 m forward displacement against the frozen 0.10 m floor; investigate contract parity before any later stage
+blocker: independent runner now addresses named accelerometer sensor but produces 0.0306 m against the frozen 0.10 m floor; investigate remaining reference parity before any later stage
 blocker_fingerprint: none
 last_proven: pinned Playground reference rollout, exact 101-field/14-action contract, same-tick ordering, vendored bundle manifest, frozen case, and local runner model/ONNX validation
 timing_contract: 500 Hz RT/physics, 50 Hz policy frame; send immediately from captured state; apply latest admitted target on first available 2 ms RT tick; bounded zero-order hold; fixed 20 ms delay is fault injection only

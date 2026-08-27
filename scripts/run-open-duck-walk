@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Independent, headless Open Duck Mini v2 reference rollout."""
-import argparse, hashlib, json, math
+import argparse, hashlib, json, math, os
 from pathlib import Path
 import mujoco
 import numpy as np
@@ -22,7 +22,9 @@ def main():
     expected = "3c606f9381a1710cc8fecdb7442787dcbfce3ee9bc02a6f1224774ab2b3a1067"
     if digest != expected or not Path(args.case).read_text().find("FROZEN") >= 0:
         raise SystemExit("refusing rollout: frozen case or pinned checkpoint is invalid")
-    model = mujoco.MjModel.from_xml_path(str(model_file))
+    # MuJoCo resolves mesh includes relative to the scene XML directory.
+    os.chdir(model_file.parent)
+    model = mujoco.MjModel.from_xml_path(model_file.name)
     if (model.nq, model.nv, model.nu) != (21, 20, 14):
         raise SystemExit(f"unexpected model dimensions: {model.nq, model.nv, model.nu}")
     names = [mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_ACTUATOR, i) for i in range(model.nu)]
@@ -34,7 +36,8 @@ def main():
     results = []
     for run in range(args.repeat):
         data = mujoco.MjData(model)
-        mujoco.mj_resetDataKeyframe(model, data, 0)
+        mujoco.mj_resetDataKeyframe(model, data, mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_KEY, "home"))
+        mujoco.mj_step(model, data)
         default = data.ctrl.copy()
         history = [np.zeros(14, dtype=np.float32) for _ in range(3)]
         target = default.copy()
@@ -46,8 +49,8 @@ def main():
         for tick in range(4000):
             mujoco.mj_step(model, data)
             if tick % 10: continue
-            gyro = data.sensordata[:3].astype(np.float32)
-            accel = data.sensordata[3:6].astype(np.float32).copy(); accel[0] += 1.3
+            gyro = data.sensordata[0:3].astype(np.float32)
+            accel = data.sensordata[6:9].astype(np.float32).copy(); accel[0] += 1.3
             qpos = np.array([data.qpos[model.jnt_qposadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, n)]] for n in JOINTS], dtype=np.float32)
             qvel = np.array([data.qvel[model.jnt_dofadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, n)]] for n in JOINTS], dtype=np.float32)
             phase = np.array([math.cos(tick / 10 * 0.2), math.sin(tick / 10 * 0.2)], dtype=np.float32)
