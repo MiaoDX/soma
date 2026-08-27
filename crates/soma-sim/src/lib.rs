@@ -315,6 +315,14 @@ pub struct OpenDuckSimPlant {
     sequence: u64,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct OpenDuckPolicyFacts {
+    pub positions_rad: [f32; OPEN_DUCK_ACTUATOR_COUNT],
+    pub velocities_rad_s: [f32; OPEN_DUCK_ACTUATOR_COUNT],
+    pub gyro_rad_s: [f32; 3],
+    pub acceleration_m_s2: [f32; 3],
+}
+
 impl OpenDuckSimPlant {
     pub fn load(control_period: Duration) -> Result<Self, SimError> {
         let model = Arc::new(
@@ -384,6 +392,22 @@ impl OpenDuckSimPlant {
                 .view(&self.data)
                 .qpos[0] as f32
         })
+    }
+    pub fn policy_facts(&self) -> OpenDuckPolicyFacts {
+        let velocities_rad_s = std::array::from_fn(|i| {
+            self.data
+                .joint(OPEN_DUCK_ACTUATOR_NAMES[i])
+                .expect("validated joint")
+                .view(&self.data)
+                .qvel[0] as f32
+        });
+        let sensors = self.data.sensordata();
+        OpenDuckPolicyFacts {
+            positions_rad: self.positions(),
+            velocities_rad_s,
+            gyro_rad_s: std::array::from_fn(|i| sensors[i] as f32),
+            acceleration_m_s2: std::array::from_fn(|i| sensors[6 + i] as f32),
+        }
     }
     pub fn reset(&mut self) {
         self.data.reset();

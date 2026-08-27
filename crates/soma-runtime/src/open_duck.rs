@@ -8,6 +8,93 @@ pub const OPEN_DUCK_ACTUATORS: usize = 14;
 pub const OPEN_DUCK_PHYSICS_HZ: u32 = 500;
 pub const OPEN_DUCK_POLICY_HZ: u32 = 50;
 pub const OPEN_DUCK_TARGET_BYTES: usize = 8 * 4 + 14 * 4;
+pub const OPEN_DUCK_STATE_FLOATS: usize = 14 + 14 + 3 + 3;
+pub const OPEN_DUCK_STATE_BYTES: usize = 8 * 7 + 4 + OPEN_DUCK_STATE_FLOATS * 4;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct OpenDuckState {
+    pub positions_rad: [f32; OPEN_DUCK_ACTUATORS],
+    pub velocities_rad_s: [f32; OPEN_DUCK_ACTUATORS],
+    pub gyro_rad_s: [f32; 3],
+    pub acceleration_m_s2: [f32; 3],
+    pub sequence: u64,
+    pub timeline: u64,
+    pub capture_monotonic_ns: u64,
+    pub requested_sequence: u64,
+    pub admitted_sequence: u64,
+    pub applied_sequence: u64,
+    pub message_age_ns: u64,
+    pub flags: u32,
+}
+
+pub fn encode_state(state: &OpenDuckState, out: &mut [u8; OPEN_DUCK_STATE_BYTES]) {
+    for (i, value) in [
+        state.sequence,
+        state.timeline,
+        state.capture_monotonic_ns,
+        state.requested_sequence,
+        state.admitted_sequence,
+        state.applied_sequence,
+        state.message_age_ns,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        out[i * 8..i * 8 + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    out[56..60].copy_from_slice(&state.flags.to_le_bytes());
+    let values = state
+        .positions_rad
+        .iter()
+        .chain(state.velocities_rad_s.iter())
+        .chain(state.gyro_rad_s.iter())
+        .chain(state.acceleration_m_s2.iter());
+    for (i, value) in values.enumerate() {
+        out[60 + i * 4..64 + i * 4].copy_from_slice(&value.to_le_bytes());
+    }
+}
+
+pub fn decode_state(bytes: &[u8]) -> Option<OpenDuckState> {
+    if bytes.len() != OPEN_DUCK_STATE_BYTES {
+        return None;
+    }
+    let u64_at = |offset| {
+        Some(u64::from_le_bytes(
+            bytes[offset..offset + 8].try_into().ok()?,
+        ))
+    };
+    let f32_at = |index| {
+        Some(f32::from_le_bytes(
+            bytes[60 + index * 4..64 + index * 4].try_into().ok()?,
+        ))
+    };
+    let positions_rad = std::array::from_fn(|i| f32_at(i).unwrap());
+    let velocities_rad_s = std::array::from_fn(|i| f32_at(14 + i).unwrap());
+    let gyro_rad_s = std::array::from_fn(|i| f32_at(28 + i).unwrap());
+    let acceleration_m_s2 = std::array::from_fn(|i| f32_at(31 + i).unwrap());
+    let state = OpenDuckState {
+        positions_rad,
+        velocities_rad_s,
+        gyro_rad_s,
+        acceleration_m_s2,
+        sequence: u64_at(0)?,
+        timeline: u64_at(8)?,
+        capture_monotonic_ns: u64_at(16)?,
+        requested_sequence: u64_at(24)?,
+        admitted_sequence: u64_at(32)?,
+        applied_sequence: u64_at(40)?,
+        message_age_ns: u64_at(48)?,
+        flags: u32::from_le_bytes(bytes[56..60].try_into().ok()?),
+    };
+    state
+        .positions_rad
+        .iter()
+        .chain(state.velocities_rad_s.iter())
+        .chain(state.gyro_rad_s.iter())
+        .chain(state.acceleration_m_s2.iter())
+        .all(|v| v.is_finite())
+        .then_some(state)
+}
 
 pub fn encode_target(target: &OpenDuckTarget, out: &mut [u8; OPEN_DUCK_TARGET_BYTES]) {
     out[..8].copy_from_slice(&target.sequence.to_le_bytes());
@@ -99,5 +186,29 @@ mod tests {
         assert_eq!(target.sequence, 100);
         assert!(target.valid_for(200_000_001, 4, Some(99)));
         assert!(!target.valid_for(220_000_000, 4, Some(99)));
+    }
+
+    #[test]
+    fn combined_state_codec_preserves_lineage_and_rejects_non_finite_facts() {
+        let mut state = OpenDuckState {
+            positions_rad: [1.0; 14],
+            velocities_rad_s: [2.0; 14],
+            gyro_rad_s: [3.0; 3],
+            acceleration_m_s2: [4.0; 3],
+            sequence: 11,
+            timeline: 2,
+            capture_monotonic_ns: 90,
+            requested_sequence: 8,
+            admitted_sequence: 7,
+            applied_sequence: 6,
+            message_age_ns: 5,
+            flags: 3,
+        };
+        let mut bytes = [0; OPEN_DUCK_STATE_BYTES];
+        encode_state(&state, &mut bytes);
+        assert_eq!(decode_state(&bytes), Some(state));
+        state.gyro_rad_s[0] = f32::NAN;
+        encode_state(&state, &mut bytes);
+        assert!(decode_state(&bytes).is_none());
     }
 }

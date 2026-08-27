@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Independent, headless Open Duck Mini v2 reference rollout."""
+"""Open Duck Mini v2 reference and policy rollout entry point."""
 import argparse, hashlib, json, math, os
 from pathlib import Path
 import mujoco
