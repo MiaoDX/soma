@@ -45,6 +45,7 @@ def main():
         max_abs_angle = 0.0
         contacts = [0, 0]
         obs_fixture = action_fixture = None
+        phase = np.zeros(2, dtype=np.float32)
         for tick in range(4000):
             mujoco.mj_step(model, data)
             if tick % 10: continue
@@ -52,12 +53,13 @@ def main():
             accel = data.sensordata[6:9].astype(np.float32).copy(); accel[0] += 1.3
             qpos = np.array([data.qpos[model.jnt_qposadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, n)]] for n in JOINTS], dtype=np.float32)
             qvel = np.array([data.qvel[model.jnt_dofadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, n)]] for n in JOINTS], dtype=np.float32)
-            phase = np.array([math.cos(tick / 10 * 0.2), math.sin(tick / 10 * 0.2)], dtype=np.float32)
             obs = np.concatenate((gyro, accel, np.array([0.1,0,0,0,0,0,0], dtype=np.float32), qpos-default.astype(np.float32), qvel*0.05, *history, target.astype(np.float32), np.array([0,0], dtype=np.float32), phase)).astype(np.float32)
             if obs.size != 101: raise SystemExit(f"observation width {obs.size}")
             action = session.run(None, {"obs": obs[None, :]})[0][0].astype(np.float32)
             if not np.isfinite(action).all(): raise SystemExit("non-finite policy output")
             history = [action, *history[:2]]
+            phase_i = (tick // 10 + 1) % 100
+            phase = np.array([math.cos(phase_i / 100 * 2 * math.pi), math.sin(phase_i / 100 * 2 * math.pi)], dtype=np.float32)
             proposed = default + action * 0.25
             limit = 5.24 * 0.02
             target = np.clip(proposed, previous-limit, previous+limit); previous = target.copy(); data.ctrl[:] = target
