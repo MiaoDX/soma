@@ -15,8 +15,8 @@ def main():
     p.add_argument("mode", choices=["reference", "policy", "stall"])
     p.add_argument("--case", default=str(ROOT / "docs/status/active/open-duck-stage0-case.md"))
     p.add_argument("--repeat", type=int, default=1)
-    p.add_argument("--checkpoint", type=Path, default=BUNDLE / "BEST_WALK_ONNX_2.onnx")
-    p.add_argument("--vx", type=float, default=0.1)
+    p.add_argument("--checkpoint", type=Path, default=BUNDLE / "BEST_WALK_ONNX.onnx")
+    p.add_argument("--vx", type=float, default=0.3)
     args = p.parse_args()
     model_file = BUNDLE / "xmls/scene_flat_terrain.xml"
     checkpoint = args.checkpoint.resolve()
