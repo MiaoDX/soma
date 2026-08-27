@@ -1,0 +1,31 @@
+bundle = "open-duck-mini-v2"
+license = "Apache-2.0"
+
+[[source]]
+repository = "https://github.com/apirrone/Open_Duck_Mini"
+commit = "b23317a485b3cec7d8417f352478778b3475173c"
+path = "BEST_WALK_ONNX_2.onnx"
+sha256 = "3c606f9381a1710cc8fecdb7442787dcbfce3ee9bc02a6f1224774ab2b3a1067"
+destination = "BEST_WALK_ONNX_2.onnx"
+modification = "vendored unchanged"
+
+[[source]]
+repository = "https://github.com/apirrone/Open_Duck_Playground"
+commit = "b9be205ac64488c23504ca42e5ec790337adeec3"
+path = "playground/open_duck_mini_v2/xmls/"
+destination = "xmls/"
+modification = "flat-scene include closure; runtime STL only"
+
+[[source]]
+repository = "https://github.com/apirrone/Open_Duck_Mini"
+commit = "b23317a485b3cec7d8417f352478778b3475173c"
+path = "LICENSE"
+destination = "licenses/open-duck-mini-LICENSE"
+modification = "copied verbatim"
+
+[[source]]
+repository = "https://github.com/apirrone/Open_Duck_Playground"
+commit = "b9be205ac64488c23504ca42e5ec790337adeec3"
+path = "LICENSE"
+destination = "licenses/open-duck-playground-LICENSE"
+modification = "Apache-2.0 posture recorded under approved compatibility assumption"
