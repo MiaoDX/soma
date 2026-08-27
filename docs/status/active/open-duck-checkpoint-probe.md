@@ -37,6 +37,25 @@ contacts. Applying those two mismatches plus Soma's early first inference to
 the official flat-scene loop reproduces the prior failure signature: root
 height `-0.156 m`, roll `3.141 rad`, and pitch `1.555 rad` after eight seconds.
 
+## Repaired Soma qualification
+
+After carrying measured foot contacts through the fixed state codec and using
+the pinned 27-tick phase, the same eight-second Soma direct harness produces:
+
+| checkpoint | forward displacement | minimum root height | max roll/pitch |
+|---|---:|---:|---:|
+| trained best-eval `257,556,480` | `1.374 m` | `0.150 m` | `0.108 rad` |
+| published `BEST_WALK_ONNX.onnx` | `1.410 m` | `0.150 m` | `0.117 rad` |
+| published `BEST_WALK_ONNX_2.onnx` | `1.423 m` | `0.150 m` | `0.115 rad` |
+
+The frozen published checkpoint also travels `1.410`, `1.420`, and `1.339 m`
+with injected target delays of 0, 2, and 20 ms respectively, without violating
+the posture envelope. Its supervised Rust/Zenoh/Python process rollout emits
+393 policy targets over eight seconds with no dropped states, rejection, or
+expiry and keeps root height above `0.155 m`. This clears the published
+checkpoint and shows that the earlier latency conclusion was an adapter
+artifact, not policy sensitivity.
+
 ## Velocity command sweep
 
 The command is consumed as a velocity input, not a post-run speed setting. With

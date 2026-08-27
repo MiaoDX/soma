@@ -6,6 +6,8 @@ import mujoco
 import numpy as np
 import onnxruntime as ort
 
+GAIT_PHASE_PERIOD = 27
+
 ROOT = Path(__file__).resolve().parents[1]
 BUNDLE = ROOT / "crates/soma-sim/assets/open-duck-mini-v2"
 JOINTS = ["left_hip_yaw", "left_hip_roll", "left_hip_pitch", "left_knee", "left_ankle", "neck_pitch", "head_pitch", "head_yaw", "head_roll", "right_hip_yaw", "right_hip_roll", "right_hip_pitch", "right_knee", "right_ankle"]
@@ -44,6 +46,9 @@ def main():
     if session.get_inputs()[0].shape != [1, 101] or session.get_outputs()[0].shape != [1, 14]:
         raise SystemExit("unexpected ONNX contract")
     results = []
+    floor_geom = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "floor")
+    foot_geoms = [mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, name)
+                  for name in ("left_foot_bottom_tpu", "right_foot_bottom_tpu")]
     for run in range(args.repeat):
         data = mujoco.MjData(model)
         mujoco.mj_resetDataKeyframe(model, data, mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_KEY, "home"))
@@ -69,13 +74,17 @@ def main():
             accel = data.sensordata[6:9].astype(np.float32).copy(); accel[0] += 1.3
             qpos = np.array([data.qpos[model.jnt_qposadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, n)]] for n in JOINTS], dtype=np.float32)
             qvel = np.array([data.qvel[model.jnt_dofadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, n)]] for n in JOINTS], dtype=np.float32)
-            obs = np.concatenate((gyro, accel, np.array([args.vx,0,0,0,0,0,0], dtype=np.float32), qpos-default.astype(np.float32), qvel*0.05, *history, target.astype(np.float32), np.array([0,0], dtype=np.float32), phase)).astype(np.float32)
+            contacts = np.array([any(
+                (contact.geom1 == foot and contact.geom2 == floor_geom) or
+                (contact.geom2 == foot and contact.geom1 == floor_geom)
+                for contact in data.contact) for foot in foot_geoms], dtype=np.float32)
+            obs = np.concatenate((gyro, accel, np.array([args.vx,0,0,0,0,0,0], dtype=np.float32), qpos-default.astype(np.float32), qvel*0.05, *history, target.astype(np.float32), contacts, phase)).astype(np.float32)
             if obs.size != 101: raise SystemExit(f"observation width {obs.size}")
             action = session.run(None, {"obs": obs[None, :]})[0][0].astype(np.float32)
             if not np.isfinite(action).all(): raise SystemExit("non-finite policy output")
             history = [action, *history[:2]]
-            phase_i = (tick // 10 + 1) % 100
-            phase = np.array([math.cos(phase_i / 100 * 2 * math.pi), math.sin(phase_i / 100 * 2 * math.pi)], dtype=np.float32)
+            phase_i = (tick // 10 + 1) % GAIT_PHASE_PERIOD
+            phase = np.array([math.cos(phase_i / GAIT_PHASE_PERIOD * 2 * math.pi), math.sin(phase_i / GAIT_PHASE_PERIOD * 2 * math.pi)], dtype=np.float32)
             proposed = default + action * 0.25
             limit = 5.24 * 0.02
             target = np.clip(proposed, previous-limit, previous+limit); previous = target.copy()

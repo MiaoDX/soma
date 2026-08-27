@@ -14,8 +14,9 @@ import zenoh
 
 STATE_KEY = "soma/open-duck-v2/state"
 TARGET_KEY = "soma/open-duck-v2/target"
-STATE = struct.Struct("<7QI37f")
+STATE = struct.Struct("<7QI39f")
 TARGET = struct.Struct("<4Q14f")
+GAIT_PHASE_PERIOD = 27
 DEFAULT_POSE = np.array([
     0.002, 0.053, -0.63, 1.368, -0.784, 0.0, 0.0, 0.0, 0.0,
     -0.003, -0.065, 0.635, 1.379, -0.796,
@@ -33,7 +34,8 @@ def decode_state(payload: bytes) -> dict[str, object]:
         "velocities": np.asarray(facts[14:28], dtype=np.float32),
         "gyro": np.asarray(facts[28:31], dtype=np.float32),
         "acceleration": np.asarray(facts[31:34], dtype=np.float32),
-        "root_height": facts[34], "root_roll": facts[35], "root_pitch": facts[36],
+        "contacts": np.asarray(facts[34:36], dtype=np.float32),
+        "root_height": facts[36], "root_roll": facts[37], "root_pitch": facts[38],
     }
 
 
@@ -64,7 +66,8 @@ class Policy:
         command = np.array([self.velocity_x, 0, 0, 0, 0, 0, 0], np.float32)
         observation = np.concatenate((state["gyro"], acceleration, command,
             positions - self.default, np.asarray(state["velocities"]) * 0.05,
-            *self.history, self.previous, np.zeros(2, np.float32), self.phase)).astype(np.float32)
+            *self.history, self.previous, np.asarray(state["contacts"], np.float32),
+            self.phase)).astype(np.float32)
         action = self.session.run(None, {"obs": observation[None, :]})[0][0].astype(np.float32)
         if observation.size != 101 or not np.isfinite(action).all():
             raise RuntimeError("invalid Open Duck policy observation or action")
@@ -73,9 +76,11 @@ class Policy:
         self.last_action = action.copy()
         proposed = self.default + action * 0.25
         self.previous = np.clip(proposed, self.previous - 5.24 * 0.02, self.previous + 5.24 * 0.02)
-        self.phase_tick = (self.phase_tick + 1) % 100
-        self.phase = np.array([math.cos(self.phase_tick / 100 * 2 * math.pi),
-                               math.sin(self.phase_tick / 100 * 2 * math.pi)], np.float32)
+        self.phase_tick = (self.phase_tick + 1) % GAIT_PHASE_PERIOD
+        self.phase = np.array([
+            math.cos(self.phase_tick / GAIT_PHASE_PERIOD * 2 * math.pi),
+            math.sin(self.phase_tick / GAIT_PHASE_PERIOD * 2 * math.pi),
+        ], np.float32)
         return self.previous
 
     @staticmethod

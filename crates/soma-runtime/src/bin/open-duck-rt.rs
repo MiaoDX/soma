@@ -79,6 +79,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 velocities_rad_s: facts.velocities_rad_s,
                 gyro_rad_s: facts.gyro_rad_s,
                 acceleration_m_s2: facts.acceleration_m_s2,
+                feet_contacts: facts.feet_contacts,
                 root_height_m: facts.root_height_m,
                 root_roll_rad: facts.root_roll_rad,
                 root_pitch_rad: facts.root_pitch_rad,
