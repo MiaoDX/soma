@@ -88,7 +88,7 @@ It runs `scripts/verify-sim-showcase` before reporting success.
 
 ## Active Work
 
-- Active gated simulation slice: [Open Duck Mini walk policy](docs/plans/open-duck-mini-walk-policy.md). The fixed Duck Plant, isolated transport, Python ONNX client, lineage/fault evidence, and supervised launcher path are implemented. The published policy passes same-tick reference floors but falls after one 2 ms delayed application, so full asynchronous gait acceptance remains blocked. A bounded replacement-policy training experiment is active; its 10k-step smoke and 8192-environment RTX 3090 capacity gate pass with a 4,801 MiB sampled peak and 18,950 warm steps/s, but long training has not started.
+- Active gated simulation slice: [Open Duck Mini walk policy](docs/plans/open-duck-mini-walk-policy.md). The fixed Duck Plant, isolated transport, Python ONNX client, lineage/fault evidence, and supervised launcher path are implemented. The published policy and a newly trained 300M upstream baseline both fall in Soma's exact zero-delay harness, so asynchronous gait acceptance remains blocked. The baseline trained successfully on 8192 RTX 3090 environments in about 78 minutes; its ONNX export passes format/runtime checks, but model-equivalence reconciliation is required before latency-aware retraining.
 - Active comparison/hardware state: [bootstrap capsule](docs/status/active/bootstrap.md)
 - Preflighted next slice: [official simulation fixed case suite](docs/plans/official-simulation-case-suite-plan.md)
 - Completed suite evidence: [official simulation fixed case suite report](docs/measurements/official-simulation-case-suite-report.md)

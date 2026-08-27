@@ -7,10 +7,10 @@
 
 - `status`: BLOCKED on the published policy; bounded training experiment active
 - `appetite`: gate-bounded; no calendar-duration estimate
-- `current_slice`: 8192-environment capacity calibration complete; long training
-  not started
-- `next_action`: launch the fixed-seed 150M upstream-baseline run after user
-  confirmation, then qualify its exported candidate before latency-aware work
+- `current_slice`: upstream 300M baseline complete; candidate fails zero-delay
+  Soma qualification
+- `next_action`: reconcile the Playground backlash training model and
+  observation contract with Soma's frozen qualification model before retraining
 - `no_touch`: Reachy hardware probe and N0/N1 gates; Open Duck hardware;
   generic robot manifests; ROS 2; a third robot; camera, audio, antennas,
   expression features, interactive control, and silent checkpoint replacement
@@ -46,6 +46,15 @@ steps/s because it included compilation; the warm run reported 18,950 steps/s.
 At the warm rate, 150M steps are about 2.2 hours of training compute and 300M
 about 4.4 hours, before full evaluation and checkpoint overhead.
 
+The requested README-sized baseline was then run at `300,000,000` steps. PPO
+rounded this to `300,482,560` steps and finished in about 78 minutes. The best
+evaluation was at `257,556,480` steps with reward `314.03`; the final reward was
+`250.15`. Both the best and final exported ONNX candidates have the exact
+`101 -> 14` contract and pass ONNX checker/CPU Runtime, but the best candidate
+already fails Soma's zero-delay direct harness (`min_root_height_m=-0.18896`,
+`max_abs_roll_rad=3.14147`, `max_abs_pitch_rad=1.54226`). No delayed or process
+run is needed to establish this stop gate.
+
 ### Training experiment contract
 
 - keep checkpoints, TensorBoard data, caches, and temporary source patches
@@ -53,8 +62,8 @@ about 4.4 hours, before full evaluation and checkpoint overhead.
 - use the passing production-shaped memory/throughput calibration as the local
   RTX 3090 capacity baseline; recheck if the environment or PPO shape changes;
 - train one upstream-baseline candidate before changing latency semantics;
-- train one latency-aware candidate that represents Soma action/state timing,
-  with the exact delay distribution and implementation recorded before launch;
+- do not start latency-aware retraining until the `flat_terrain_backlash` versus
+  frozen Soma model, reward, noise, and observation differences are reconciled;
 - never replace the frozen published checkpoint silently; candidates remain
   named experiment artifacts until they pass independent qualification;
 - evaluate each candidate in the direct zero-delay, direct 2 ms, direct 20 ms,
