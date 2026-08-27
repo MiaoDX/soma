@@ -88,7 +88,7 @@ It runs `scripts/verify-sim-showcase` before reporting success.
 
 ## Active Work
 
-- Active gated simulation slice: [Open Duck Mini walk policy](docs/plans/open-duck-mini-walk-policy.md). The fixed Duck Plant, isolated transport, Python ONNX client, lineage/fault evidence, and supervised launcher path are implemented. The published policy and a newly trained 300M upstream baseline both fall in Soma's exact zero-delay harness, so asynchronous gait acceptance remains blocked. The baseline trained successfully on 8192 RTX 3090 environments in about 78 minutes; its ONNX export passes format/runtime checks, but model-equivalence reconciliation is required before latency-aware retraining.
+- Active gated simulation slice: [Open Duck Mini walk policy](docs/plans/open-duck-mini-walk-policy.md). The fixed Duck Plant, isolated transport, Python ONNX client, lineage/fault evidence, and supervised launcher path are implemented. The newly trained 300M baseline is stable and responsive in the official Playground MuJoCo demo, including the README flat scene and its backlash training scene. Soma's failure is reproduced by its observation-adapter mismatches: a hard-coded 100-tick gait phase instead of the official 27-tick period, combined with constant zero foot contacts. The adapter must be corrected before any latency conclusion or retraining decision.
 - Active comparison/hardware state: [bootstrap capsule](docs/status/active/bootstrap.md)
 - Preflighted next slice: [official simulation fixed case suite](docs/plans/official-simulation-case-suite-plan.md)
 - Completed suite evidence: [official simulation fixed case suite report](docs/measurements/official-simulation-case-suite-report.md)

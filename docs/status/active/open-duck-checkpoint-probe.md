@@ -21,6 +21,22 @@ committed pretrained checkpoint. Retraining and exporting a policy against the
 pinned environment is the remaining technical fallback; it requires a separate
 resource/time decision and must not silently replace the frozen checkpoint.
 
+## Trained 300M baseline in the official demo
+
+The locally trained best-eval checkpoint at step `257,556,480` remains upright
+for 20 seconds in the official `MjInfer` loop on both the README default flat
+scene and the `flat_terrain_backlash` training scene. On the backlash scene it
+travels about `2.52 m` at `vx=0.15 m/s` and `1.75 m` at `vy=0.2 m/s`, while
+keeping root height above `0.152 m` and absolute roll/pitch below `0.12 rad`.
+The final 300M checkpoint behaves similarly.
+
+The failed Soma rollout is therefore not evidence of a bad trained policy. The
+pinned reference motion has a 27-policy-tick period, while Soma advances the
+observation phase on a hard-coded 100-tick period and always supplies zero foot
+contacts. Applying those two mismatches plus Soma's early first inference to
+the official flat-scene loop reproduces the prior failure signature: root
+height `-0.156 m`, roll `3.141 rad`, and pitch `1.555 rad` after eight seconds.
+
 ## Velocity command sweep
 
 The command is consumed as a velocity input, not a post-run speed setting. With
