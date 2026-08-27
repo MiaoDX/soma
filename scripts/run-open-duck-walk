@@ -37,7 +37,6 @@ def main():
     for run in range(args.repeat):
         data = mujoco.MjData(model)
         mujoco.mj_resetDataKeyframe(model, data, mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_KEY, "home"))
-        mujoco.mj_step(model, data)
         default = data.ctrl.copy()
         history = [np.zeros(14, dtype=np.float32) for _ in range(3)]
         target = default.copy()
