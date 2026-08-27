@@ -16,6 +16,7 @@ def main():
     p.add_argument("--case", default=str(ROOT / "docs/status/active/open-duck-stage0-case.md"))
     p.add_argument("--repeat", type=int, default=1)
     p.add_argument("--checkpoint", type=Path, default=BUNDLE / "BEST_WALK_ONNX_2.onnx")
+    p.add_argument("--vx", type=float, default=0.1)
     args = p.parse_args()
     model_file = BUNDLE / "xmls/scene_flat_terrain.xml"
     checkpoint = args.checkpoint.resolve()
@@ -54,7 +55,7 @@ def main():
             accel = data.sensordata[6:9].astype(np.float32).copy(); accel[0] += 1.3
             qpos = np.array([data.qpos[model.jnt_qposadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, n)]] for n in JOINTS], dtype=np.float32)
             qvel = np.array([data.qvel[model.jnt_dofadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, n)]] for n in JOINTS], dtype=np.float32)
-            obs = np.concatenate((gyro, accel, np.array([0.1,0,0,0,0,0,0], dtype=np.float32), qpos-default.astype(np.float32), qvel*0.05, *history, target.astype(np.float32), np.array([0,0], dtype=np.float32), phase)).astype(np.float32)
+            obs = np.concatenate((gyro, accel, np.array([args.vx,0,0,0,0,0,0], dtype=np.float32), qpos-default.astype(np.float32), qvel*0.05, *history, target.astype(np.float32), np.array([0,0], dtype=np.float32), phase)).astype(np.float32)
             if obs.size != 101: raise SystemExit(f"observation width {obs.size}")
             action = session.run(None, {"obs": obs[None, :]})[0][0].astype(np.float32)
             if not np.isfinite(action).all(): raise SystemExit("non-finite policy output")
@@ -66,7 +67,7 @@ def main():
             target = np.clip(proposed, previous-limit, previous+limit); previous = target.copy(); data.ctrl[:] = target
             if tick == 0: obs_fixture, action_fixture = obs.tolist(), action.tolist()
             max_abs_angle = max(max_abs_angle, float(np.max(np.abs(data.qpos[7:]))))
-        results.append({"run": run, "physics_steps": 4000, "policy_ticks": 400, "forward_displacement_m": float(data.qpos[0]-x0), "max_abs_joint_angle_rad": max_abs_angle, "observation_width": len(obs_fixture), "action_width": len(action_fixture), "first_observation": obs_fixture, "first_action": action_fixture, "mode": args.mode})
+        results.append({"run": run, "physics_steps": 4000, "policy_ticks": 400, "command_vx_mps": args.vx, "forward_displacement_m": float(data.qpos[0]-x0), "max_abs_joint_angle_rad": max_abs_angle, "observation_width": len(obs_fixture), "action_width": len(action_fixture), "first_observation": obs_fixture, "first_action": action_fixture, "mode": args.mode})
     print(json.dumps({"contract": {"nq":21,"nv":20,"nu":14,"observation":101,"action":14,"timestep":0.002}, "runs": results}, indent=2))
 
 if __name__ == "__main__": main()

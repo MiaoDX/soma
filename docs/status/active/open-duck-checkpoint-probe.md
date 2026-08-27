@@ -20,3 +20,13 @@ The Playground repository contains the training and ONNX export path but no
 committed pretrained checkpoint. Retraining and exporting a policy against the
 pinned environment is the remaining technical fallback; it requires a separate
 resource/time decision and must not silently replace the frozen checkpoint.
+
+## Velocity command sweep
+
+The command is consumed as a velocity input, not a post-run speed setting. With
+the same eight-second probe, `BEST_WALK_ONNX_2` displaced `-0.0056 m`, `0.0031
+m`, `0.0186 m`, and `0.0276 m` at `vx=0.05`, `0.10`, `0.15`, and `0.30 m/s`.
+`BEST_WALK_ONNX` displaced `0.0138 m`, `0.0350 m`, `0.0455 m`, and `0.1862 m`
+at those commands. This confirms command sensitivity. The `0.30 m/s` probe is
+diagnostic only because it exceeds the Playground runner's documented
+`[-0.15, 0.15] m/s` command range.
