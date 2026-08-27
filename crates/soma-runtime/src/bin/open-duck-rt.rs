@@ -27,7 +27,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut admitted_sequence = 0;
     let mut admitted_capture_ns = 0;
     let mut pending_capture_ns = 0;
-    let mut rejected_count = 0_u64;
+    let mut rejection_latched = false;
+    let mut expiry_latched = false;
     loop {
         match owned.socket.recv(&mut bytes) {
             Ok(size) => {
@@ -42,7 +43,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         ttl_ns: target.ttl_ns,
                     });
                 } else {
-                    rejected_count = rejected_count.wrapping_add(1);
+                    rejection_latched = true;
                 }
             }
             Err(e) if e.kind() == ErrorKind::WouldBlock => {}
@@ -58,15 +59,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             admitted_sequence = sequence;
             admitted_capture_ns = pending_capture_ns;
         }
+        if matches!(tick.command_result, CommandResult::Rejected { .. }) {
+            rejection_latched = true;
+        }
+        expiry_latched |= tick.applied.expiry_transition;
         if ticks % 10 == 1 {
             let facts = plant.policy_facts();
             let (applied_sequence, mut flags) = match tick.applied.command {
                 AppliedCommand::Target { sequence } => (sequence, 1),
                 AppliedCommand::MeasuredPositionHold { .. } => {
-                    (0, 2 | (u32::from(tick.applied.expiry_transition) * 4))
+                    (0, 2 | (u32::from(expiry_latched) * 4))
                 }
             };
-            if rejected_count != 0 {
+            if rejection_latched {
                 flags |= 8;
             }
             let state = OpenDuckState {
@@ -89,6 +94,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
             encode_state(&state, &mut state_bytes);
             let _ = owned.socket.send_to(&state_bytes, OPEN_DUCK_RUNTIME_SOCKET);
+            expiry_latched = false;
+            rejection_latched = false;
         }
         next += PERIOD;
         thread::sleep(next.saturating_duration_since(Instant::now()));
