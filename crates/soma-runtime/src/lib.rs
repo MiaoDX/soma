@@ -11,6 +11,8 @@ use soma_core::{
 };
 use soma_protocol::v1::{self, rt_request};
 
+pub mod open_duck;
+
 pub const RT_SOCKET: &str = "/tmp/soma-robot-rt.sock";
 pub const RUNTIME_SOCKET: &str = "/tmp/soma-robot-runtime.sock";
 pub const COMMAND_KEY: &str = "soma/reachy/command";
