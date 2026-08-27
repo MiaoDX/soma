@@ -81,6 +81,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--stall-after", type=int)
+    parser.add_argument("--duration", type=float)
     args = parser.parse_args()
     config = zenoh.Config.from_json5('{mode:"client",connect:{endpoints:["tcp/127.0.0.1:7448"]},scouting:{multicast:{enabled:false}}}')
     policy = Policy(args.checkpoint)
@@ -92,15 +93,22 @@ def main() -> None:
         except queue.Full: pass
     with zenoh.open(config) as session, session.declare_subscriber(STATE_KEY, latest):
         emitted = 0
+        started = time.monotonic()
         while True:
             state = decode_state(states.get(timeout=5))
             if args.stall_after is not None and emitted >= args.stall_after:
                 time.sleep(0.1)
+                if args.duration is not None and time.monotonic() - started >= args.duration:
+                    print(f"policy stall complete: emitted={emitted}")
+                    return
                 continue
             target = policy.infer(state)
             emitted += 1
             payload = policy.target_payload(emitted, state, target)
             session.put(TARGET_KEY, payload)
+            if args.duration is not None and time.monotonic() - started >= args.duration:
+                print(f"policy complete: emitted={emitted}")
+                return
 
 
 if __name__ == "__main__":

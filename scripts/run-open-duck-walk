@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Open Duck Mini v2 reference and policy rollout entry point."""
-import argparse, hashlib, json, math, os
+import argparse, hashlib, json, math, os, signal, subprocess, sys, time
 from pathlib import Path
 import mujoco
 import numpy as np
@@ -19,6 +19,9 @@ def main():
     p.add_argument("--vx", type=float, default=0.3)
     p.add_argument("--visualize", action="store_true", help=argparse.SUPPRESS)
     args = p.parse_args()
+    if args.mode in {"policy", "stall"}:
+        run_process_mode(args)
+        return
     model_file = BUNDLE / "xmls/scene_flat_terrain.xml"
     checkpoint = args.checkpoint.resolve()
     digest = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
@@ -70,5 +73,34 @@ def main():
             max_abs_angle = max(max_abs_angle, float(np.max(np.abs(data.qpos[7:]))))
         results.append({"run": run, "physics_steps": 4000, "policy_ticks": 400, "command_vx_mps": args.vx, "forward_displacement_m": float(data.qpos[0]-x0), "max_abs_joint_angle_rad": max_abs_angle, "observation_width": len(obs_fixture), "action_width": len(action_fixture), "first_observation": obs_fixture, "first_action": action_fixture, "mode": args.mode})
     print(json.dumps({"contract": {"nq":21,"nv":20,"nu":14,"observation":101,"action":14,"timestep":0.002}, "runs": results}, indent=2))
+
+def run_process_mode(args):
+    env = os.environ.copy()
+    env["LD_LIBRARY_PATH"] = str(ROOT / ".mujoco/mujoco-3.9.0/lib") + ":" + env.get("LD_LIBRARY_PATH", "")
+    procs = []
+    try:
+        procs.append(subprocess.Popen([str(ROOT / "target/debug/open-duck-runtime")], env=env,
+                                      stdout=subprocess.DEVNULL, stderr=subprocess.PIPE))
+        procs.append(subprocess.Popen([str(ROOT / "target/debug/open-duck-rt")], env=env,
+                                      stdout=subprocess.DEVNULL, stderr=subprocess.PIPE))
+        time.sleep(0.5)
+        policy_python = ROOT / "python/.venv/bin/python"
+        policy = [str(policy_python), "-m", "soma_client.open_duck_policy", "--duration", "2",
+                  "--checkpoint", str(args.checkpoint.resolve())]
+        if args.mode == "stall": policy += ["--stall-after", "1"]
+        proc = subprocess.Popen(policy, cwd=ROOT / "python", env={**env, "PYTHONPATH": "."},
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        out, err = proc.communicate(timeout=8)
+        if proc.returncode != 0:
+            raise SystemExit(err.strip() or "Open Duck policy process failed")
+        if "complete" not in out:
+            raise SystemExit("Open Duck policy process did not report completion")
+        print(json.dumps({"mode": args.mode, "process_path": True, "result": out.strip()}))
+    finally:
+        for proc in procs:
+            proc.send_signal(signal.SIGINT)
+        for proc in procs:
+            try: proc.wait(timeout=2)
+            except subprocess.TimeoutExpired: proc.kill()
 
 if __name__ == "__main__": main()
