@@ -598,6 +598,19 @@ mod tests {
     }
 
     #[test]
+    fn open_duck_control_core_applies_target_on_fixed_physics_path() {
+        use soma_core::{ActuatorTarget, ControlCore};
+        let mut plant = OpenDuckSimPlant::load(Duration::from_millis(2)).unwrap();
+        let timeline = plant.read_state().unwrap().timeline;
+        let mut core = ControlCore::<OPEN_DUCK_ACTUATOR_COUNT>::new();
+        let target = ActuatorTarget { positions_rad: [0.0; OPEN_DUCK_ACTUATOR_COUNT], sequence: 1, timeline, issued_at_ns: 0, ttl_ns: 1_000_000_000 };
+        let tick = core.tick(&mut plant, Some(target), 1).unwrap();
+        assert_eq!(tick.command_result, soma_core::CommandResult::Accepted { sequence: 1 });
+        for _ in 0..10 { plant.advance_physics_step(); }
+        assert!(plant.read_state().unwrap().timestamp_ns >= 20_000_000);
+    }
+
+    #[test]
     fn control_core_expires_to_measured_position_hold_on_the_real_model() {
         let mut plant = ReachySimPlant::load(scene(), CONTROL_PERIOD).unwrap();
         let initial = plant.read_state().unwrap();

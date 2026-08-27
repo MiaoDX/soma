@@ -5,6 +5,8 @@ pub const OPEN_DUCK_RT_SOCKET: &str = "/tmp/soma-open-duck-rt.sock";
 pub const OPEN_DUCK_STATE_KEY: &str = "soma/open-duck-v2/state";
 pub const OPEN_DUCK_TARGET_KEY: &str = "soma/open-duck-v2/target";
 pub const OPEN_DUCK_ACTUATORS: usize = 14;
+pub const OPEN_DUCK_PHYSICS_HZ: u32 = 500;
+pub const OPEN_DUCK_POLICY_HZ: u32 = 50;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct OpenDuckTarget {
@@ -40,5 +42,17 @@ mod tests {
         assert!(!target.valid_for(120, 7, Some(1)));
         assert!(!target.valid_for(101, 6, Some(1)));
         assert!(!target.valid_for(101, 7, Some(2)));
+    }
+
+    #[test]
+    fn synthetic_latest_value_contract_is_bounded() {
+        let mut latest = None;
+        for sequence in 1..=100_u64 {
+            latest = Some(OpenDuckTarget { positions_rad: [sequence as f32; OPEN_DUCK_ACTUATORS], sequence, timeline: 4, capture_monotonic_ns: sequence * 2_000_000, ttl_ns: 20_000_000 });
+        }
+        let target = latest.unwrap();
+        assert_eq!(target.sequence, 100);
+        assert!(target.valid_for(200_000_001, 4, Some(99)));
+        assert!(!target.valid_for(220_000_000, 4, Some(99)));
     }
 }
