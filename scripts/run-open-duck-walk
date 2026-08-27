@@ -18,6 +18,8 @@ def main():
     p.add_argument("--checkpoint", type=Path, default=BUNDLE / "BEST_WALK_ONNX.onnx")
     p.add_argument("--vx", type=float, default=0.3)
     p.add_argument("--visualize", action="store_true", help=argparse.SUPPRESS)
+    p.add_argument("--diagnostic-delay-steps", type=int, default=0, help=argparse.SUPPRESS)
+    p.add_argument("--diagnostic-drop-policy-tick", type=int, help=argparse.SUPPRESS)
     args = p.parse_args()
     checkpoint = args.checkpoint.resolve()
     digest = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
@@ -49,12 +51,18 @@ def main():
         previous = target.copy()
         x0 = float(data.qpos[0])
         max_abs_angle = 0.0
+        min_root_height = float("inf"); max_abs_roll = 0.0; max_abs_pitch = 0.0
         contacts = [0, 0]
         obs_fixture = action_fixture = None
         phase = np.zeros(2, dtype=np.float32)
+        delayed_targets = []
         for tick in range(4000):
             mujoco.mj_step(model, data)
+            while delayed_targets and delayed_targets[0][0] <= tick:
+                _, ready_target = delayed_targets.pop(0); data.ctrl[:] = ready_target
             if tick % 10: continue
+            policy_tick = tick // 10
+            if args.diagnostic_drop_policy_tick == policy_tick: continue
             gyro = data.sensordata[0:3].astype(np.float32)
             accel = data.sensordata[6:9].astype(np.float32).copy(); accel[0] += 1.3
             qpos = np.array([data.qpos[model.jnt_qposadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, n)]] for n in JOINTS], dtype=np.float32)
@@ -68,10 +76,15 @@ def main():
             phase = np.array([math.cos(phase_i / 100 * 2 * math.pi), math.sin(phase_i / 100 * 2 * math.pi)], dtype=np.float32)
             proposed = default + action * 0.25
             limit = 5.24 * 0.02
-            target = np.clip(proposed, previous-limit, previous+limit); previous = target.copy(); data.ctrl[:] = target
+            target = np.clip(proposed, previous-limit, previous+limit); previous = target.copy()
+            delayed_targets.append((tick + args.diagnostic_delay_steps, target.copy()))
+            while delayed_targets and delayed_targets[0][0] <= tick:
+                _, ready_target = delayed_targets.pop(0); data.ctrl[:] = ready_target
             if tick == 0: obs_fixture, action_fixture = obs.tolist(), action.tolist()
             max_abs_angle = max(max_abs_angle, float(np.max(np.abs(data.qpos[7:]))))
-        results.append({"run": run, "physics_steps": 4000, "policy_ticks": 400, "command_vx_mps": args.vx, "forward_displacement_m": float(data.qpos[0]-x0), "max_abs_joint_angle_rad": max_abs_angle, "observation_width": len(obs_fixture), "action_width": len(action_fixture), "first_observation": obs_fixture, "first_action": action_fixture, "mode": args.mode})
+            w,x,y,z=data.qpos[3:7]; roll=math.atan2(2*(w*x+y*z),1-2*(x*x+y*y)); pitch=math.asin(np.clip(2*(w*y-z*x),-1,1))
+            min_root_height=min(min_root_height,float(data.qpos[2])); max_abs_roll=max(max_abs_roll,abs(roll)); max_abs_pitch=max(max_abs_pitch,abs(pitch))
+        results.append({"run": run, "physics_steps": 4000, "policy_ticks": 400, "command_vx_mps": args.vx, "forward_displacement_m": float(data.qpos[0]-x0), "max_abs_joint_angle_rad": max_abs_angle, "min_root_height_m":min_root_height,"max_abs_roll_rad":max_abs_roll,"max_abs_pitch_rad":max_abs_pitch, "observation_width": len(obs_fixture), "action_width": len(action_fixture), "first_observation": obs_fixture, "first_action": action_fixture, "mode": args.mode})
     print(json.dumps({"contract": {"nq":21,"nv":20,"nu":14,"observation":101,"action":14,"timestep":0.002}, "runs": results}, indent=2))
 
 def run_process_mode(args):

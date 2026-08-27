@@ -39,7 +39,12 @@ def decode_state(payload: bytes) -> dict[str, object]:
 
 class Policy:
     def __init__(self, checkpoint: Path, velocity_x: float = 0.3) -> None:
-        self.session = ort.InferenceSession(str(checkpoint), providers=["CPUExecutionProvider"])
+        options = ort.SessionOptions()
+        options.intra_op_num_threads = 1
+        options.inter_op_num_threads = 1
+        options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+        self.session = ort.InferenceSession(str(checkpoint), sess_options=options,
+                                            providers=["CPUExecutionProvider"])
         assert self.session.get_inputs()[0].shape == [1, 101]
         assert self.session.get_outputs()[0].shape == [1, 14]
         self.velocity_x = velocity_x
@@ -88,11 +93,13 @@ def main() -> None:
     config = zenoh.Config.from_json5('{mode:"client",connect:{endpoints:["tcp/127.0.0.1:7448"]},scouting:{multicast:{enabled:false}}}')
     policy = Policy(args.checkpoint)
     states: queue.Queue = queue.Queue(maxsize=1)
+    dropped_states = 0
     def latest(sample: object) -> None:
+        nonlocal dropped_states
         try: states.get_nowait()
         except queue.Empty: pass
         try: states.put_nowait(bytes(sample.payload))
-        except queue.Full: pass
+        except queue.Full: dropped_states += 1
     with zenoh.open(config) as session, session.declare_subscriber(STATE_KEY, latest):
         emitted = 0
         started = time.monotonic()
@@ -100,10 +107,21 @@ def main() -> None:
                     "max_message_age_ns": 0, "last_requested": 0,
                     "last_admitted": 0, "last_applied": 0,
                     "min_root_height_m": float("inf"), "max_abs_roll_rad": 0.0,
-                    "max_abs_pitch_rad": 0.0}
+                    "max_abs_pitch_rad": 0.0, "first_state_sequence": 0,
+                    "last_state_sequence": 0, "max_state_sequence_gap": 0,
+                    "max_inference_ns": 0, "dropped_states": 0}
         while True:
             state = decode_state(states.get(timeout=5))
             evidence["states"] += 1
+            evidence["dropped_states"] = dropped_states
+            sequence = int(state["sequence"])
+            if evidence["first_state_sequence"] == 0:
+                evidence["first_state_sequence"] = sequence
+            if evidence["last_state_sequence"]:
+                evidence["max_state_sequence_gap"] = max(
+                    evidence["max_state_sequence_gap"],
+                    sequence - evidence["last_state_sequence"])
+            evidence["last_state_sequence"] = sequence
             evidence["applied"] |= bool(int(state["flags"]) & 1)
             evidence["expiry"] |= bool(int(state["flags"]) & 4)
             evidence["rejected"] |= bool(int(state["flags"]) & 8)
@@ -119,7 +137,10 @@ def main() -> None:
                     print(json.dumps({"status": "stall-complete", "emitted": emitted, **evidence}))
                     return
                 continue
+            inference_started = time.monotonic_ns()
             target = policy.infer(state)
+            evidence["max_inference_ns"] = max(
+                evidence["max_inference_ns"], time.monotonic_ns() - inference_started)
             emitted += 1
             payload = policy.target_payload(int(state["sequence"]), state, target)
             session.put(TARGET_KEY, payload)
