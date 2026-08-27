@@ -71,6 +71,11 @@ class Policy:
                                math.sin(self.phase_tick / 100 * 2 * math.pi)], np.float32)
         return self.previous
 
+    @staticmethod
+    def target_payload(sequence: int, state: dict[str, object], positions: np.ndarray) -> bytes:
+        return TARGET.pack(sequence, int(state["timeline"]), int(state["capture_ns"]),
+                           40_000_000, *positions)
+
 
 def main() -> None:
     parser = argparse.ArgumentParser()
@@ -94,7 +99,7 @@ def main() -> None:
                 continue
             target = policy.infer(state)
             emitted += 1
-            payload = TARGET.pack(emitted, state["timeline"], state["capture_ns"], 40_000_000, *target)
+            payload = policy.target_payload(emitted, state, target)
             session.put(TARGET_KEY, payload)
 
 

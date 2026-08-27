@@ -6,7 +6,7 @@ from pathlib import Path
 import mujoco
 import numpy as np
 
-from soma_client.open_duck_policy import Policy, STATE, decode_state
+from soma_client.open_duck_policy import Policy, STATE, TARGET, decode_state
 
 
 def test_combined_state_decode_preserves_lineage_and_facts():
@@ -15,6 +15,13 @@ def test_combined_state_decode_preserves_lineage_and_facts():
     assert (state["sequence"], state["timeline"], state["applied"]) == (11, 2, 6)
     np.testing.assert_array_equal(state["positions"], np.arange(14, dtype=np.float32))
     assert struct.calcsize("<7QI34f") == len(payload)
+
+
+def test_target_keeps_original_capture_deadline_lineage():
+    state = {"timeline": 9, "capture_ns": 123456789}
+    payload = Policy.target_payload(4, state, np.zeros(14, np.float32))
+    sequence, timeline, capture_ns, ttl_ns, *_ = TARGET.unpack(payload)
+    assert (sequence, timeline, capture_ns, ttl_ns) == (4, 9, 123456789, 40_000_000)
 
 
 def test_first_policy_tick_matches_frozen_reference_fixture():
