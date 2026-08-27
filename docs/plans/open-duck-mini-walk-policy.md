@@ -7,9 +7,10 @@
 
 - `status`: BLOCKED on the published policy; bounded training experiment active
 - `appetite`: gate-bounded; no calendar-duration estimate
-- `current_slice`: Playground GPU smoke complete; long training not started
-- `next_action`: report smoke evidence, then calibrate production-shaped PPO
-  throughput and memory before a long baseline or latency-aware run
+- `current_slice`: 8192-environment capacity calibration complete; long training
+  not started
+- `next_action`: launch the fixed-seed 150M upstream-baseline run after user
+  confirmation, then qualify its exported candidate before latency-aware work
 - `no_touch`: Reachy hardware probe and N0/N1 gates; Open Duck hardware;
   generic robot manifests; ROS 2; a third robot; camera, audio, antennas,
   expression features, interactive control, and silent checkpoint replacement
@@ -37,12 +38,20 @@ remaining dependencies restricted to releases available by 2025-08-05. A
 10,240-step RTX 3090 smoke completed and its Orbax checkpoint restored. This is
 training-path evidence only, not a usable walking policy.
 
+The production-shaped capacity gate also passed twice with `num_envs=8192`,
+`batch_size=256`, `unroll_length=20`, `num_minibatches=32`, and
+`num_updates_per_batch=4`. One 163,840-step update peaked at 4,801 MiB under
+200 ms GPU sampling and reached 100% utilization. The cold run reported 3,038
+steps/s because it included compilation; the warm run reported 18,950 steps/s.
+At the warm rate, 150M steps are about 2.2 hours of training compute and 300M
+about 4.4 hours, before full evaluation and checkpoint overhead.
+
 ### Training experiment contract
 
 - keep checkpoints, TensorBoard data, caches, and temporary source patches
   outside the Soma worktree until one candidate passes qualification;
-- first run a production-shaped memory/throughput calibration with fixed seed
-  0; do not infer long-run cost from the reduced 256-environment smoke;
+- use the passing production-shaped memory/throughput calibration as the local
+  RTX 3090 capacity baseline; recheck if the environment or PPO shape changes;
 - train one upstream-baseline candidate before changing latency semantics;
 - train one latency-aware candidate that represents Soma action/state timing,
   with the exact delay distribution and implementation recorded before launch;
