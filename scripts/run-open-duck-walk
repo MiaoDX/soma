@@ -19,15 +19,15 @@ def main():
     p.add_argument("--vx", type=float, default=0.3)
     p.add_argument("--visualize", action="store_true", help=argparse.SUPPRESS)
     args = p.parse_args()
+    checkpoint = args.checkpoint.resolve()
+    digest = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
+    expected = {"3c606f9381a1710cc8fecdb7442787dcbfce3ee9bc02a6f1224774ab2b3a1067", "cb61453a8bcb547ccfdeb4f03ba0fa67ebcf767dcf4aa6e5c9a0d92b302f9b23"}
+    if digest not in expected or "FROZEN" not in Path(args.case).read_text():
+        raise SystemExit("refusing rollout: frozen case or pinned checkpoint is invalid")
     if args.mode in {"policy", "stall"}:
         run_process_mode(args)
         return
     model_file = BUNDLE / "xmls/scene_flat_terrain.xml"
-    checkpoint = args.checkpoint.resolve()
-    digest = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
-    expected = {"3c606f9381a1710cc8fecdb7442787dcbfce3ee9bc02a6f1224774ab2b3a1067", "cb61453a8bcb547ccfdeb4f03ba0fa67ebcf767dcf4aa6e5c9a0d92b302f9b23"}
-    if digest not in expected or not Path(args.case).read_text().find("FROZEN") >= 0:
-        raise SystemExit("refusing rollout: frozen case or pinned checkpoint is invalid")
     # MuJoCo resolves mesh includes relative to the scene XML directory.
     os.chdir(model_file.parent)
     model = mujoco.MjModel.from_xml_path(model_file.name)
