@@ -191,6 +191,24 @@ mod tests {
     }
 
     #[test]
+    fn target_lineage_fault_matrix_is_fail_closed() {
+        let target = OpenDuckTarget {
+            positions_rad: [0.0; OPEN_DUCK_ACTUATORS],
+            sequence: 10,
+            timeline: 4,
+            capture_monotonic_ns: 100,
+            ttl_ns: 20,
+        };
+        assert!(target.valid_for(119, 4, Some(9)));
+        assert!(!target.valid_for(119, 4, Some(10))); // duplicate
+        assert!(!target.valid_for(119, 3, Some(9))); // wrong timeline
+        assert!(!target.valid_for(120, 4, Some(9))); // expired original lease
+        let mut non_finite = target;
+        non_finite.positions_rad[3] = f32::INFINITY;
+        assert!(!non_finite.valid_for(119, 4, Some(9)));
+    }
+
+    #[test]
     fn synthetic_latest_value_contract_is_bounded() {
         let mut latest = None;
         for sequence in 1..=100_u64 {
