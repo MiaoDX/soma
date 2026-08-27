@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import queue
 import struct
@@ -94,20 +95,30 @@ def main() -> None:
     with zenoh.open(config) as session, session.declare_subscriber(STATE_KEY, latest):
         emitted = 0
         started = time.monotonic()
+        evidence = {"states": 0, "applied": False, "expiry": False, "rejected": False,
+                    "max_message_age_ns": 0, "last_requested": 0,
+                    "last_admitted": 0, "last_applied": 0}
         while True:
             state = decode_state(states.get(timeout=5))
+            evidence["states"] += 1
+            evidence["applied"] |= bool(int(state["flags"]) & 1)
+            evidence["expiry"] |= bool(int(state["flags"]) & 4)
+            evidence["rejected"] |= bool(int(state["flags"]) & 8)
+            evidence["max_message_age_ns"] = max(evidence["max_message_age_ns"], int(state["message_age_ns"]))
+            evidence["last_requested"] = int(state["requested"])
+            evidence["last_admitted"] = int(state["admitted"])
+            evidence["last_applied"] = int(state["applied"])
             if args.stall_after is not None and emitted >= args.stall_after:
-                time.sleep(0.1)
                 if args.duration is not None and time.monotonic() - started >= args.duration:
-                    print(f"policy stall complete: emitted={emitted}")
+                    print(json.dumps({"status": "stall-complete", "emitted": emitted, **evidence}))
                     return
                 continue
             target = policy.infer(state)
             emitted += 1
-            payload = policy.target_payload(emitted, state, target)
+            payload = policy.target_payload(int(state["sequence"]), state, target)
             session.put(TARGET_KEY, payload)
             if args.duration is not None and time.monotonic() - started >= args.duration:
-                print(f"policy complete: emitted={emitted}")
+                print(json.dumps({"status": "complete", "emitted": emitted, **evidence}))
                 return
 
 

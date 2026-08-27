@@ -93,9 +93,17 @@ def run_process_mode(args):
         out, err = proc.communicate(timeout=8)
         if proc.returncode != 0:
             raise SystemExit(err.strip() or "Open Duck policy process failed")
-        if "complete" not in out:
+        try:
+            evidence = json.loads(out.strip().splitlines()[-1])
+        except (json.JSONDecodeError, IndexError):
+            raise SystemExit("Open Duck policy process did not report JSON evidence")
+        if "complete" not in evidence.get("status", ""):
             raise SystemExit("Open Duck policy process did not report completion")
-        print(json.dumps({"mode": args.mode, "process_path": True, "result": out.strip()}))
+        if not evidence.get("applied"):
+            raise SystemExit("Open Duck process path never observed an applied target")
+        if args.mode == "stall" and not evidence.get("expiry"):
+            raise SystemExit("Open Duck stall did not observe the expiry transition")
+        print(json.dumps({"mode": args.mode, "process_path": True, "evidence": evidence}))
     finally:
         for proc in procs:
             proc.send_signal(signal.SIGINT)
