@@ -8,7 +8,7 @@ pub const OPEN_DUCK_ACTUATORS: usize = 14;
 pub const OPEN_DUCK_PHYSICS_HZ: u32 = 500;
 pub const OPEN_DUCK_POLICY_HZ: u32 = 50;
 pub const OPEN_DUCK_TARGET_BYTES: usize = 8 * 4 + 14 * 4;
-pub const OPEN_DUCK_STATE_FLOATS: usize = 14 + 14 + 3 + 3;
+pub const OPEN_DUCK_STATE_FLOATS: usize = 14 + 14 + 3 + 3 + 3;
 pub const OPEN_DUCK_STATE_BYTES: usize = 8 * 7 + 4 + OPEN_DUCK_STATE_FLOATS * 4;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -17,6 +17,9 @@ pub struct OpenDuckState {
     pub velocities_rad_s: [f32; OPEN_DUCK_ACTUATORS],
     pub gyro_rad_s: [f32; 3],
     pub acceleration_m_s2: [f32; 3],
+    pub root_height_m: f32,
+    pub root_roll_rad: f32,
+    pub root_pitch_rad: f32,
     pub sequence: u64,
     pub timeline: u64,
     pub capture_monotonic_ns: u64,
@@ -49,6 +52,11 @@ pub fn encode_state(state: &OpenDuckState, out: &mut [u8; OPEN_DUCK_STATE_BYTES]
         .chain(state.velocities_rad_s.iter())
         .chain(state.gyro_rad_s.iter())
         .chain(state.acceleration_m_s2.iter());
+    let values = values.chain([
+        &state.root_height_m,
+        &state.root_roll_rad,
+        &state.root_pitch_rad,
+    ]);
     for (i, value) in values.enumerate() {
         out[60 + i * 4..64 + i * 4].copy_from_slice(&value.to_le_bytes());
     }
@@ -72,11 +80,17 @@ pub fn decode_state(bytes: &[u8]) -> Option<OpenDuckState> {
     let velocities_rad_s = std::array::from_fn(|i| f32_at(14 + i).unwrap());
     let gyro_rad_s = std::array::from_fn(|i| f32_at(28 + i).unwrap());
     let acceleration_m_s2 = std::array::from_fn(|i| f32_at(31 + i).unwrap());
+    let root_height_m = f32_at(34)?;
+    let root_roll_rad = f32_at(35)?;
+    let root_pitch_rad = f32_at(36)?;
     let state = OpenDuckState {
         positions_rad,
         velocities_rad_s,
         gyro_rad_s,
         acceleration_m_s2,
+        root_height_m,
+        root_roll_rad,
+        root_pitch_rad,
         sequence: u64_at(0)?,
         timeline: u64_at(8)?,
         capture_monotonic_ns: u64_at(16)?,
@@ -86,14 +100,22 @@ pub fn decode_state(bytes: &[u8]) -> Option<OpenDuckState> {
         message_age_ns: u64_at(48)?,
         flags: u32::from_le_bytes(bytes[56..60].try_into().ok()?),
     };
-    state
+    let finite = state
         .positions_rad
         .iter()
         .chain(state.velocities_rad_s.iter())
         .chain(state.gyro_rad_s.iter())
         .chain(state.acceleration_m_s2.iter())
-        .all(|v| v.is_finite())
-        .then_some(state)
+        .chain(
+            [
+                &state.root_height_m,
+                &state.root_roll_rad,
+                &state.root_pitch_rad,
+            ]
+            .into_iter(),
+        )
+        .all(|v| v.is_finite());
+    finite.then_some(state)
 }
 
 pub fn encode_target(target: &OpenDuckTarget, out: &mut [u8; OPEN_DUCK_TARGET_BYTES]) {
@@ -233,6 +255,9 @@ mod tests {
             velocities_rad_s: [2.0; 14],
             gyro_rad_s: [3.0; 3],
             acceleration_m_s2: [4.0; 3],
+            root_height_m: 0.15,
+            root_roll_rad: 0.1,
+            root_pitch_rad: -0.1,
             sequence: 11,
             timeline: 2,
             capture_monotonic_ns: 90,

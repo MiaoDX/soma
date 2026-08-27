@@ -81,16 +81,19 @@ def run_process_mode(args):
     try:
         procs.append(subprocess.Popen([str(ROOT / "target/debug/open-duck-runtime")], env=env,
                                       stdout=subprocess.DEVNULL, stderr=subprocess.PIPE))
-        procs.append(subprocess.Popen([str(ROOT / "target/debug/open-duck-rt")], env=env,
-                                      stdout=subprocess.DEVNULL, stderr=subprocess.PIPE))
-        time.sleep(0.5)
+        time.sleep(0.2)
         policy_python = ROOT / "python/.venv/bin/python"
-        policy = [str(policy_python), "-m", "soma_client.open_duck_policy", "--duration", "2",
+        duration = "2" if args.mode == "stall" else "8"
+        policy = [str(policy_python), "-m", "soma_client.open_duck_policy", "--duration", duration,
                   "--checkpoint", str(args.checkpoint.resolve())]
         if args.mode == "stall": policy += ["--stall-after", "1"]
         proc = subprocess.Popen(policy, cwd=ROOT / "python", env={**env, "PYTHONPATH": "."},
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        out, err = proc.communicate(timeout=8)
+        procs.append(proc)
+        time.sleep(0.1)
+        procs.append(subprocess.Popen([str(ROOT / "target/debug/open-duck-rt")], env=env,
+                                      stdout=subprocess.DEVNULL, stderr=subprocess.PIPE))
+        out, err = proc.communicate(timeout=15)
         if proc.returncode != 0:
             raise SystemExit(err.strip() or "Open Duck policy process failed")
         try:
@@ -103,10 +106,15 @@ def run_process_mode(args):
             raise SystemExit("Open Duck process path never observed an applied target")
         if args.mode == "stall" and not evidence.get("expiry"):
             raise SystemExit("Open Duck stall did not observe the expiry transition")
+        if args.mode == "policy":
+            if evidence["min_root_height_m"] < 0.08:
+                raise SystemExit(f"Open Duck process rollout violated root-height floor: {evidence}")
+            if evidence["max_abs_roll_rad"] > 0.8 or evidence["max_abs_pitch_rad"] > 0.8:
+                raise SystemExit("Open Duck process rollout violated roll/pitch envelope")
         print(json.dumps({"mode": args.mode, "process_path": True, "evidence": evidence}))
     finally:
         for proc in procs:
-            proc.send_signal(signal.SIGINT)
+            if proc.poll() is None: proc.send_signal(signal.SIGINT)
         for proc in procs:
             try: proc.wait(timeout=2)
             except subprocess.TimeoutExpired: proc.kill()

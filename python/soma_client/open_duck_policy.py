@@ -14,7 +14,7 @@ import zenoh
 
 STATE_KEY = "soma/open-duck-v2/state"
 TARGET_KEY = "soma/open-duck-v2/target"
-STATE = struct.Struct("<7QI34f")
+STATE = struct.Struct("<7QI37f")
 TARGET = struct.Struct("<4Q14f")
 DEFAULT_POSE = np.array([
     0.002, 0.053, -0.63, 1.368, -0.784, 0.0, 0.0, 0.0, 0.0,
@@ -33,6 +33,7 @@ def decode_state(payload: bytes) -> dict[str, object]:
         "velocities": np.asarray(facts[14:28], dtype=np.float32),
         "gyro": np.asarray(facts[28:31], dtype=np.float32),
         "acceleration": np.asarray(facts[31:34], dtype=np.float32),
+        "root_height": facts[34], "root_roll": facts[35], "root_pitch": facts[36],
     }
 
 
@@ -97,7 +98,9 @@ def main() -> None:
         started = time.monotonic()
         evidence = {"states": 0, "applied": False, "expiry": False, "rejected": False,
                     "max_message_age_ns": 0, "last_requested": 0,
-                    "last_admitted": 0, "last_applied": 0}
+                    "last_admitted": 0, "last_applied": 0,
+                    "min_root_height_m": float("inf"), "max_abs_roll_rad": 0.0,
+                    "max_abs_pitch_rad": 0.0}
         while True:
             state = decode_state(states.get(timeout=5))
             evidence["states"] += 1
@@ -108,6 +111,9 @@ def main() -> None:
             evidence["last_requested"] = int(state["requested"])
             evidence["last_admitted"] = int(state["admitted"])
             evidence["last_applied"] = int(state["applied"])
+            evidence["min_root_height_m"] = min(evidence["min_root_height_m"], float(state["root_height"]))
+            evidence["max_abs_roll_rad"] = max(evidence["max_abs_roll_rad"], abs(float(state["root_roll"])))
+            evidence["max_abs_pitch_rad"] = max(evidence["max_abs_pitch_rad"], abs(float(state["root_pitch"])))
             if args.stall_after is not None and emitted >= args.stall_after:
                 if args.duration is not None and time.monotonic() - started >= args.duration:
                     print(json.dumps({"status": "stall-complete", "emitted": emitted, **evidence}))
