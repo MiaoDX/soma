@@ -96,6 +96,15 @@ A versioned declaration of the Robot Protocol subset and boundary semantics expo
 
 A deployable policy artifact containing a model plus its observation/action contracts, normalization, rates, compatibility metadata, checksums, and signatures.
 
+## Latest-value handoff
+
+A bounded producer/consumer contract in which a slower or latency-variable
+producer replaces its pending target with the newest complete target, and the
+periodic consumer applies the latest admitted target at its first available
+tick. It does not queue an unbounded backlog, renew stale validity, or impose a
+fixed policy-frame delay. Between updates, the consumer uses the profile's
+bounded hold and expiry behavior.
+
 ## SIL
 
 Software-in-the-loop. Production software components run against a simulated Plant without real robot electronics.

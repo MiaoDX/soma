@@ -88,6 +88,7 @@ It runs `scripts/verify-sim-showcase` before reporting success.
 
 ## Active Work
 
+- Approved next simulation slice: [Open Duck Mini walk policy](docs/plans/open-duck-mini-walk-policy.md). Stage 0 is ready to vendor the pinned compatibility bundle and freeze same-tick reference evidence; no Duck support is implemented yet.
 - Active comparison/hardware state: [bootstrap capsule](docs/status/active/bootstrap.md)
 - Preflighted next slice: [official simulation fixed case suite](docs/plans/official-simulation-case-suite-plan.md)
 - Completed suite evidence: [official simulation fixed case suite report](docs/measurements/official-simulation-case-suite-report.md)
@@ -98,5 +99,7 @@ It runs `scripts/verify-sim-showcase` before reporting success.
 - Implemented, desktop interaction review pending: [simulation command-session plan](docs/plans/reachy-command-session.md)
 - Completed locally, live `main` deployment pending: [simulation showcase plan](docs/plans/simulation-showcase.md)
 
-No other robot profile, generic manifest, camera/audio path, App framework,
-additional simulator backend, or deferred production subsystem is active scope.
+Open Duck Mini is the only additional robot profile in active scope, and only
+as one fixed MuJoCo policy qualification. Generic manifests, Duck hardware, a
+third robot, camera/audio paths, an App framework, and additional simulator
+backends remain out of scope.
