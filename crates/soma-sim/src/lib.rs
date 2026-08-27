@@ -355,8 +355,11 @@ impl OpenDuckSimPlant {
         }
         let physics_schedule = PhysicsSchedule::new(control_period, model.opt().timestep)
             .map_err(SimError::PhysicsSchedule)?;
+        let mut data = MjData::new(model);
+        data.reset_keyframe(0)
+            .map_err(|e| SimError::Load(format!("reset Open Duck home keyframe: {e}")))?;
         Ok(Self {
-            data: MjData::new(model),
+            data,
             physics_schedule,
             timeline: 1,
             sequence: 0,
@@ -410,7 +413,9 @@ impl OpenDuckSimPlant {
         }
     }
     pub fn reset(&mut self) {
-        self.data.reset();
+        self.data
+            .reset_keyframe(0)
+            .expect("validated Open Duck home keyframe");
         self.timeline = self.timeline.wrapping_add(1);
         self.sequence = 0;
     }
@@ -694,6 +699,13 @@ mod tests {
         assert_eq!(plant.model_dimensions(), (21, 20, 14));
         assert_eq!(plant.physics_schedule().substeps_per_control_period(), 10);
         assert_eq!(plant.policy_decimation(), 10);
+        assert_eq!(
+            plant.positions(),
+            [
+                0.002, 0.053, -0.63, 1.368, -0.784, 0.0, 0.0, 0.0, 0.0, -0.003, -0.065, 0.635,
+                1.379, -0.796
+            ]
+        );
     }
 
     #[test]

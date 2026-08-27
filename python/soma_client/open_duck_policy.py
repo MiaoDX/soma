@@ -15,6 +15,10 @@ STATE_KEY = "soma/open-duck-v2/state"
 TARGET_KEY = "soma/open-duck-v2/target"
 STATE = struct.Struct("<7QI34f")
 TARGET = struct.Struct("<4Q14f")
+DEFAULT_POSE = np.array([
+    0.002, 0.053, -0.63, 1.368, -0.784, 0.0, 0.0, 0.0, 0.0,
+    -0.003, -0.065, 0.635, 1.379, -0.796,
+], dtype=np.float32)
 
 
 def decode_state(payload: bytes) -> dict[str, object]:
@@ -37,32 +41,34 @@ class Policy:
         assert self.session.get_inputs()[0].shape == [1, 101]
         assert self.session.get_outputs()[0].shape == [1, 14]
         self.velocity_x = velocity_x
-        self.default: np.ndarray | None = None
-        self.previous: np.ndarray | None = None
+        self.default = DEFAULT_POSE.copy()
+        self.previous = DEFAULT_POSE.copy()
         self.history = [np.zeros(14, np.float32) for _ in range(3)]
         self.phase_tick = 0
+        self.phase = np.zeros(2, np.float32)
+        self.last_observation: np.ndarray | None = None
+        self.last_action: np.ndarray | None = None
 
     def infer(self, state: dict[str, object]) -> np.ndarray:
         positions = state["positions"]
         assert isinstance(positions, np.ndarray)
-        if self.default is None:
-            self.default = positions.copy()
-            self.previous = positions.copy()
         acceleration = np.asarray(state["acceleration"], np.float32).copy()
         acceleration[0] += 1.3
-        phase = np.array([math.cos(self.phase_tick / 100 * 2 * math.pi),
-                          math.sin(self.phase_tick / 100 * 2 * math.pi)], np.float32)
         command = np.array([self.velocity_x, 0, 0, 0, 0, 0, 0], np.float32)
         observation = np.concatenate((state["gyro"], acceleration, command,
             positions - self.default, np.asarray(state["velocities"]) * 0.05,
-            *self.history, self.previous, np.zeros(2, np.float32), phase)).astype(np.float32)
+            *self.history, self.previous, np.zeros(2, np.float32), self.phase)).astype(np.float32)
         action = self.session.run(None, {"obs": observation[None, :]})[0][0].astype(np.float32)
         if observation.size != 101 or not np.isfinite(action).all():
             raise RuntimeError("invalid Open Duck policy observation or action")
         self.history = [action, *self.history[:2]]
+        self.last_observation = observation.copy()
+        self.last_action = action.copy()
         proposed = self.default + action * 0.25
         self.previous = np.clip(proposed, self.previous - 5.24 * 0.02, self.previous + 5.24 * 0.02)
         self.phase_tick = (self.phase_tick + 1) % 100
+        self.phase = np.array([math.cos(self.phase_tick / 100 * 2 * math.pi),
+                               math.sin(self.phase_tick / 100 * 2 * math.pi)], np.float32)
         return self.previous
 
 

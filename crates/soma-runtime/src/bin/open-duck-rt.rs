@@ -55,7 +55,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             admitted_sequence = sequence;
             admitted_capture_ns = pending_capture_ns;
         }
-        if ticks.is_multiple_of(10) {
+        if ticks % 10 == 1 {
             let facts = plant.policy_facts();
             let (applied_sequence, flags) = match tick.applied.command {
                 AppliedCommand::Target { sequence } => (sequence, 1),

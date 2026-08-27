@@ -119,6 +119,9 @@ pub fn decode_target(bytes: &[u8]) -> Option<OpenDuckTarget> {
     for (i, value) in positions_rad.iter_mut().enumerate() {
         *value = f32::from_le_bytes(bytes[32 + i * 4..36 + i * 4].try_into().ok()?);
     }
+    if positions_rad.iter().any(|value| !value.is_finite()) {
+        return None;
+    }
     Some(OpenDuckTarget {
         positions_rad,
         sequence: u64_at(0)?,
@@ -168,6 +171,23 @@ mod tests {
         assert!(!target.valid_for(120, 7, Some(1)));
         assert!(!target.valid_for(101, 6, Some(1)));
         assert!(!target.valid_for(101, 7, Some(2)));
+    }
+
+    #[test]
+    fn target_codec_drops_malformed_and_non_finite_payloads() {
+        let target = OpenDuckTarget {
+            positions_rad: [0.0; OPEN_DUCK_ACTUATORS],
+            sequence: 1,
+            timeline: 1,
+            capture_monotonic_ns: 10,
+            ttl_ns: 20,
+        };
+        let mut bytes = [0; OPEN_DUCK_TARGET_BYTES];
+        encode_target(&target, &mut bytes);
+        assert_eq!(decode_target(&bytes), Some(target));
+        assert!(decode_target(&bytes[..bytes.len() - 1]).is_none());
+        bytes[32..36].copy_from_slice(&f32::NAN.to_le_bytes());
+        assert!(decode_target(&bytes).is_none());
     }
 
     #[test]
