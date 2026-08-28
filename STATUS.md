@@ -1,6 +1,6 @@
 # Soma Status
 
-Updated: 2026-08-26
+Updated: 2026-08-28
 
 ## Current State
 
@@ -88,7 +88,7 @@ It runs `scripts/verify-sim-showcase` before reporting success.
 
 ## Active Work
 
-- Active gated simulation slice: [Open Duck Mini walk policy](docs/plans/open-duck-mini-walk-policy.md). The fixed Duck Plant, isolated transport, Python ONNX client, lineage/fault evidence, and supervised launcher path are implemented. Soma's observation adapter now carries measured foot contacts and the pinned 27-tick gait phase. The trained 300M policy and both published checkpoints are stable in the repaired direct harness; the frozen `BEST_WALK_ONNX.onnx` also passes the process path and remains stable with 0, 2, and 20 ms injected delay. The published checkpoint remains the default, and latency-aware retraining is no longer indicated.
+- Completed headless simulation slice: [Open Duck Mini walk policy](docs/plans/open-duck-mini-walk-policy.md). The fixed Duck Plant, isolated transport, Python ONNX client, lineage/fault evidence, and supervised launcher pass Stage 4. Two direct and two process runs are stable; delay and stall cases preserve deadline/hold behavior. The trained 300M policy remains a viable experimental backup, while the frozen published `BEST_WALK_ONNX.onnx` remains the default. Duck-specific visualization and the post-acceptance D-04 process-topology review are parked.
 - Active comparison/hardware state: [bootstrap capsule](docs/status/active/bootstrap.md)
 - Preflighted next slice: [official simulation fixed case suite](docs/plans/official-simulation-case-suite-plan.md)
 - Completed suite evidence: [official simulation fixed case suite report](docs/measurements/official-simulation-case-suite-report.md)

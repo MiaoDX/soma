@@ -51,7 +51,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         let now = monotonic_ns();
         let tick = core
-            .tick(&mut plant, pending.take(), now)
+            .tick_async(&mut plant, pending.take(), now)
             .map_err(|e| format!("Duck control tick: {e:?}"))?;
         plant.advance_physics_step();
         ticks += 1;

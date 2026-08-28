@@ -1,16 +1,15 @@
 # Open Duck Mini Walk Policy Plan
 
-> Status: Implementation reached the Stage 4 asynchronous gait stop gate.
-> A bounded policy-training reshaping experiment was approved on 2026-08-27.
+> Status: Stage 4 headless acceptance complete. Optional Duck-specific
+> visualization and the post-acceptance D-04 architecture review are parked.
 
 ## Plan Ledger
 
-- `status`: BLOCKED on the published policy; bounded training experiment active
+- `status`: COMPLETE for the fixed headless Open Duck Mini policy path
 - `appetite`: gate-bounded; no calendar-duration estimate
-- `current_slice`: upstream 300M baseline complete; candidate fails zero-delay
-  Soma qualification
-- `next_action`: reconcile the Playground backlash training model and
-  observation contract with Soma's frozen qualification model before retraining
+- `current_slice`: Stage 4 acceptance and regression closure complete
+- `next_action`: optional D-04 process-topology review; no policy retraining or
+  checkpoint replacement is indicated
 - `no_touch`: Reachy hardware probe and N0/N1 gates; Open Duck hardware;
   generic robot manifests; ROS 2; a third robot; camera, audio, antennas,
   expression features, interactive control, and silent checkpoint replacement
@@ -49,11 +48,14 @@ about 4.4 hours, before full evaluation and checkpoint overhead.
 The requested README-sized baseline was then run at `300,000,000` steps. PPO
 rounded this to `300,482,560` steps and finished in about 78 minutes. The best
 evaluation was at `257,556,480` steps with reward `314.03`; the final reward was
-`250.15`. Both the best and final exported ONNX candidates have the exact
-`101 -> 14` contract and pass ONNX checker/CPU Runtime, but the best candidate
-already fails Soma's zero-delay direct harness (`min_root_height_m=-0.18896`,
-`max_abs_roll_rad=3.14147`, `max_abs_pitch_rad=1.54226`). No delayed or process
-run is needed to establish this stop gate.
+`250.15`. Both exported ONNX candidates have the exact `101 -> 14` contract and
+pass ONNX checker/CPU Runtime. Their apparent initial Soma failure was caused by
+an adapter defect: Soma used a 100-tick gait phase and constant-zero foot
+contacts instead of the official 27-tick phase and measured contacts. After
+repair, the best-eval 300M candidate walks stably in the direct Soma harness
+(about 1.374 m in eight seconds) but remains an experimental backup. The frozen
+published `BEST_WALK_ONNX.onnx` remains the default because it also passes the
+full process route and the injected-delay matrix.
 
 ### Training experiment contract
 
@@ -361,9 +363,8 @@ inference stall reaches the named hold with attributable evidence.
 
 - expose one owning `scripts/run-open-duck-walk` launcher with reference,
   synthetic, clean-policy, repeat, and injected-stall modes;
-- add optional MuJoCo and Rerun observers using the existing Reachy Mini
-  lossy, read-only snapshot pattern; observer loss or closure must not affect
-  the headless rollout;
+- keep Duck-specific MuJoCo/Rerun observation optional and off the acceptance
+  path; the existing Reachy observer remains unchanged and independently green;
 - run two clean Soma rollouts against the frozen case and retain compact
   machine-readable metrics;
 - run canonical workspace and Reachy regression gates;
@@ -415,19 +416,20 @@ git diff --check
 ```
 
 Hardware commands and visual judgment as an acceptance oracle are absent by
-design. The optional visualization path is exercised for startup, observation,
-independent closure, and teardown.
+design. The existing Reachy visualization path is exercised for startup,
+observation, independent closure, and teardown under Xvfb. Duck-specific
+visualization is parked and is not claimed by this acceptance.
 
 ## Parked And Rejected
 
-Parked until this headless outcome passes: interactive velocity input,
+Parked after this headless outcome passed: interactive velocity input,
 simultaneous Reachy/Open Duck launch, showcase regeneration, generic policy
 bundles, broad launcher refactors, optional filtering, exhaustive
 malformed-model matrices, hardware, training beyond the approved bounded
 experiment, ROS 2, and any additional robot.
-The first accepted Duck rollout also provides optional MuJoCo and Rerun
-visualization, following the existing Reachy Mini observer path; visualization
-is off the cyclic control path and is never the gait oracle.
+Duck-specific MuJoCo and Rerun visualization remains parked. Any later viewer
+must follow the existing Reachy Mini lossy snapshot pattern, stay off the cyclic
+control path, and never become the gait oracle.
 
 Rejected for this plan: copying the full Playground application as Soma's
 runtime; choosing thresholds after reference output; treating two
@@ -472,10 +474,20 @@ Return to the user before:
 
 ## Definition Of Done And Handoff
 
-The plan is done only when the pinned policy produces the required reference
+The headless implementation is done when the pinned policy produces the required reference
 and complete Soma headless gait runs, the stall and deadline tests prove no
 stale revival, provenance/contracts/metrics are recorded, Reachy remains green,
 cleanup is complete, and compact docs state exactly what is supported.
+
+Final Stage 4 evidence: two deterministic direct runs each traveled 1.40965 m
+in eight seconds with 62 contact transitions, 3.725 mm maximum stance slip,
+zero non-foot collisions, minimum root height 0.15015 m, and roll/pitch below
+0.12 rad. Two supervised process runs completed without rejection, drop, or
+expiry and remained upright. The 2 ms and 20 ms delay diagnostics traveled
+1.41996 m and 1.33943 m respectively. Repeated stall runs observed a target
+application followed by the named measured-position-hold expiry transition.
+All Rust/Python quality gates, canonical Reachy scenario/teleop, and the Reachy
+Xvfb visualization path passed on 2026-08-28.
 
 The preflight below is the handoff for a new window. Execute it through
 `$intuitive-flow`; Stage 0 is a hard gate and the first execution phase, not a
@@ -484,7 +496,7 @@ substitute for the approved outcome.
 ## Execution Preflight
 
 ```text
-Preflight status: DRAFT
+Preflight status: COMPLETE for the headless path
 Task source: approved plan plus user direction to remove calendar estimates
 Canonical source: docs/plans/open-duck-mini-walk-policy.md
 Route: durable $intuitive-flow
@@ -499,13 +511,13 @@ Entity budget: reuse=ControlCore semantics, soma-core Plant boundary, soma-sim M
 Context: must-read=AGENTS.md, docs/plans/open-duck-mini-walk-policy.md, docs/status/active/bootstrap.md, STATUS.md, ARCHITECTURE.md, docs/agents/operating-runbook.md, docs/plans/decision-register.md, crates/soma-core/src/lib.rs, crates/soma-runtime/src/lib.rs, crates/soma-runtime/src/bin/robot-rt.rs, crates/soma-sim/src/lib.rs, proto/soma.proto, python/pyproject.toml; useful=docs/deep-research/fast-open-robot-reference-path.md, docs/deep-research/policy-runtime-interface.md, docs/deep-research/robot-model-manifest-calibration.md; avoid-unless-needed=other historical plans, output traces, retrospectives, and Playground training/full-application code beyond the pinned runner/model compatibility surface.
 
 Acceptance:
-- SUCCESS: every Stage 0-4 gate and the plan Definition of Done passes, including two same-tick reference rollouts, two complete Soma gait rollouts, injected-delay and original-deadline stall/fault proof, optional MuJoCo/Rerun observation, clean teardown, exact provenance/contracts, and unchanged Reachy gates.
+- SUCCESS: every required Stage 0-4 headless gate and the plan Definition of Done passes, including two same-tick reference rollouts, two complete Soma gait rollouts, injected-delay and original-deadline stall/fault proof, clean teardown, exact provenance/contracts, and unchanged Reachy gates. Duck-specific MuJoCo/Rerun observation is optional and parked.
 - BLOCKED_NEEDS_DECISION: any stop condition or expansion trigger in the canonical plan; do not silently reshape, tune, replace the pinned bundle, or accept partial support.
 - BLOCKED_NEEDS_LOCAL_VALIDATION: required MuJoCo/ONNX/native product runs or canonical Reachy simulation gates cannot execute in the available environment.
 - INTERMEDIATE_ONLY: none.
 - No regressions: existing Reachy soma.v1 schema, keys, sockets, binaries, simulations, teleop, hardware probe, N0/N1 gates, timeline/sequence/TTL/hold semantics, and workspace quality gates remain unchanged and green.
 
-Verification: deterministic=cargo fmt --all -- --check; scripts/cargo-mujoco test --workspace; scripts/cargo-mujoco clippy --workspace --all-targets -- -D warnings; focused golden fixture, 9/14 type/semantic, model mapping, malformed/stale/deadline, allocation-capacity, cleanup tests; integration=scripts/run-sim-scenario and scripts/run-sim-teleop --keys ADQE plus experimental endpoint isolation, synthetic 50 Hz path, and Xvfb observer startup/independent-closure/teardown; product-run=scripts/run-open-duck-walk reference --case <frozen-case>, scripts/run-open-duck-walk policy --case <frozen-case> --repeat 2, scripts/run-open-duck-walk policy --case <frozen-case> --visualize, scripts/run-open-duck-walk stall --case <frozen-case>; local-live-manual=required native MuJoCo and CPU ONNX Runtime runs plus MuJoCo/Rerun desktop review in the execution environment, with BLOCKED_NEEDS_LOCAL_VALIDATION if unavailable; optional=none.
+Verification: deterministic=cargo fmt --all -- --check; scripts/cargo-mujoco test --workspace; scripts/cargo-mujoco clippy --workspace --all-targets -- -D warnings; focused golden fixture, 9/14 type/semantic, model mapping, malformed/stale/deadline, allocation-capacity, cleanup tests; integration=scripts/run-sim-scenario and scripts/run-sim-teleop --keys ADQE plus experimental endpoint isolation, synthetic 50 Hz path, and Xvfb validation of the unchanged Reachy observer; product-run=scripts/run-open-duck-walk reference --case <frozen-case> --repeat 2, scripts/run-open-duck-walk policy --case <frozen-case> --repeat 2, scripts/run-open-duck-walk stall --case <frozen-case>; local-live-manual=required native MuJoCo and CPU ONNX Runtime runs; optional=Duck-specific MuJoCo/Rerun observation and desktop review.
 Execution: main=root session owns the durable goal, stage gates, worker inspection, integration, stop/complete judgment, and final diff; worker=bounded read-only provenance/reference review or isolated verification only when it improves control; worker-goal=never replaces or completes the root goal.
 To execute: /goal execute docs/plans/open-duck-mini-walk-policy.md with intuitive-flow
 Optional tracking: none

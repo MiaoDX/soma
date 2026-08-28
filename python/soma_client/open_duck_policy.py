@@ -94,6 +94,7 @@ def main() -> None:
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--stall-after", type=int)
     parser.add_argument("--duration", type=float)
+    parser.add_argument("--ready-file", type=Path)
     args = parser.parse_args()
     config = zenoh.Config.from_json5('{mode:"client",connect:{endpoints:["tcp/127.0.0.1:7448"]},scouting:{multicast:{enabled:false}}}')
     policy = Policy(args.checkpoint)
@@ -106,6 +107,8 @@ def main() -> None:
         try: states.put_nowait(bytes(sample.payload))
         except queue.Full: dropped_states += 1
     with zenoh.open(config) as session, session.declare_subscriber(STATE_KEY, latest):
+        if args.ready_file is not None:
+            args.ready_file.touch()
         emitted = 0
         started = time.monotonic()
         evidence = {"states": 0, "applied": False, "expiry": False, "rejected": False,
@@ -138,10 +141,12 @@ def main() -> None:
             evidence["max_abs_roll_rad"] = max(evidence["max_abs_roll_rad"], abs(float(state["root_roll"])))
             evidence["max_abs_pitch_rad"] = max(evidence["max_abs_pitch_rad"], abs(float(state["root_pitch"])))
             if args.stall_after is not None and emitted >= args.stall_after:
-                if args.duration is not None and time.monotonic() - started >= args.duration:
-                    print(json.dumps({"status": "stall-complete", "emitted": emitted, **evidence}))
-                    return
-                continue
+                if evidence["applied"]:
+                    if (args.duration is not None and time.monotonic() - started >= args.duration
+                            and evidence["expiry"]):
+                        print(json.dumps({"status": "stall-complete", "emitted": emitted, **evidence}))
+                        return
+                    continue
             inference_started = time.monotonic_ns()
             target = policy.infer(state)
             evidence["max_inference_ns"] = max(
@@ -149,7 +154,8 @@ def main() -> None:
             emitted += 1
             payload = policy.target_payload(int(state["sequence"]), state, target)
             session.put(TARGET_KEY, payload)
-            if args.duration is not None and time.monotonic() - started >= args.duration:
+            if (args.duration is not None and time.monotonic() - started >= args.duration
+                    and evidence["applied"]):
                 print(json.dumps({"status": "complete", "emitted": emitted, **evidence}))
                 return
 
