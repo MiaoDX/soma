@@ -53,7 +53,9 @@ jobs:
       - name: Build verified report
         run: scripts/build-sim-showcase output/simulation-showcase
       - name: Build Open Duck report
-        run: scripts/build-open-duck-showcase output/simulation-showcase/open-duck
+        run: |
+          scripts/cargo-mujoco build --quiet --bin open-duck-runtime --bin open-duck-rt
+          scripts/build-open-duck-showcase output/simulation-showcase/open-duck
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
