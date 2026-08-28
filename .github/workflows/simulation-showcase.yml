@@ -9,6 +9,7 @@ on:
       - Cargo.toml
       - crates/**
       - docs/showcase/**
+      - scripts/build-open-duck-showcase
       - proto/**
       - python/**
       - scripts/build-sim-showcase
@@ -51,6 +52,8 @@ jobs:
           sudo apt-get install --yes libegl1-mesa-dev libgl1-mesa-dev libwayland-dev libxkbcommon-dev protobuf-compiler
       - name: Build verified report
         run: scripts/build-sim-showcase output/simulation-showcase
+      - name: Build Open Duck report
+        run: scripts/build-open-duck-showcase output/simulation-showcase/open-duck
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

@@ -50,7 +50,8 @@ cp "$frames_dir/frame-0000.png" "$output_dir/poster.png"
 rm -rf "$frames_dir"
 commit=$(git -C "$repo_root" rev-parse HEAD)
 generated=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-sed "s/@@COMMIT@@/$commit/g" "$repo_root/docs/showcase/index.template.html" >"$output_dir/index.html"
+rrd_url="https://miaodx.github.io/soma/evidence.rrd"
+sed -e "s/@@COMMIT@@/$commit/g" -e 's/@@ROBOT@@/Reachy Mini/g' -e "s#@@RRD_URL@@#$rrd_url#g" "$repo_root/docs/showcase/index.template.html" >"$output_dir/index.html"
 python3 - "$output_dir/metadata.json" "$commit" "$generated" <<'PY'
 import json,sys
 json.dump({"schema_version":1,"robot":"Reachy Mini","scope":"simulation-only","scenario":"fixed acceptance scenario","scenario_result":"passed","commit":sys.argv[2],"generated_utc":sys.argv[3],"renderer":{"engine":"mujoco-rs MjRenderer EGL offscreen","camera_id":0,"camera_name":"studio_close","width":640,"height":480},"artifacts":{"poster":"poster.png","motion":"motion.webm","rerun":"evidence.rrd"}},open(sys.argv[1],"w"),indent=2)
