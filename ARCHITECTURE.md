@@ -104,6 +104,36 @@ protocol and complete process topology rather than reimplement those semantics.
 - Native hardware work is read-only until N0 passes, and torque-enabled motion
   additionally requires explicit human N1 authorization.
 
+## Approved Open Duck Qualification
+
+Open Duck Mini is the approved next simulation profile but is not implemented
+or supported yet. Its 50 Hz ONNX policy keeps inference outside a 500 Hz Duck
+periodic RT/physics path:
+
+```text
+Duck state -> Python ONNX policy -> loopback Zenoh -> robot-runtime
+           -> bounded local IPC -> robot-rt -> Duck MuJoCo Plant
+```
+
+This path uses asynchronous latest-value semantics. A captured state is sent
+to inference immediately; the resulting target is applied on the first
+available RT tick and held with a bounded zero-order hold until replaced or
+expired. There is no artificial one-policy-frame delay. Capture-to-application
+age, source lineage, deadline consumption, and stale rejection are evidence,
+not assumptions about lockstep scheduling.
+
+The 2 ms Duck RT tick advances one MuJoCo physics step and emits a policy frame
+every tenth tick. Reachy's existing 20 ms RT tick and ten-substep Plant advance
+do not change. Running Duck with Reachy's 20 ms batching would force each
+policy response into the next policy frame and is therefore rejected.
+
+The process split provides ownership and failure-isolation boundaries, but is
+not inherently a safety proof. After the Duck path produces timing and failure
+evidence, D-04 requires a focused comparison with Rust-hosted ONNX inference
+and a single Rust process that isolates async work from its periodic RT thread.
+No alternative may move async work, middleware, inference, or unbounded
+allocation into the periodic section.
+
 ## Deeper Documents
 
 - [Reference architecture](docs/architecture/reference-architecture.md) owns
@@ -113,3 +143,6 @@ protocol and complete process topology rather than reimplement those semantics.
 - [Security threat model](docs/architecture/security-threat-model.md) owns the
   qualified-deployment invariants and the current local-development exception.
 - [Glossary](docs/glossary.md) owns stable cross-module terminology.
+- [Policy/runtime interface](docs/deep-research/policy-runtime-interface.md)
+  compares reference scheduling choices and owns the low-rate policy timing
+  rationale.
