@@ -31,3 +31,11 @@ path = "src/bin/robot-runtime.rs"
 name = "robot-sim-observer"
 path = "src/bin/robot-sim-observer.rs"
 required-features = ["sim-visualization"]
+
+[[bin]]
+name = "open-duck-runtime"
+path = "src/bin/open-duck-runtime.rs"
+
+[[bin]]
+name = "open-duck-rt"
+path = "src/bin/open-duck-rt.rs"
