@@ -1,6 +1,6 @@
 # Soma Status
 
-Updated: 2026-08-28
+Updated: 2026-08-29
 
 ## Current State
 
@@ -12,11 +12,13 @@ lossy read-only MuJoCo and Rerun views without changing the headless path.
 The simulation also has a discrete terminal command session for body yaw and
 mirrored antenna motion through that same command path.
 
-A reproducible simulation showcase command now captures a fixed-camera MuJoCo
-poster and VP9 WebM plus a real Rerun archive from the authoritative scenario,
-then verifies and packages them as a static report. The README carries the
-stable poster and Pages link. Local generation is proven; the first live Pages
-deployment remains pending a successful workflow run from `main`.
+A reproducible simulation showcase command now drives a deterministic
+12-second body-yaw, antenna, and official-kinematics head choreography through
+the authoritative command path. It captures one continuous 14-second
+fixed-camera MuJoCo VP9 WebM and synchronized Rerun archive, including the
+final TTL hold, reset, and stale-timeline rejection evidence, then verifies and
+packages them as a static report. The README carries the stable poster and the
+live Pages link.
 
 The standalone native N0 probe is implemented and remains strictly read-only.
 No native Plant, bus worker, torque enable, or physical motion is implemented.
@@ -84,7 +86,9 @@ readability remains the final gate.
 
 The showcase build creates a new output directory containing `index.html`, a
 MuJoCo poster and motion video, `evidence.rrd`, and machine-readable provenance.
-It runs `scripts/verify-sim-showcase` before reporting success.
+Its verifier requires visible 14-second media, all nine requested Rerun streams,
+continuous robot transforms through the acceptance tail, and explicit
+TTL/reset/rejection evidence before reporting success.
 
 ## Active Work
 
@@ -97,7 +101,7 @@ It runs `scripts/verify-sim-showcase` before reporting success.
 - Approved hardware plan: [bootstrap plan](docs/plans/bootstrap-plan.md)
 - Implemented, manual display review pending: [simulation visualization plan](docs/plans/simulation-visualization-plan.md)
 - Implemented, desktop interaction review pending: [simulation command-session plan](docs/plans/reachy-command-session.md)
-- Completed locally, live `main` deployment pending: [simulation showcase plan](docs/plans/simulation-showcase.md)
+- Completed and published; enriched choreography locally verified for the next `main` deployment: [simulation showcase plan](docs/plans/simulation-showcase.md)
 
 Open Duck Mini is the only additional robot profile in active scope, and only
 as one fixed MuJoCo policy qualification. Generic manifests, Duck hardware, a

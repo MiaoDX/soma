@@ -47,8 +47,9 @@ Build the static Reachy Mini simulation report into a new directory with:
 scripts/build-sim-showcase output/simulation-showcase
 ```
 
-The owning command runs the authoritative scenario, captures the fixed
-offscreen MuJoCo camera and Rerun archive, encodes the WebM, generates
+The owning command sends a deterministic 12-second choreography through the
+authoritative command path, captures one continuous 14-second fixed offscreen
+MuJoCo and Rerun run including the acceptance tail, encodes the WebM, generates
 provenance, and invokes `scripts/verify-sim-showcase`. To validate an existing
 report without rebuilding it, run:
 

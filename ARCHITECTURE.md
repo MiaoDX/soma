@@ -73,11 +73,15 @@ Current mapping:
 | `robot-runtime` and protocol bridge | Rust | robot-side non-RT runtime and lifecycle authority |
 | `python/soma_client/scenario.py` | Python | black-box protocol acceptance client |
 | `python/soma_client/command_session.py` | Python | L4 terminal teleoperation client |
+| `python/soma_client/showcase.py` | Python | deterministic offline showcase targets using pinned official analytical kinematics |
 
 Therefore the current demos are not Python simulations: MuJoCo simulation and
-control remain Rust; Python supplies two intentionally separate clients. Core
-semantics belong in Rust tests. Python scenarios should verify the public
-protocol and complete process topology rather than reimplement those semantics.
+control remain Rust; Python supplies two intentionally separate clients, while
+the showcase helper only plans complete nine-actuator targets for the scenario
+client. The official kinematics binding does not own physics, admission, or
+actuation. Core semantics belong in Rust tests. Python scenarios should verify
+the public protocol and complete process topology rather than reimplement those
+semantics.
 
 ## Code Map
 

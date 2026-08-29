@@ -40,9 +40,12 @@ requested/measured state and event timeline as read-only evidence.
 
 [Open the generated simulation report](https://miaodx.github.io/soma/) for the
 motion video, downloadable Rerun recording, fixed-case comparison, and exact
-commit provenance. The GitHub Pages workflow rebuilds the report from the
-authoritative acceptance scenario on `main`; the committed poster keeps the
-result visible before or between successful deployments.
+commit provenance. Its deterministic choreography runs body yaw, synchronized
+and alternating antennae, coordinated motion, and official-kinematics head
+nod/tilt targets through Soma's complete nine-actuator command path. The final
+two seconds preserve TTL hold, reset, and stale-timeline rejection evidence.
+The GitHub Pages workflow rebuilds this report on `main`; the committed poster
+keeps the result visible before or between successful deployments.
 
 The fixed Open Duck Mini v2 simulation has its own CI-generated report at
 [Open Duck Mini status](https://miaodx.github.io/soma/open-duck/). It embeds the
@@ -77,11 +80,18 @@ To build and verify the same static report locally:
 scripts/build-sim-showcase output/simulation-showcase
 ```
 
+The Pages showcase is intentionally richer than `run-sim-scenario`: it samples
+a fixed 12-second minimum-jerk choreography at 25 Hz, then keeps one continuous
+14-second MuJoCo/Rerun capture for the acceptance tail. The head targets come
+from the pinned Reachy Mini v1.9.0 analytical kinematics binding; commands still
+enter through Soma's existing Zenoh/runtime/RT path.
+
 ### What the dashboard proves
 
 Rerun groups requested and measured positions into body yaw, six Stewart
 motors, and two antennae. It also shows command TTL, state age, applied source,
 rejection reason, plant health, timeline changes, and observer drop counters.
+The robot model and telemetry use the same continuous `program_time` timeline.
 The typed state and scenario assertions remain the correctness oracle; viewer
 pixels are supporting evidence.
 
