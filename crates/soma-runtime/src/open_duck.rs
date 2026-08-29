@@ -9,7 +9,7 @@ pub const OPEN_DUCK_PHYSICS_HZ: u32 = 500;
 pub const OPEN_DUCK_POLICY_HZ: u32 = 50;
 pub const OPEN_DUCK_TARGET_BYTES: usize = 8 * 4 + 14 * 4;
 pub const OPEN_DUCK_STATE_FLOATS: usize = 14 + 14 + 3 + 3 + 2 + 3;
-pub const OPEN_DUCK_STATE_BYTES: usize = 8 * 7 + 4 + OPEN_DUCK_STATE_FLOATS * 4;
+pub const OPEN_DUCK_STATE_BYTES: usize = 8 * 8 + 4 + OPEN_DUCK_STATE_FLOATS * 4;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct OpenDuckState {
@@ -28,6 +28,7 @@ pub struct OpenDuckState {
     pub admitted_sequence: u64,
     pub applied_sequence: u64,
     pub message_age_ns: u64,
+    pub runtime_dropped_targets: u64,
     pub flags: u32,
 }
 
@@ -40,13 +41,14 @@ pub fn encode_state(state: &OpenDuckState, out: &mut [u8; OPEN_DUCK_STATE_BYTES]
         state.admitted_sequence,
         state.applied_sequence,
         state.message_age_ns,
+        state.runtime_dropped_targets,
     ]
     .into_iter()
     .enumerate()
     {
         out[i * 8..i * 8 + 8].copy_from_slice(&value.to_le_bytes());
     }
-    out[56..60].copy_from_slice(&state.flags.to_le_bytes());
+    out[64..68].copy_from_slice(&state.flags.to_le_bytes());
     let values = state
         .positions_rad
         .iter()
@@ -60,7 +62,7 @@ pub fn encode_state(state: &OpenDuckState, out: &mut [u8; OPEN_DUCK_STATE_BYTES]
         &state.root_pitch_rad,
     ]);
     for (i, value) in values.enumerate() {
-        out[60 + i * 4..64 + i * 4].copy_from_slice(&value.to_le_bytes());
+        out[68 + i * 4..72 + i * 4].copy_from_slice(&value.to_le_bytes());
     }
 }
 
@@ -75,7 +77,7 @@ pub fn decode_state(bytes: &[u8]) -> Option<OpenDuckState> {
     };
     let f32_at = |index| {
         Some(f32::from_le_bytes(
-            bytes[60 + index * 4..64 + index * 4].try_into().ok()?,
+            bytes[68 + index * 4..72 + index * 4].try_into().ok()?,
         ))
     };
     let positions_rad = std::array::from_fn(|i| f32_at(i).unwrap());
@@ -102,7 +104,8 @@ pub fn decode_state(bytes: &[u8]) -> Option<OpenDuckState> {
         admitted_sequence: u64_at(32)?,
         applied_sequence: u64_at(40)?,
         message_age_ns: u64_at(48)?,
-        flags: u32::from_le_bytes(bytes[56..60].try_into().ok()?),
+        runtime_dropped_targets: u64_at(56)?,
+        flags: u32::from_le_bytes(bytes[64..68].try_into().ok()?),
     };
     let finite = state
         .positions_rad
@@ -268,6 +271,7 @@ mod tests {
             admitted_sequence: 7,
             applied_sequence: 6,
             message_age_ns: 5,
+            runtime_dropped_targets: 4,
             flags: 3,
         };
         let mut bytes = [0; OPEN_DUCK_STATE_BYTES];

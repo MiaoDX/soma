@@ -46,7 +46,14 @@ wait "$observer_pid" || { cat "$observer_log" >&2; exit 1; }
 ffmpeg=$(cd "$repo_root/python" && UV_DEFAULT_INDEX=https://pypi.org/simple \
   uv run --extra visualization python -c 'import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())')
 cp "$frames_dir/frame-0000.png" "$output_dir/poster.png"
-"$ffmpeg" -hide_banner -loglevel error -framerate 12 -i "$frames_dir/frame-%04d.png" -c:v libvpx-vp9 -pix_fmt yuv420p -an -y "$output_dir/motion.webm"
+frame_count=$(printf '%s\n' "$frames_dir"/frame-*.png | wc -l)
+if (( frame_count < 2 )); then
+  echo "showcase capture produced fewer than two frames" >&2
+  exit 1
+fi
+# The observer is intentionally lossy, so software-rendering throughput changes
+# the frame count. Map the captured scenario span to six seconds deterministically.
+"$ffmpeg" -hide_banner -loglevel error -framerate "$frame_count/6" -i "$frames_dir/frame-%04d.png" -c:v libvpx-vp9 -pix_fmt yuv420p -an -y "$output_dir/motion.webm"
 rm -rf "$frames_dir"
 commit=$(git -C "$repo_root" rev-parse HEAD)
 generated=$(date -u +%Y-%m-%dT%H:%M:%SZ)

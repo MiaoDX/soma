@@ -14,6 +14,21 @@ on:
       - python/**
       - scripts/build-sim-showcase
       - scripts/cargo-mujoco
+      - scripts/run-open-duck-walk
+      - scripts/verify-sim-showcase
+  pull_request:
+    paths:
+      - .github/workflows/simulation-showcase.yml
+      - Cargo.lock
+      - Cargo.toml
+      - crates/**
+      - docs/showcase/**
+      - scripts/build-open-duck-showcase
+      - proto/**
+      - python/**
+      - scripts/build-sim-showcase
+      - scripts/cargo-mujoco
+      - scripts/run-open-duck-walk
       - scripts/verify-sim-showcase
   workflow_dispatch:
 
@@ -23,7 +38,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
+  group: simulation-showcase-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
