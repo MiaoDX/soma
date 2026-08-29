@@ -315,6 +315,14 @@ pub struct OpenDuckSimPlant {
     sequence: u64,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct OpenDuckPolicyFacts {
+    pub positions_rad: [f32; OPEN_DUCK_ACTUATOR_COUNT],
+    pub velocities_rad_s: [f32; OPEN_DUCK_ACTUATOR_COUNT],
+    pub gyro_rad_s: [f32; 3],
+    pub acceleration_m_s2: [f32; 3],
+}
+
 impl OpenDuckSimPlant {
     pub fn load(control_period: Duration) -> Result<Self, SimError> {
         let model = Arc::new(
@@ -347,8 +355,11 @@ impl OpenDuckSimPlant {
         }
         let physics_schedule = PhysicsSchedule::new(control_period, model.opt().timestep)
             .map_err(SimError::PhysicsSchedule)?;
+        let mut data = MjData::new(model);
+        data.reset_keyframe(0)
+            .map_err(|e| SimError::Load(format!("reset Open Duck home keyframe: {e}")))?;
         Ok(Self {
-            data: MjData::new(model),
+            data,
             physics_schedule,
             timeline: 1,
             sequence: 0,
@@ -385,8 +396,26 @@ impl OpenDuckSimPlant {
                 .qpos[0] as f32
         })
     }
+    pub fn policy_facts(&self) -> OpenDuckPolicyFacts {
+        let velocities_rad_s = std::array::from_fn(|i| {
+            self.data
+                .joint(OPEN_DUCK_ACTUATOR_NAMES[i])
+                .expect("validated joint")
+                .view(&self.data)
+                .qvel[0] as f32
+        });
+        let sensors = self.data.sensordata();
+        OpenDuckPolicyFacts {
+            positions_rad: self.positions(),
+            velocities_rad_s,
+            gyro_rad_s: std::array::from_fn(|i| sensors[i] as f32),
+            acceleration_m_s2: std::array::from_fn(|i| sensors[6 + i] as f32),
+        }
+    }
     pub fn reset(&mut self) {
-        self.data.reset();
+        self.data
+            .reset_keyframe(0)
+            .expect("validated Open Duck home keyframe");
         self.timeline = self.timeline.wrapping_add(1);
         self.sequence = 0;
     }
@@ -670,6 +699,13 @@ mod tests {
         assert_eq!(plant.model_dimensions(), (21, 20, 14));
         assert_eq!(plant.physics_schedule().substeps_per_control_period(), 10);
         assert_eq!(plant.policy_decimation(), 10);
+        assert_eq!(
+            plant.positions(),
+            [
+                0.002, 0.053, -0.63, 1.368, -0.784, 0.0, 0.0, 0.0, 0.0, -0.003, -0.065, 0.635,
+                1.379, -0.796
+            ]
+        );
     }
 
     #[test]
