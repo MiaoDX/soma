@@ -1,16 +1,54 @@
 #!/usr/bin/env python3
 """Open Duck Mini v2 reference and policy rollout entry point."""
-import argparse, hashlib, json, math, os, signal, subprocess, sys, time
+import argparse, hashlib, json, math, os, signal, subprocess, sys, time, tomllib
 from pathlib import Path
 import mujoco
 import numpy as np
 import onnxruntime as ort
 
 GAIT_PHASE_PERIOD = 27
+FROZEN_CASE_SHA256 = "59a29cb8ba9acc460267be7cd4929fcf7344cfe031cd19490247c14bf3c6a184"
 
 ROOT = Path(__file__).resolve().parents[1]
 BUNDLE = ROOT / "crates/soma-sim/assets/open-duck-mini-v2"
 JOINTS = ["left_hip_yaw", "left_hip_roll", "left_hip_pitch", "left_knee", "left_ankle", "neck_pitch", "head_pitch", "head_yaw", "head_roll", "right_hip_yaw", "right_hip_roll", "right_hip_pitch", "right_knee", "right_ankle"]
+
+def sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+def validate_frozen_inputs(case: Path, checkpoint: Path, experimental: str | None) -> None:
+    if sha256(case) != FROZEN_CASE_SHA256:
+        raise SystemExit("refusing rollout: frozen case checksum mismatch")
+    manifest_path = BUNDLE / "PROVENANCE.toml"
+    manifest = tomllib.loads(manifest_path.read_text())
+    expected_files = manifest.get("files")
+    if not isinstance(expected_files, dict) or not expected_files:
+        raise SystemExit("refusing rollout: provenance file ledger is missing")
+    actual_files = {
+        path.relative_to(BUNDLE).as_posix()
+        for path in BUNDLE.rglob("*")
+        if path.is_file() and path != manifest_path
+    }
+    if actual_files != set(expected_files):
+        raise SystemExit("refusing rollout: provenance file ledger is incomplete")
+    for relative, expected_digest in expected_files.items():
+        if sha256(BUNDLE / relative) != expected_digest:
+            raise SystemExit(f"refusing rollout: provenance checksum mismatch: {relative}")
+    digest = sha256(checkpoint)
+    approved = {source.get("sha256") for source in manifest.get("source", [])}
+    if digest not in approved and digest != experimental:
+        raise SystemExit("refusing rollout: checkpoint is not approved")
+
+def validate_frozen_run(run: dict[str, object]) -> None:
+    failures = []
+    if run["physics_steps"] < 3750: failures.append("duration")
+    if run["forward_displacement_m"] < 0.10: failures.append("forward displacement")
+    if run["min_root_height_m"] < 0.08: failures.append("root height")
+    if run["max_abs_roll_rad"] > 0.8: failures.append("roll")
+    if run["max_abs_pitch_rad"] > 0.8: failures.append("pitch")
+    if run["non_foot_collision_count"] != 0: failures.append("non-foot collision")
+    if failures:
+        raise SystemExit("Open Duck frozen acceptance failed: " + ", ".join(failures))
 
 def main():
     p = argparse.ArgumentParser()
@@ -25,11 +63,7 @@ def main():
     p.add_argument("--diagnostic-drop-policy-tick", type=int, help=argparse.SUPPRESS)
     args = p.parse_args()
     checkpoint = args.checkpoint.resolve()
-    digest = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
-    expected = {"3c606f9381a1710cc8fecdb7442787dcbfce3ee9bc02a6f1224774ab2b3a1067", "cb61453a8bcb547ccfdeb4f03ba0fa67ebcf767dcf4aa6e5c9a0d92b302f9b23"}
-    experimental = args.experimental_checkpoint_sha256
-    if (digest not in expected and digest != experimental) or "FROZEN" not in Path(args.case).read_text():
-        raise SystemExit("refusing rollout: frozen case or pinned checkpoint is invalid")
+    validate_frozen_inputs(Path(args.case), checkpoint, args.experimental_checkpoint_sha256)
     if args.mode in {"policy", "stall"}:
         run_process_mode(args)
         return
@@ -120,8 +154,11 @@ def main():
             max_abs_angle = max(max_abs_angle, float(np.max(np.abs(data.qpos[7:]))))
             w,x,y,z=data.qpos[3:7]; roll=math.atan2(2*(w*x+y*z),1-2*(x*x+y*y)); pitch=math.asin(np.clip(2*(w*y-z*x),-1,1))
             min_root_height=min(min_root_height,float(data.qpos[2])); max_abs_roll=max(max_abs_roll,abs(roll)); max_abs_pitch=max(max_abs_pitch,abs(pitch))
-        results.append({"run": run, "physics_steps": 4000, "policy_ticks": 400, "command_vx_mps": args.vx, "forward_displacement_m": float(data.qpos[0]-x0), "max_abs_joint_angle_rad": max_abs_angle, "min_root_height_m":min_root_height,"max_abs_roll_rad":max_abs_roll,"max_abs_pitch_rad":max_abs_pitch, "contact_transitions": contact_transitions, "max_stance_slip_m": max_stance_slip_m, "non_foot_collision_count": non_foot_collision_count, "observation_width": len(obs_fixture), "action_width": len(action_fixture), "first_observation": obs_fixture, "first_action": action_fixture, "mode": args.mode})
-    print(json.dumps({"contract": {"nq":21,"nv":20,"nu":14,"observation":101,"action":14,"timestep":0.002}, "runs": results}, indent=2))
+        result = {"run": run, "physics_steps": 4000, "policy_ticks": 400, "command_vx_mps": args.vx, "forward_displacement_m": float(data.qpos[0]-x0), "max_abs_joint_angle_rad": max_abs_angle, "min_root_height_m":min_root_height,"max_abs_roll_rad":max_abs_roll,"max_abs_pitch_rad":max_abs_pitch, "contact_transitions": contact_transitions, "max_stance_slip_m": max_stance_slip_m, "non_foot_collision_count": non_foot_collision_count, "observation_width": len(obs_fixture), "action_width": len(action_fixture), "first_observation": obs_fixture, "first_action": action_fixture, "mode": args.mode}
+        if args.diagnostic_delay_steps == 0 and args.diagnostic_drop_policy_tick is None:
+            validate_frozen_run(result)
+        results.append(result)
+    print(json.dumps({"scenario_result": "passed", "contract": {"nq":21,"nv":20,"nu":14,"observation":101,"action":14,"timestep":0.002}, "runs": results}, indent=2))
 
 def run_process_mode(args):
     if args.repeat > 1:
@@ -158,7 +195,8 @@ def run_process_mode(args):
         policy_python = ROOT / "python/.venv/bin/python"
         duration = "2" if args.mode == "stall" else "8"
         policy = [str(policy_python), "-m", "soma_client.open_duck_policy", "--duration", duration,
-                  "--checkpoint", str(args.checkpoint.resolve()), "--ready-file", str(ready_file)]
+                  "--checkpoint", str(args.checkpoint.resolve()), "--ready-file", str(ready_file),
+                  "--vx", str(args.vx)]
         if args.mode == "stall": policy += ["--stall-after", "1"]
         proc = subprocess.Popen(policy, cwd=ROOT / "python", env={**env, "PYTHONPATH": "."},
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)

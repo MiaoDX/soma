@@ -94,6 +94,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 } else {
                     now.saturating_sub(admitted_capture_ns)
                 },
+                runtime_dropped_targets: 0,
                 flags,
             };
             encode_state(&state, &mut state_bytes);

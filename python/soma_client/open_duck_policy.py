@@ -14,7 +14,7 @@ import zenoh
 
 STATE_KEY = "soma/open-duck-v2/state"
 TARGET_KEY = "soma/open-duck-v2/target"
-STATE = struct.Struct("<7QI39f")
+STATE = struct.Struct("<8QI39f")
 TARGET = struct.Struct("<4Q14f")
 GAIT_PHASE_PERIOD = 27
 DEFAULT_POSE = np.array([
@@ -25,11 +25,12 @@ DEFAULT_POSE = np.array([
 
 def decode_state(payload: bytes) -> dict[str, object]:
     values = STATE.unpack(payload)
-    facts = values[8:]
+    facts = values[9:]
     return {
         "sequence": values[0], "timeline": values[1], "capture_ns": values[2],
         "requested": values[3], "admitted": values[4], "applied": values[5],
-        "message_age_ns": values[6], "flags": values[7],
+        "message_age_ns": values[6], "runtime_dropped_targets": values[7],
+        "flags": values[8],
         "positions": np.asarray(facts[:14], dtype=np.float32),
         "velocities": np.asarray(facts[14:28], dtype=np.float32),
         "gyro": np.asarray(facts[28:31], dtype=np.float32),
@@ -37,6 +38,26 @@ def decode_state(payload: bytes) -> dict[str, object]:
         "contacts": np.asarray(facts[34:36], dtype=np.float32),
         "root_height": facts[36], "root_roll": facts[37], "root_pitch": facts[38],
     }
+
+
+class LatestStateBuffer:
+    def __init__(self) -> None:
+        self.states: queue.Queue[bytes] = queue.Queue(maxsize=1)
+        self.dropped = 0
+
+    def receive(self, sample: object) -> None:
+        try:
+            self.states.get_nowait()
+            self.dropped += 1
+        except queue.Empty:
+            pass
+        try:
+            self.states.put_nowait(bytes(sample.payload))
+        except queue.Full:
+            self.dropped += 1
+
+    def get(self, timeout: float) -> bytes:
+        return self.states.get(timeout=timeout)
 
 
 class Policy:
@@ -95,18 +116,12 @@ def main() -> None:
     parser.add_argument("--stall-after", type=int)
     parser.add_argument("--duration", type=float)
     parser.add_argument("--ready-file", type=Path)
+    parser.add_argument("--vx", type=float, default=0.3)
     args = parser.parse_args()
     config = zenoh.Config.from_json5('{mode:"client",connect:{endpoints:["tcp/127.0.0.1:7448"]},scouting:{multicast:{enabled:false}}}')
-    policy = Policy(args.checkpoint)
-    states: queue.Queue = queue.Queue(maxsize=1)
-    dropped_states = 0
-    def latest(sample: object) -> None:
-        nonlocal dropped_states
-        try: states.get_nowait()
-        except queue.Empty: pass
-        try: states.put_nowait(bytes(sample.payload))
-        except queue.Full: dropped_states += 1
-    with zenoh.open(config) as session, session.declare_subscriber(STATE_KEY, latest):
+    policy = Policy(args.checkpoint, velocity_x=args.vx)
+    latest = LatestStateBuffer()
+    with zenoh.open(config) as session, session.declare_subscriber(STATE_KEY, latest.receive):
         if args.ready_file is not None:
             args.ready_file.touch()
         emitted = 0
@@ -117,11 +132,13 @@ def main() -> None:
                     "min_root_height_m": float("inf"), "max_abs_roll_rad": 0.0,
                     "max_abs_pitch_rad": 0.0, "first_state_sequence": 0,
                     "last_state_sequence": 0, "max_state_sequence_gap": 0,
-                    "max_inference_ns": 0, "dropped_states": 0}
+                    "max_inference_ns": 0, "dropped_states": 0,
+                    "runtime_dropped_targets": 0}
         while True:
-            state = decode_state(states.get(timeout=5))
+            state = decode_state(latest.get(timeout=5))
             evidence["states"] += 1
-            evidence["dropped_states"] = dropped_states
+            evidence["dropped_states"] = latest.dropped
+            evidence["runtime_dropped_targets"] = int(state["runtime_dropped_targets"])
             sequence = int(state["sequence"])
             if evidence["first_state_sequence"] == 0:
                 evidence["first_state_sequence"] = sequence

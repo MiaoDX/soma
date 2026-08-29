@@ -42,7 +42,7 @@ PY
 python3 - "$output_dir/metadata.json" "$commit" "$generated" "$metrics" <<'PY'
 import json, pathlib, sys
 metrics=json.loads(pathlib.Path(sys.argv[4]).read_text())
-json.dump({"schema_version":1,"robot":"Open Duck Mini","scope":"simulation-only","scenario":"fixed 8-second walk case","scenario_result":"passed","commit":sys.argv[2],"generated_utc":sys.argv[3],"artifacts":{"rerun":"evidence.rrd"},"runs":metrics["runs"]},open(sys.argv[1],"w"),indent=2)
+json.dump({"schema_version":1,"robot":"Open Duck Mini","scope":"simulation-only","scenario":"fixed 8-second walk case","scenario_result":metrics["scenario_result"],"commit":sys.argv[2],"generated_utc":sys.argv[3],"artifacts":{"rerun":"evidence.rrd"},"runs":metrics["runs"]},open(sys.argv[1],"w"),indent=2)
 PY
 UV_DEFAULT_INDEX=https://pypi.org/simple uv run --extra visualization rerun rrd verify "$output_dir/evidence.rrd"
 echo "Open Duck showcase built: $output_dir"
