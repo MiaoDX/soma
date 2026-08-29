@@ -321,6 +321,9 @@ pub struct OpenDuckPolicyFacts {
     pub velocities_rad_s: [f32; OPEN_DUCK_ACTUATOR_COUNT],
     pub gyro_rad_s: [f32; 3],
     pub acceleration_m_s2: [f32; 3],
+    pub root_height_m: f32,
+    pub root_roll_rad: f32,
+    pub root_pitch_rad: f32,
 }
 
 impl OpenDuckSimPlant {
@@ -405,11 +408,18 @@ impl OpenDuckSimPlant {
                 .qvel[0] as f32
         });
         let sensors = self.data.sensordata();
+        let q = self.data.qpos();
+        let (w, x, y, z) = (q[3], q[4], q[5], q[6]);
+        let roll = (2.0 * (w * x + y * z)).atan2(1.0 - 2.0 * (x * x + y * y));
+        let pitch = (2.0 * (w * y - z * x)).clamp(-1.0, 1.0).asin();
         OpenDuckPolicyFacts {
             positions_rad: self.positions(),
             velocities_rad_s,
             gyro_rad_s: std::array::from_fn(|i| sensors[i] as f32),
             acceleration_m_s2: std::array::from_fn(|i| sensors[6 + i] as f32),
+            root_height_m: q[2] as f32,
+            root_roll_rad: roll as f32,
+            root_pitch_rad: pitch as f32,
         }
     }
     pub fn reset(&mut self) {
