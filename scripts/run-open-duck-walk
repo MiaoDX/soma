@@ -59,6 +59,7 @@ def main():
     p.add_argument("--experimental-checkpoint-sha256", help=argparse.SUPPRESS)
     p.add_argument("--vx", type=float, default=0.3)
     p.add_argument("--visualize", action="store_true", help=argparse.SUPPRESS)
+    p.add_argument("--frames-dir", type=Path, help=argparse.SUPPRESS)
     p.add_argument("--diagnostic-delay-steps", type=int, default=0, help=argparse.SUPPRESS)
     p.add_argument("--diagnostic-drop-policy-tick", type=int, help=argparse.SUPPRESS)
     args = p.parse_args()
@@ -80,6 +81,15 @@ def main():
     if session.get_inputs()[0].shape != [1, 101] or session.get_outputs()[0].shape != [1, 14]:
         raise SystemExit("unexpected ONNX contract")
     results = []
+    renderer = mujoco.Renderer(model, height=480, width=640) if args.frames_dir else None
+    camera = mujoco.MjvCamera()
+    camera.type = mujoco.mjtCamera.mjCAMERA_TRACKING
+    camera.trackbodyid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "base")
+    camera.distance = 0.8
+    camera.azimuth = 90
+    camera.elevation = -15
+    if args.frames_dir:
+        args.frames_dir.mkdir(parents=True, exist_ok=True)
     floor_geom = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "floor")
     foot_geoms = [mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, name)
                   for name in ("left_foot_bottom_tpu", "right_foot_bottom_tpu")]
@@ -106,6 +116,13 @@ def main():
         delayed_targets = []
         for tick in range(4000):
             mujoco.mj_step(model, data)
+            if renderer is not None and run == 0 and tick % 40 == 0:
+                renderer.update_scene(data, camera=camera)
+                pixels = renderer.render()
+                frame = args.frames_dir / f"frame-{tick // 40:04d}.ppm"
+                with frame.open("wb") as stream:
+                    stream.write(f"P6\n{pixels.shape[1]} {pixels.shape[0]}\n255\n".encode())
+                    stream.write(pixels.tobytes())
             while delayed_targets and delayed_targets[0][0] <= tick:
                 _, ready_target = delayed_targets.pop(0); data.ctrl[:] = ready_target
             if tick % 10: continue
@@ -158,6 +175,8 @@ def main():
         if args.diagnostic_delay_steps == 0 and args.diagnostic_drop_policy_tick is None:
             validate_frozen_run(result)
         results.append(result)
+    if renderer is not None:
+        renderer.close()
     print(json.dumps({"scenario_result": "passed", "contract": {"nq":21,"nv":20,"nu":14,"observation":101,"action":14,"timestep":0.002}, "runs": results}, indent=2))
 
 def run_process_mode(args):

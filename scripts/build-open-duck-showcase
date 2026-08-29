@@ -7,8 +7,8 @@ if [[ -e $output_dir ]]; then echo "output path already exists: $output_dir" >&2
 mkdir -p "$output_dir"
 metrics=$(mktemp /tmp/soma-open-duck-showcase.XXXXXX.json)
 trap 'rm -f "$metrics"' EXIT
-uv run --project "$repo_root/python" python "$repo_root/scripts/run-open-duck-walk" \
-  reference --repeat 2 >"$metrics"
+MUJOCO_GL=egl uv run --project "$repo_root/python" python "$repo_root/scripts/run-open-duck-walk" \
+  reference --repeat 2 --frames-dir "$output_dir/frames" >"$metrics"
 commit=$(git -C "$repo_root" rev-parse HEAD)
 generated=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 cd "$repo_root/python"
@@ -26,7 +26,15 @@ for run in data["runs"]:
 rr.save(sys.argv[2])
 PY
 cd "$repo_root"
-rrd_url="https://miaodx.github.io/soma/open-duck/evidence.rrd"
+rrd_url="https://miaodx.com/soma/open-duck/evidence.rrd"
+ffmpeg=$(cd "$repo_root/python" && UV_DEFAULT_INDEX=https://pypi.org/simple \
+  uv run --project "$repo_root/python" --extra visualization python -c 'import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())')
+cp "$output_dir/frames/frame-0000.ppm" "$output_dir/poster.ppm"
+frame_count=$(find "$output_dir/frames" -name 'frame-*.ppm' | wc -l)
+"$ffmpeg" -hide_banner -loglevel error -i "$output_dir/poster.ppm" -frames:v 1 -y "$output_dir/poster.png"
+"$ffmpeg" -hide_banner -loglevel error -framerate "$frame_count/6" -i "$output_dir/frames/frame-%04d.ppm" -c:v libvpx-vp9 -pix_fmt yuv420p -an -y "$output_dir/motion.webm"
+rm -f "$output_dir/poster.ppm"
+rm -rf "$output_dir/frames"
 rows=$(python3 - "$metrics" <<'PY'
 import json,sys
 for r in json.load(open(sys.argv[1]))["runs"]:
@@ -43,8 +51,23 @@ PY
 python3 - "$output_dir/metadata.json" "$commit" "$generated" "$metrics" <<'PY'
 import json, pathlib, sys
 metrics=json.loads(pathlib.Path(sys.argv[4]).read_text())
-json.dump({"schema_version":1,"robot":"Open Duck Mini","scope":"simulation-only","scenario":"fixed 8-second walk case","scenario_result":metrics["scenario_result"],"commit":sys.argv[2],"generated_utc":sys.argv[3],"artifacts":{"rerun":"evidence.rrd"},"runs":metrics["runs"]},open(sys.argv[1],"w"),indent=2)
+json.dump({"schema_version":1,"robot":"Open Duck Mini","scope":"simulation-only","scenario":"fixed 8-second walk case","scenario_result":metrics["scenario_result"],"commit":sys.argv[2],"generated_utc":sys.argv[3],"renderer":{"engine":"MuJoCo EGL offscreen","camera":"tracking base","width":640,"height":480},"artifacts":{"poster":"poster.png","motion":"motion.webm","rerun":"evidence.rrd"},"runs":metrics["runs"]},open(sys.argv[1],"w"),indent=2)
 PY
 UV_DEFAULT_INDEX=https://pypi.org/simple uv run --project "$repo_root/python" \
   --extra visualization rerun rrd verify "$output_dir/evidence.rrd"
+python3 - "$output_dir" "$ffmpeg" <<'PY'
+import pathlib, re, subprocess, sys
+d = pathlib.Path(sys.argv[1]); ffmpeg = sys.argv[2]
+png = (d / "poster.png").read_bytes()
+assert png[:8] == b"\x89PNG\r\n\x1a\n"
+assert (int.from_bytes(png[16:20], "big"), int.from_bytes(png[20:24], "big")) == (640, 480)
+probe = subprocess.run([ffmpeg, "-hide_banner", "-i", str(d / "motion.webm"), "-f", "null", "-"], stderr=subprocess.PIPE, text=True)
+duration = re.search(r"Duration: (\d+):(\d+):(\d+(?:\.\d+)?)", probe.stderr)
+assert duration and float(duration[3]) >= 6.0
+hashes = subprocess.check_output([ffmpeg, "-hide_banner", "-loglevel", "error", "-i", str(d / "motion.webm"), "-f", "framemd5", "-"], text=True)
+assert len({line.rsplit(",", 1)[-1].strip() for line in hashes.splitlines() if line and not line.startswith("#")}) > 1
+html = (d / "index.html").read_text()
+assert "https://miaodx.com/soma/open-duck/evidence.rrd" in html
+assert "miaodx.github.io" not in html
+PY
 echo "Open Duck showcase built: $output_dir"

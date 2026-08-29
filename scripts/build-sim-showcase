@@ -57,7 +57,7 @@ fi
 rm -rf "$frames_dir"
 commit=$(git -C "$repo_root" rev-parse HEAD)
 generated=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-rrd_url="https://miaodx.github.io/soma/evidence.rrd"
+rrd_url="https://miaodx.com/soma/evidence.rrd"
 sed -e "s/@@COMMIT@@/$commit/g" -e 's/@@ROBOT@@/Reachy Mini/g' -e "s#@@RRD_URL@@#$rrd_url#g" "$repo_root/docs/showcase/index.template.html" >"$output_dir/index.html"
 python3 - "$output_dir/metadata.json" "$commit" "$generated" <<'PY'
 import json,sys
