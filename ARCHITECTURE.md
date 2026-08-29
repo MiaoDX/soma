@@ -110,9 +110,9 @@ semantics.
 
 ## Approved Open Duck Qualification
 
-Open Duck Mini is the approved next simulation profile but is not implemented
-or supported yet. Its 50 Hz ONNX policy keeps inference outside a 500 Hz Duck
-periodic RT/physics path:
+Open Duck Mini is an implemented, fixed simulation-only qualification profile.
+Its 50 Hz ONNX policy keeps inference outside a 500 Hz Duck periodic RT/physics
+path:
 
 ```text
 Duck state -> Python ONNX policy -> loopback Zenoh -> robot-runtime
@@ -137,6 +137,12 @@ evidence, D-04 requires a focused comparison with Rust-hosted ONNX inference
 and a single Rust process that isolates async work from its periodic RT thread.
 No alternative may move async work, middleware, inference, or unbounded
 allocation into the periodic section.
+
+The Pages showcase reuses the pinned direct reference runner for one 12-second
+composite `vx`/`vy`/yaw command reel. It records complete generalized state and
+uses the pinned MJCF loader to reconstruct read-only Mesh3D geometry and body
+transforms on the same Rerun timeline as policy evidence. This does not add a
+second Plant authority or change the frozen straight-walk acceptance case.
 
 ## Deeper Documents
 

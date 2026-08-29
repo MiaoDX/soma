@@ -7,6 +7,7 @@ import numpy as np
 import onnxruntime as ort
 
 GAIT_PHASE_PERIOD = 27
+SHOWCASE_DURATION_S = 12.0
 FROZEN_CASE_SHA256 = "59a29cb8ba9acc460267be7cd4929fcf7344cfe031cd19490247c14bf3c6a184"
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -50,6 +51,18 @@ def validate_frozen_run(run: dict[str, object]) -> None:
     if failures:
         raise SystemExit("Open Duck frozen acceptance failed: " + ", ".join(failures))
 
+def showcase_command(time_s: float) -> tuple[float, float, float]:
+    """One smooth command reel using the policy's trained velocity inputs."""
+    segments = ((0.0, 2.0, (0.0, 0.0, 0.0)), (2.0, 4.0, (0.22, 0.0, 0.0)),
+                (4.0, 6.0, (0.28, 0.10, 0.10)), (6.0, 8.0, (0.28, -0.10, -0.10)),
+                (8.0, 10.0, (0.16, 0.0, 0.22)), (10.0, 12.0, (0.0, 0.0, 0.0)))
+    for index, (start, end, target) in enumerate(segments):
+        if time_s <= end:
+            previous = segments[max(0, index - 1)][2] if index else target
+            blend = min(1.0, max(0.0, (time_s - start) / 0.5))
+            return tuple(a + (b - a) * blend for a, b in zip(previous, target))
+    return segments[-1][2]
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("mode", choices=["reference", "policy", "stall"])
@@ -58,6 +71,7 @@ def main():
     p.add_argument("--checkpoint", type=Path, default=BUNDLE / "BEST_WALK_ONNX.onnx")
     p.add_argument("--experimental-checkpoint-sha256", help=argparse.SUPPRESS)
     p.add_argument("--vx", type=float, default=0.3)
+    p.add_argument("--showcase", action="store_true", help=argparse.SUPPRESS)
     p.add_argument("--visualize", action="store_true", help=argparse.SUPPRESS)
     p.add_argument("--frames-dir", type=Path, help=argparse.SUPPRESS)
     p.add_argument("--trace-file", type=Path, help=argparse.SUPPRESS)
@@ -97,7 +111,8 @@ def main():
                   for name in ("left_foot_bottom_tpu", "right_foot_bottom_tpu")]
     foot_sites = [mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, name)
                   for name in ("left_foot", "right_foot")]
-    for run in range(args.repeat):
+    total_ticks = round((SHOWCASE_DURATION_S if args.showcase else 8.0) / model.opt.timestep)
+    for run in range(args.repeat if not args.showcase else 1):
         trace = []
         data = mujoco.MjData(model)
         mujoco.mj_resetDataKeyframe(model, data, mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_KEY, "home"))
@@ -117,7 +132,7 @@ def main():
         obs_fixture = action_fixture = None
         phase = np.zeros(2, dtype=np.float32)
         delayed_targets = []
-        for tick in range(4000):
+        for tick in range(total_ticks):
             mujoco.mj_step(model, data)
             if renderer is not None and run == 0 and tick % 40 == 0:
                 renderer.update_scene(data, camera=camera)
@@ -157,7 +172,8 @@ def main():
                      or (contact.geom2 in foot_geoms and contact.geom1 == floor_geom))
                 for contact in data.contact
             )
-            obs = np.concatenate((gyro, accel, np.array([args.vx,0,0,0,0,0,0], dtype=np.float32), qpos-default.astype(np.float32), qvel*0.05, *history, target.astype(np.float32), contacts, phase)).astype(np.float32)
+            vx, vy, yaw = showcase_command(tick * model.opt.timestep) if args.showcase else (args.vx, 0.0, 0.0)
+            obs = np.concatenate((gyro, accel, np.array([vx, vy, yaw, 0, 0, 0, 0], dtype=np.float32), qpos-default.astype(np.float32), qvel*0.05, *history, target.astype(np.float32), contacts, phase)).astype(np.float32)
             if obs.size != 101: raise SystemExit(f"observation width {obs.size}")
             action = session.run(None, {"obs": obs[None, :]})[0][0].astype(np.float32)
             if not np.isfinite(action).all(): raise SystemExit("non-finite policy output")
@@ -175,9 +191,9 @@ def main():
             w,x,y,z=data.qpos[3:7]; roll=math.atan2(2*(w*x+y*z),1-2*(x*x+y*y)); pitch=math.asin(np.clip(2*(w*y-z*x),-1,1))
             min_root_height=min(min_root_height,float(data.qpos[2])); max_abs_roll=max(max_abs_roll,abs(roll)); max_abs_pitch=max(max_abs_pitch,abs(pitch))
             if args.trace_file:
-                trace.append({"time_s": tick * model.opt.timestep, "root_position_m": data.qpos[:3].tolist(), "root_roll_rad": roll, "root_pitch_rad": pitch, "joint_position_rad": qpos.tolist(), "joint_target_rad": target.tolist(), "policy_action": action.tolist(), "contacts": contacts.tolist()})
-        result = {"run": run, "physics_steps": 4000, "policy_ticks": 400, "command_vx_mps": args.vx, "forward_displacement_m": float(data.qpos[0]-x0), "max_abs_joint_angle_rad": max_abs_angle, "min_root_height_m":min_root_height,"max_abs_roll_rad":max_abs_roll,"max_abs_pitch_rad":max_abs_pitch, "contact_transitions": contact_transitions, "max_stance_slip_m": max_stance_slip_m, "non_foot_collision_count": non_foot_collision_count, "observation_width": len(obs_fixture), "action_width": len(action_fixture), "first_observation": obs_fixture, "first_action": action_fixture, "mode": args.mode}
-        if args.diagnostic_delay_steps == 0 and args.diagnostic_drop_policy_tick is None:
+                trace.append({"time_s": tick * model.opt.timestep, "qpos": data.qpos.tolist(), "qvel": data.qvel.tolist(), "root_position_m": data.qpos[:3].tolist(), "root_roll_rad": roll, "root_pitch_rad": pitch, "joint_position_rad": qpos.tolist(), "joint_target_rad": target.tolist(), "policy_action": action.tolist(), "command": [vx, vy, yaw], "contacts": contacts.tolist()})
+        result = {"run": run, "physics_steps": total_ticks, "policy_ticks": total_ticks // 10, "command_vx_mps": args.vx, "forward_displacement_m": float(data.qpos[0]-x0), "max_abs_joint_angle_rad": max_abs_angle, "min_root_height_m":min_root_height,"max_abs_roll_rad":max_abs_roll,"max_abs_pitch_rad":max_abs_pitch, "contact_transitions": contact_transitions, "max_stance_slip_m": max_stance_slip_m, "non_foot_collision_count": non_foot_collision_count, "observation_width": len(obs_fixture), "action_width": len(action_fixture), "first_observation": obs_fixture, "first_action": action_fixture, "mode": args.mode}
+        if not args.showcase and args.diagnostic_delay_steps == 0 and args.diagnostic_drop_policy_tick is None:
             validate_frozen_run(result)
         results.append(result)
         traces.append(trace)

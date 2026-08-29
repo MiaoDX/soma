@@ -92,7 +92,7 @@ TTL/reset/rejection evidence before reporting success.
 
 ## Active Work
 
-- Completed headless simulation slice: [Open Duck Mini walk policy](docs/plans/open-duck-mini-walk-policy.md). The fixed Duck Plant, isolated transport, Python ONNX client, lineage/fault evidence, and supervised launcher pass Stage 4. Two direct and two process runs are stable; delay and stall cases preserve deadline/hold behavior. The trained 300M policy remains a viable experimental backup, while the frozen published `BEST_WALK_ONNX.onnx` remains the default. Duck-specific visualization and the post-acceptance D-04 process-topology review are parked.
+- Completed headless simulation slice: [Open Duck Mini walk policy](docs/plans/open-duck-mini-walk-policy.md). The fixed Duck Plant, isolated transport, Python ONNX client, lineage/fault evidence, and supervised launcher pass Stage 4. Two direct and two process runs are stable; delay and stall cases preserve deadline/hold behavior. The frozen published `BEST_WALK_ONNX.onnx` remains the default. A single composite user-facing rollout with synchronized MJCF/Rerun visualization is active in [the Open Duck showcase plan](docs/plans/open-duck-showcase.md); the frozen straight-walk case remains its internal regression gate.
 - Active comparison/hardware state: [bootstrap capsule](docs/status/active/bootstrap.md)
 - Preflighted next slice: [official simulation fixed case suite](docs/plans/official-simulation-case-suite-plan.md)
 - Completed suite evidence: [official simulation fixed case suite report](docs/measurements/official-simulation-case-suite-report.md)
@@ -102,6 +102,7 @@ TTL/reset/rejection evidence before reporting success.
 - Implemented, manual display review pending: [simulation visualization plan](docs/plans/simulation-visualization-plan.md)
 - Implemented, desktop interaction review pending: [simulation command-session plan](docs/plans/reachy-command-session.md)
 - Completed and published; enriched choreography locally verified for the next `main` deployment: [simulation showcase plan](docs/plans/simulation-showcase.md)
+- Active local review: [Open Duck composite showcase](docs/plans/open-duck-showcase.md)
 
 Open Duck Mini is the only additional robot profile in active scope, and only
 as one fixed MuJoCo policy qualification. Generic manifests, Duck hardware, a
