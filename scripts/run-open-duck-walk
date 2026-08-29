@@ -6,6 +6,8 @@ import mujoco
 import numpy as np
 import onnxruntime as ort
 
+GAIT_PHASE_PERIOD = 27
+
 ROOT = Path(__file__).resolve().parents[1]
 BUNDLE = ROOT / "crates/soma-sim/assets/open-duck-mini-v2"
 JOINTS = ["left_hip_yaw", "left_hip_roll", "left_hip_pitch", "left_knee", "left_ankle", "neck_pitch", "head_pitch", "head_yaw", "head_roll", "right_hip_yaw", "right_hip_roll", "right_hip_pitch", "right_knee", "right_ankle"]
@@ -16,6 +18,7 @@ def main():
     p.add_argument("--case", default=str(ROOT / "docs/status/active/open-duck-stage0-case.md"))
     p.add_argument("--repeat", type=int, default=1)
     p.add_argument("--checkpoint", type=Path, default=BUNDLE / "BEST_WALK_ONNX.onnx")
+    p.add_argument("--experimental-checkpoint-sha256", help=argparse.SUPPRESS)
     p.add_argument("--vx", type=float, default=0.3)
     p.add_argument("--visualize", action="store_true", help=argparse.SUPPRESS)
     p.add_argument("--diagnostic-delay-steps", type=int, default=0, help=argparse.SUPPRESS)
@@ -24,7 +27,8 @@ def main():
     checkpoint = args.checkpoint.resolve()
     digest = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
     expected = {"3c606f9381a1710cc8fecdb7442787dcbfce3ee9bc02a6f1224774ab2b3a1067", "cb61453a8bcb547ccfdeb4f03ba0fa67ebcf767dcf4aa6e5c9a0d92b302f9b23"}
-    if digest not in expected or "FROZEN" not in Path(args.case).read_text():
+    experimental = args.experimental_checkpoint_sha256
+    if (digest not in expected and digest != experimental) or "FROZEN" not in Path(args.case).read_text():
         raise SystemExit("refusing rollout: frozen case or pinned checkpoint is invalid")
     if args.mode in {"policy", "stall"}:
         run_process_mode(args)
@@ -42,6 +46,11 @@ def main():
     if session.get_inputs()[0].shape != [1, 101] or session.get_outputs()[0].shape != [1, 14]:
         raise SystemExit("unexpected ONNX contract")
     results = []
+    floor_geom = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "floor")
+    foot_geoms = [mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, name)
+                  for name in ("left_foot_bottom_tpu", "right_foot_bottom_tpu")]
+    foot_sites = [mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, name)
+                  for name in ("left_foot", "right_foot")]
     for run in range(args.repeat):
         data = mujoco.MjData(model)
         mujoco.mj_resetDataKeyframe(model, data, mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_KEY, "home"))
@@ -52,7 +61,12 @@ def main():
         x0 = float(data.qpos[0])
         max_abs_angle = 0.0
         min_root_height = float("inf"); max_abs_roll = 0.0; max_abs_pitch = 0.0
-        contacts = [0, 0]
+        contacts = np.zeros(2, dtype=bool)
+        previous_contacts = contacts.copy()
+        contact_transitions = 0
+        max_stance_slip_m = 0.0
+        previous_foot_xy = None
+        non_foot_collision_count = 0
         obs_fixture = action_fixture = None
         phase = np.zeros(2, dtype=np.float32)
         delayed_targets = []
@@ -67,13 +81,35 @@ def main():
             accel = data.sensordata[6:9].astype(np.float32).copy(); accel[0] += 1.3
             qpos = np.array([data.qpos[model.jnt_qposadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, n)]] for n in JOINTS], dtype=np.float32)
             qvel = np.array([data.qvel[model.jnt_dofadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, n)]] for n in JOINTS], dtype=np.float32)
-            obs = np.concatenate((gyro, accel, np.array([args.vx,0,0,0,0,0,0], dtype=np.float32), qpos-default.astype(np.float32), qvel*0.05, *history, target.astype(np.float32), np.array([0,0], dtype=np.float32), phase)).astype(np.float32)
+            contacts = np.array([any(
+                (contact.geom1 == foot and contact.geom2 == floor_geom) or
+                (contact.geom2 == foot and contact.geom1 == floor_geom)
+                for contact in data.contact) for foot in foot_geoms], dtype=np.float32)
+            if previous_foot_xy is not None:
+                foot_xy = data.site_xpos[foot_sites, :2].copy()
+                for foot in range(2):
+                    if contacts[foot] and previous_contacts[foot]:
+                        max_stance_slip_m = max(
+                            max_stance_slip_m,
+                            float(np.linalg.norm(foot_xy[foot] - previous_foot_xy[foot])),
+                        )
+                previous_foot_xy = foot_xy
+            else:
+                previous_foot_xy = data.site_xpos[foot_sites, :2].copy()
+            contact_transitions += int(np.count_nonzero(contacts != previous_contacts))
+            previous_contacts = contacts.astype(bool)
+            non_foot_collision_count += sum(
+                not ((contact.geom1 in foot_geoms and contact.geom2 == floor_geom)
+                     or (contact.geom2 in foot_geoms and contact.geom1 == floor_geom))
+                for contact in data.contact
+            )
+            obs = np.concatenate((gyro, accel, np.array([args.vx,0,0,0,0,0,0], dtype=np.float32), qpos-default.astype(np.float32), qvel*0.05, *history, target.astype(np.float32), contacts, phase)).astype(np.float32)
             if obs.size != 101: raise SystemExit(f"observation width {obs.size}")
             action = session.run(None, {"obs": obs[None, :]})[0][0].astype(np.float32)
             if not np.isfinite(action).all(): raise SystemExit("non-finite policy output")
             history = [action, *history[:2]]
-            phase_i = (tick // 10 + 1) % 100
-            phase = np.array([math.cos(phase_i / 100 * 2 * math.pi), math.sin(phase_i / 100 * 2 * math.pi)], dtype=np.float32)
+            phase_i = (tick // 10 + 1) % GAIT_PHASE_PERIOD
+            phase = np.array([math.cos(phase_i / GAIT_PHASE_PERIOD * 2 * math.pi), math.sin(phase_i / GAIT_PHASE_PERIOD * 2 * math.pi)], dtype=np.float32)
             proposed = default + action * 0.25
             limit = 5.24 * 0.02
             target = np.clip(proposed, previous-limit, previous+limit); previous = target.copy()
@@ -84,26 +120,59 @@ def main():
             max_abs_angle = max(max_abs_angle, float(np.max(np.abs(data.qpos[7:]))))
             w,x,y,z=data.qpos[3:7]; roll=math.atan2(2*(w*x+y*z),1-2*(x*x+y*y)); pitch=math.asin(np.clip(2*(w*y-z*x),-1,1))
             min_root_height=min(min_root_height,float(data.qpos[2])); max_abs_roll=max(max_abs_roll,abs(roll)); max_abs_pitch=max(max_abs_pitch,abs(pitch))
-        results.append({"run": run, "physics_steps": 4000, "policy_ticks": 400, "command_vx_mps": args.vx, "forward_displacement_m": float(data.qpos[0]-x0), "max_abs_joint_angle_rad": max_abs_angle, "min_root_height_m":min_root_height,"max_abs_roll_rad":max_abs_roll,"max_abs_pitch_rad":max_abs_pitch, "observation_width": len(obs_fixture), "action_width": len(action_fixture), "first_observation": obs_fixture, "first_action": action_fixture, "mode": args.mode})
+        results.append({"run": run, "physics_steps": 4000, "policy_ticks": 400, "command_vx_mps": args.vx, "forward_displacement_m": float(data.qpos[0]-x0), "max_abs_joint_angle_rad": max_abs_angle, "min_root_height_m":min_root_height,"max_abs_roll_rad":max_abs_roll,"max_abs_pitch_rad":max_abs_pitch, "contact_transitions": contact_transitions, "max_stance_slip_m": max_stance_slip_m, "non_foot_collision_count": non_foot_collision_count, "observation_width": len(obs_fixture), "action_width": len(action_fixture), "first_observation": obs_fixture, "first_action": action_fixture, "mode": args.mode})
     print(json.dumps({"contract": {"nq":21,"nv":20,"nu":14,"observation":101,"action":14,"timestep":0.002}, "runs": results}, indent=2))
 
 def run_process_mode(args):
+    if args.repeat > 1:
+        for _ in range(args.repeat):
+            single = argparse.Namespace(**vars(args))
+            single.repeat = 1
+            run_process_mode(single)
+        return
     env = os.environ.copy()
     env["LD_LIBRARY_PATH"] = str(ROOT / ".mujoco/mujoco-3.9.0/lib") + ":" + env.get("LD_LIBRARY_PATH", "")
     procs = []
+    ready_file = Path(f"/tmp/soma-open-duck-policy-ready-{os.getpid()}")
+    ready_file.unlink(missing_ok=True)
+    for socket_path in ("/tmp/soma-open-duck-rt.sock", "/tmp/soma-open-duck-runtime.sock"):
+        lock_path = Path(f"{socket_path}.lock")
+        owner = lock_path.read_text().strip() if lock_path.exists() else ""
+        if not owner or not Path(f"/proc/{owner}").exists():
+            Path(socket_path).unlink(missing_ok=True)
+            lock_path.unlink(missing_ok=True)
     try:
+        # Start the runtime/router first, then let the policy establish its
+        # state subscription before the RT owner begins publishing frames.
         procs.append(subprocess.Popen([str(ROOT / "target/debug/open-duck-runtime")], env=env,
                                       stdout=subprocess.DEVNULL, stderr=subprocess.PIPE))
-        time.sleep(0.2)
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline:
+            if (Path("/tmp/soma-open-duck-runtime.sock").exists()
+                    and all(proc.poll() is None for proc in procs)):
+                break
+            time.sleep(0.05)
+        if not Path("/tmp/soma-open-duck-runtime.sock").exists():
+            errors = [proc.stderr.read().decode(errors="replace") if proc.stderr else "" for proc in procs]
+            raise SystemExit("Open Duck runtime/RT did not become ready: " + "\n".join(errors))
         policy_python = ROOT / "python/.venv/bin/python"
         duration = "2" if args.mode == "stall" else "8"
         policy = [str(policy_python), "-m", "soma_client.open_duck_policy", "--duration", duration,
-                  "--checkpoint", str(args.checkpoint.resolve())]
+                  "--checkpoint", str(args.checkpoint.resolve()), "--ready-file", str(ready_file)]
         if args.mode == "stall": policy += ["--stall-after", "1"]
         proc = subprocess.Popen(policy, cwd=ROOT / "python", env={**env, "PYTHONPATH": "."},
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         procs.append(proc)
-        time.sleep(0.1)
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline and not ready_file.exists():
+            if proc.poll() is not None:
+                break
+            time.sleep(0.05)
+        if not ready_file.exists():
+            raise SystemExit("Open Duck policy did not establish its state subscription")
+        # Zenoh declaration is local; allow the router's remote matching state
+        # to settle before the RT owner publishes the first policy frame.
+        time.sleep(0.25)
         procs.append(subprocess.Popen([str(ROOT / "target/debug/open-duck-rt")], env=env,
                                       stdout=subprocess.DEVNULL, stderr=subprocess.PIPE))
         out, err = proc.communicate(timeout=15)
@@ -126,10 +195,17 @@ def run_process_mode(args):
                 raise SystemExit("Open Duck process rollout violated roll/pitch envelope")
         print(json.dumps({"mode": args.mode, "process_path": True, "evidence": evidence}))
     finally:
+        owned_pids = {str(proc.pid) for proc in procs}
         for proc in procs:
             if proc.poll() is None: proc.send_signal(signal.SIGINT)
         for proc in procs:
             try: proc.wait(timeout=2)
             except subprocess.TimeoutExpired: proc.kill()
+        ready_file.unlink(missing_ok=True)
+        for socket_path in ("/tmp/soma-open-duck-rt.sock", "/tmp/soma-open-duck-runtime.sock"):
+            lock_path = Path(f"{socket_path}.lock")
+            if lock_path.exists() and lock_path.read_text().strip() in owned_pids:
+                Path(socket_path).unlink(missing_ok=True)
+                lock_path.unlink(missing_ok=True)
 
 if __name__ == "__main__": main()

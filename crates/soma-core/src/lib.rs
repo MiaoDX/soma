@@ -135,9 +135,31 @@ impl<const N: usize> ControlCore<N> {
         command: Option<ActuatorTarget<N>>,
         now_ns: u64,
     ) -> Result<ControlTick<N>, ControlError<P::Error>> {
+        self.tick_impl(plant, command, now_ns, true)
+    }
+
+    /// Apply an asynchronously captured target. The target sequence belongs to
+    /// the producer's source stream, so it is compared only with the last
+    /// admitted target rather than the plant's faster measured-state sequence.
+    pub fn tick_async<P: Plant<N>>(
+        &mut self,
+        plant: &mut P,
+        command: Option<ActuatorTarget<N>>,
+        now_ns: u64,
+    ) -> Result<ControlTick<N>, ControlError<P::Error>> {
+        self.tick_impl(plant, command, now_ns, false)
+    }
+
+    fn tick_impl<P: Plant<N>>(
+        &mut self,
+        plant: &mut P,
+        command: Option<ActuatorTarget<N>>,
+        now_ns: u64,
+        guard_against_measured_sequence: bool,
+    ) -> Result<ControlTick<N>, ControlError<P::Error>> {
         let measured = plant.read_state().map_err(ControlError::Read)?;
         self.observe_timeline(measured.timeline);
-        if self.last_sequence.is_none() {
+        if guard_against_measured_sequence && self.last_sequence.is_none() {
             self.last_sequence = Some(measured.sequence);
         }
 
@@ -391,5 +413,26 @@ mod tests {
         );
         assert_eq!(plant.applied, [0.1; ACTUATOR_COUNT]);
         assert!(!tick.applied.expiry_transition);
+    }
+
+    #[test]
+    fn async_targets_use_producer_sequence_not_faster_measured_sequence() {
+        let mut core = ControlCore::new();
+        let mut plant = TestPlant::new();
+        plant.state.sequence = 100;
+
+        let first = core
+            .tick_async(&mut plant, Some(target(1, 7)), 105)
+            .unwrap();
+        assert_eq!(
+            first.command_result,
+            CommandResult::Accepted { sequence: 1 }
+        );
+
+        plant.state.sequence = 110;
+        let next = core
+            .tick_async(&mut plant, Some(target(2, 7)), 106)
+            .unwrap();
+        assert_eq!(next.command_result, CommandResult::Accepted { sequence: 2 });
     }
 }

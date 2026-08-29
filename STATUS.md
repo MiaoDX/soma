@@ -1,6 +1,6 @@
 # Soma Status
 
-Updated: 2026-08-26
+Updated: 2026-08-28
 
 ## Current State
 
@@ -88,7 +88,7 @@ It runs `scripts/verify-sim-showcase` before reporting success.
 
 ## Active Work
 
-- Approved next simulation slice: [Open Duck Mini walk policy](docs/plans/open-duck-mini-walk-policy.md). Stage 0 is ready to vendor the pinned compatibility bundle and freeze same-tick reference evidence; no Duck support is implemented yet.
+- Completed headless simulation slice: [Open Duck Mini walk policy](docs/plans/open-duck-mini-walk-policy.md). The fixed Duck Plant, isolated transport, Python ONNX client, lineage/fault evidence, and supervised launcher pass Stage 4. Two direct and two process runs are stable; delay and stall cases preserve deadline/hold behavior. The trained 300M policy remains a viable experimental backup, while the frozen published `BEST_WALK_ONNX.onnx` remains the default. Duck-specific visualization and the post-acceptance D-04 process-topology review are parked.
 - Active comparison/hardware state: [bootstrap capsule](docs/status/active/bootstrap.md)
 - Preflighted next slice: [official simulation fixed case suite](docs/plans/official-simulation-case-suite-plan.md)
 - Completed suite evidence: [official simulation fixed case suite report](docs/measurements/official-simulation-case-suite-report.md)

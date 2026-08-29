@@ -18,6 +18,8 @@ use soma_core::{
 };
 
 pub const OPEN_DUCK_ACTUATOR_COUNT: usize = 14;
+const OPEN_DUCK_FOOT_GEOM_NAMES: [&str; 2] = ["left_foot_bottom_tpu", "right_foot_bottom_tpu"];
+const OPEN_DUCK_FLOOR_GEOM_NAME: &str = "floor";
 pub const OPEN_DUCK_ACTUATOR_NAMES: [&str; OPEN_DUCK_ACTUATOR_COUNT] = [
     "left_hip_yaw",
     "left_hip_roll",
@@ -284,6 +286,7 @@ pub enum SimError {
         actuators: usize,
     },
     MissingActuator(&'static str),
+    MissingGeom(&'static str),
     WrongActuatorOrder {
         name: &'static str,
         expected: usize,
@@ -313,6 +316,8 @@ pub struct OpenDuckSimPlant {
     physics_schedule: PhysicsSchedule,
     timeline: u64,
     sequence: u64,
+    foot_geom_ids: [i32; 2],
+    floor_geom_id: i32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -321,6 +326,7 @@ pub struct OpenDuckPolicyFacts {
     pub velocities_rad_s: [f32; OPEN_DUCK_ACTUATOR_COUNT],
     pub gyro_rad_s: [f32; 3],
     pub acceleration_m_s2: [f32; 3],
+    pub feet_contacts: [f32; 2],
     pub root_height_m: f32,
     pub root_roll_rad: f32,
     pub root_pitch_rad: f32,
@@ -356,6 +362,20 @@ impl OpenDuckSimPlant {
                 });
             }
         }
+        let geom_id = |name| {
+            model
+                .geom(name)
+                .map(|geom| geom.id as i32)
+                .ok_or(SimError::MissingGeom(name))
+        };
+        let foot_geom_ids = [
+            geom_id(OPEN_DUCK_FOOT_GEOM_NAMES[0])?,
+            geom_id(OPEN_DUCK_FOOT_GEOM_NAMES[1])?,
+        ];
+        let floor_geom_id = model
+            .geom(OPEN_DUCK_FLOOR_GEOM_NAME)
+            .map(|geom| geom.id as i32)
+            .ok_or(SimError::MissingGeom(OPEN_DUCK_FLOOR_GEOM_NAME))?;
         let physics_schedule = PhysicsSchedule::new(control_period, model.opt().timestep)
             .map_err(SimError::PhysicsSchedule)?;
         let mut data = MjData::new(model);
@@ -366,6 +386,8 @@ impl OpenDuckSimPlant {
             physics_schedule,
             timeline: 1,
             sequence: 0,
+            foot_geom_ids,
+            floor_geom_id,
         })
     }
 
@@ -412,11 +434,18 @@ impl OpenDuckSimPlant {
         let (w, x, y, z) = (q[3], q[4], q[5], q[6]);
         let roll = (2.0 * (w * x + y * z)).atan2(1.0 - 2.0 * (x * x + y * y));
         let pitch = (2.0 * (w * y - z * x)).clamp(-1.0, 1.0).asin();
+        let feet_contacts = self.foot_geom_ids.map(|foot_geom_id| {
+            f32::from(self.data.contact().iter().any(|contact| {
+                (contact.geom1 == foot_geom_id && contact.geom2 == self.floor_geom_id)
+                    || (contact.geom2 == foot_geom_id && contact.geom1 == self.floor_geom_id)
+            }))
+        });
         OpenDuckPolicyFacts {
             positions_rad: self.positions(),
             velocities_rad_s,
             gyro_rad_s: std::array::from_fn(|i| sensors[i] as f32),
             acceleration_m_s2: std::array::from_fn(|i| sensors[6 + i] as f32),
+            feet_contacts,
             root_height_m: q[2] as f32,
             root_roll_rad: roll as f32,
             root_pitch_rad: pitch as f32,
@@ -722,7 +751,12 @@ mod tests {
     fn open_duck_profile_advances_and_resets_timeline() {
         let mut plant = OpenDuckSimPlant::load(Duration::from_millis(2)).unwrap();
         let before = plant.read_state().unwrap();
-        plant.advance_physics_step();
+        let mut observed_foot_contact = false;
+        for _ in 0..50 {
+            plant.advance_physics_step();
+            observed_foot_contact |= plant.policy_facts().feet_contacts.contains(&1.0);
+        }
+        assert!(observed_foot_contact);
         let after = plant.read_state().unwrap();
         assert!(after.timestamp_ns > before.timestamp_ns);
         plant.reset();
