@@ -1,8 +1,8 @@
 # Policy/Inference to Real-Time Interface
 
-> Status: M1a contract narrowed by D-19. Interpolation ownership, command TTL,
-> `control_mode -> SafeBehavior`, and lineage are current scope. Observation
-> alignment and action chunking are deferred until a real policy workload.
+> Status: D-19 updated for the approved Open Duck workload. Latest-value
+> timing, bounded zero-order hold, command TTL, `control_mode -> SafeBehavior`,
+> and lineage are current scope. Action chunking remains deferred.
 
 ## Question
 
@@ -51,8 +51,9 @@ chosen interpolation owner, a bounded TTL, an explicit mapping from each
 supported `control_mode` to a named `SafeBehavior`, and the resulting
 requested/admitted/safety-output/applied lineage.
 
-The following questions are real but deferred because M1 has no trained policy
-or training/deployment pipeline to validate them against:
+The approved Open Duck workload now supplies a representative observation and
+deployment pipeline. It freezes capture-time lineage and history ordering for
+that profile without creating a generic observation API:
 
 3. **Observation time alignment.** History-buffer assembly for the policy
    needs a defined alignment (capture-time vs. tick-time) and a defined
@@ -68,13 +69,42 @@ A fifth, lower-priority question — GPU/CPU resource contention between
 inference and perception, and its effect on `robot-runtime` scheduling — is
 noted here but out of scope until a real inference workload exists.
 
-### Why this cannot wait for real hardware or a real model
+### Why this cannot wait for real hardware
 
 Interpolation, TTL, safe-behavior selection and lineage are pure
 control-and-timing semantics; none requires a trained policy, a GPU or
 physical hardware. A lookup table or sine wave at a fixed low rate is enough
-to force those paths. Observation alignment and chunking, by contrast, are
-not frozen without a representative model and pipeline.
+to force those paths. Open Duck now provides the representative model needed
+to verify one concrete observation-alignment contract; chunking remains
+deferred.
+
+### Reference scheduling choices
+
+"Synchronous" is not a sufficient classification for a robot control stack.
+The useful questions are whether sensor delivery, inference, and low-level
+actuation share a thread; which rates they use; and how the consumer handles a
+target between policy updates.
+
+| Reference | State and inference | Low-level application | Choice and consequence |
+| --- | --- | --- | --- |
+| Open Duck Playground | One MuJoCo runner samples observation and runs ONNX every ten 2 ms physics steps | The new target is written immediately, then held for subsequent physics steps | Same-thread 50 Hz reference with no fixed 20 ms frame delay; simplest compatibility oracle |
+| Berkeley Humanoid Lite | The loop computes an action from the returned observation | `step(action)` applies it over the next policy interval's physics substeps | Synchronous application-level loop; communication details remain below that interface |
+| Unitree SDK2 G1 example | DDS `LowState` arrives through a subscriber callback | A separate recurrent 2 ms thread publishes `LowCmd` from the latest state/command | Asynchronous delivery plus periodic actuation; callback and command thread are not lockstep |
+| Unitree RL Lab | A dedicated policy thread updates processed actions at `step_dt` | A separate 1 kHz FSM thread reads the latest processed action and publishes `LowCmd` | Explicit latest-value split; closest public reference to Soma's policy/RT timing semantics |
+| AgiBot X1 Infer | ROS2/AimRT callbacks update IMU, joint, and velocity-command buffers; ONNX runs every tenth 1 kHz control tick | The 1 kHz control loop publishes the current action every tick | Asynchronous inputs with inference coupled to the cyclic thread; simpler phase relation but inference jitter enters that thread |
+
+Soma follows the Unitree RL Lab timing shape while retaining a stronger process
+boundary: Duck inference completes at 50 Hz independently, the runtime
+coalesces to the latest target, and the 500 Hz periodic owner applies it at the
+first available 2 ms RT tick. The resulting latency is variable and measured.
+A fixed 20 ms delay is a fault-injection case, not the nominal pipeline.
+
+The process boundary is still an open optimization question, not an established
+safety result. Rust can improve memory safety and make ownership explicit, but
+`async` alone does not guarantee bounded latency, freshness, deterministic
+shutdown, or fault containment. D-04 therefore schedules a post-Duck comparison
+of isolated Python inference, Rust-hosted inference in `robot-runtime`, and a
+single Rust process with separate async and periodic execution domains.
 
 ## Alternatives
 
@@ -94,27 +124,27 @@ than leaving it as an application-code choice.
 - Add a bounded command TTL and `control_mode -> SafeBehavior` mapping to
   `SafetyProfile`; hold/decay/fallback/inhibit are candidate behaviors rather
   than a requirement to implement all four in M1a.
-- Decide interpolator ownership before the RT/runtime mailbox layout is
-  finalized; changing it later changes the mailbox contract.
+- Keep zero-order hold in the command consumer so it retains direct ownership
+  of staleness, expiry, and applied evidence.
 - Extend the requested/admitted/safety-output/applied command lineage
   (`docs/architecture/diagrams/soma-command-lineage.svg`) with a documented
   case for "no new requested command this tick" so a stale-source event is
   visible in the same evidence trail as a rejected command, not silently
   absent from it.
-- M1a should include a synthetic 20 Hz cadence source (no trained model
-  required) specifically to force the timeout, interpolation, and staleness
-  paths to exist before hardware or a real policy arrive. See the
+- M1a includes a synthetic 20 Hz cadence source specifically to force timeout,
+  interpolation, and staleness paths independently of Duck inference. See the
   `cadence-source-decimation` row proposed in the bootstrap plan's
   verification matrix.
-- Do not put observation alignment or action chunks into the M1 mailbox or
-  public schema. Reopen them when a representative policy workload exists.
+- Keep Duck observation alignment profile-specific and out of the generic
+  Plant/mailbox API. Reopen action chunks only for a representative chunked
+  policy.
 
 ## Trade-offs
 
-Freezing interpolation, TTL, safe behavior and lineage now prevents the
-mailbox boundary from being set accidentally and closes the stale-command
-fault path. Deferring alignment and chunking avoids designing a policy
-pipeline that M1 cannot evaluate empirically.
+Freezing zero-order hold, TTL, safe behavior, and lineage prevents the mailbox
+boundary from being set accidentally and closes the stale-command fault path.
+Duck supplies one concrete alignment contract without forcing it into a
+generic API; chunking remains deferred.
 
 ## Sources
 
@@ -126,6 +156,11 @@ pipeline that M1 cannot evaluate empirically.
   artifact fields (model, schema, normalization, history length, rate).
 - `docs/deep-research/time-synchronization-and-determinism.md` — timeline and
   generation semantics that any staleness policy must compose with.
+- [Open Duck Playground runner](https://github.com/apirrone/Open_Duck_Playground/blob/b9be205ac64488c23504ca42e5ec790337adeec3/playground/playground/open_duck_mini_v2/mujoco_infer.py)
+- [Berkeley Humanoid Lite MuJoCo environment](https://github.com/HybridRobotics/berkeley-humanoid-lite/blob/984741a3623c93b0583ccfdc479f1f8b1c4d900e/source/berkeley_humanoid_lite/berkeley_humanoid_lite/environments/mujoco.py)
+- [Unitree SDK2 G1 low-level example](https://github.com/unitreerobotics/unitree_sdk2_python/blob/65691c8a8bc53b98d3976dba4dbf9d5d20b2e7f5/example/g1/low_level/g1_low_level_example.py)
+- [Unitree RL Lab policy thread](https://github.com/unitreerobotics/unitree_rl_lab/blob/4960b84732b0c2ec593dccbfe963fda1bcd7b1e3/deploy/include/FSM/State_RLBase.h) and [1 kHz FSM thread](https://github.com/unitreerobotics/unitree_rl_lab/blob/4960b84732b0c2ec593dccbfe963fda1bcd7b1e3/deploy/include/FSM/CtrlFSM.h)
+- [AgiBot X1 control loop](https://github.com/AgibotTech/agibot_x1_infer/blob/9e0b818804d644fb9c9663e932dd33b03b24dfa4/src/module/control_module/src/control_module.cc) and [decimated RL inference](https://github.com/AgibotTech/agibot_x1_infer/blob/9e0b818804d644fb9c9663e932dd33b03b24dfa4/src/module/control_module/src/rl_controller.cc)
 
 ## Open questions
 
@@ -135,6 +170,5 @@ pipeline that M1 cannot evaluate empirically.
   `panic = "abort"` and controlled-crouch-style safe behavior)?
 - Should chunk execution be modeled as a first-class RT-visible concept, or
   fully flattened into per-tick commands before the mailbox boundary?
-- What is the minimum viable observation-alignment contract that keeps
-  batch/production paths bit-identical without over-specifying a training
-  pipeline Soma does not own?
+- What common observation-alignment contract, if any, is justified after a
+  future second policy workload rather than inferred from Duck alone?
