@@ -27,6 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut admitted_sequence = 0;
     let mut admitted_capture_ns = 0;
     let mut pending_capture_ns = 0;
+    let mut rejected_count = 0_u64;
     loop {
         match owned.socket.recv(&mut bytes) {
             Ok(size) => {
@@ -40,6 +41,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         issued_at_ns: target.capture_monotonic_ns,
                         ttl_ns: target.ttl_ns,
                     });
+                } else {
+                    rejected_count = rejected_count.wrapping_add(1);
                 }
             }
             Err(e) if e.kind() == ErrorKind::WouldBlock => {}
@@ -55,14 +58,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             admitted_sequence = sequence;
             admitted_capture_ns = pending_capture_ns;
         }
-        if ticks.is_multiple_of(10) {
+        if ticks % 10 == 1 {
             let facts = plant.policy_facts();
-            let (applied_sequence, flags) = match tick.applied.command {
+            let (applied_sequence, mut flags) = match tick.applied.command {
                 AppliedCommand::Target { sequence } => (sequence, 1),
                 AppliedCommand::MeasuredPositionHold { .. } => {
                     (0, 2 | (u32::from(tick.applied.expiry_transition) * 4))
                 }
             };
+            if rejected_count != 0 {
+                flags |= 8;
+            }
             let state = OpenDuckState {
                 positions_rad: facts.positions_rad,
                 velocities_rad_s: facts.velocities_rad_s,
