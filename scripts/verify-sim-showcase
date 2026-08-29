@@ -19,7 +19,7 @@ assert len(set(raw))>16 and any(8<x<247 for x in raw), "poster pixels are blank"
 webm=(d/"motion.webm").read_bytes(); assert webm[:4]==b"\x1aE\xdf\xa3", "invalid WebM EBML signature"
 probe=subprocess.run([ffmpeg,"-hide_banner","-i",str(d/"motion.webm"),"-f","null","-"],stderr=subprocess.PIPE,text=True)
 m=re.search(r"Duration: (\d+):(\d+):(\d+(?:\.\d+)?)",probe.stderr); assert m, "WebM duration unavailable"
-duration=int(m[1])*3600+int(m[2])*60+float(m[3]); assert duration>=6.0, f"WebM too short: {duration}s"
+duration=int(m[1])*3600+int(m[2])*60+float(m[3]); assert 14.0<=duration<=14.2, f"WebM duration is not the showcase capture duration: {duration}s"
 frame_md5=subprocess.check_output([ffmpeg,"-hide_banner","-loglevel","error","-i",str(d/"motion.webm"),"-f","framemd5","-"],text=True)
 frame_hashes={line.rsplit(",",1)[-1].strip() for line in frame_md5.splitlines() if line and not line.startswith("#")}
 assert len(frame_hashes)>1, "WebM contains no visible frame changes"
@@ -29,6 +29,13 @@ for link in links:
 assert "https://miaodx.com/soma/evidence.rrd" in html, "Rerun data URL must avoid the github.io redirect"
 assert "miaodx.github.io" not in html, "redirected Rerun data URL breaks browser CORS"
 meta=json.loads((d/"metadata.json").read_text()); assert meta["scenario_result"]=="passed" and meta["scope"]=="simulation-only"
+motion=meta["choreography"]
+assert motion["duration_seconds"]==12.0 and motion["capture_duration_seconds"]==14.0
+assert 20<=motion["sample_hz"]<=50
+assert motion["complete_target_positions"]==9
+ranges=motion["target_ranges_rad"]
+assert len(ranges)==9 and ranges[0]>0.5 and ranges[7]>1.0 and ranges[8]>1.0
+assert all(value>0.02 for value in ranges[1:7]), "all six Stewart streams must move"
 assert meta["renderer"]["camera_id"]==0 and meta["renderer"]["camera_name"]=="studio_close"
 assert meta["rerun_3d"]=={"source":"compiled Reachy Mini MJCF robot model","loader":"rerun-loader-mjcf","loader_version":"1.0.1","timeline":"program_time"}
 text=(html+json.dumps(meta)).lower()
@@ -47,4 +54,27 @@ robot_mesh=$(cd "$repo_root/python" && UV_DEFAULT_INDEX=https://pypi.org/simple 
   echo "Rerun archive lacks Reachy MJCF mesh geometry" >&2
   exit 1
 }
-echo "verified real PNG, WebM, synchronized Reachy 3D, report links, and provenance"
+for actuator in yaw_body stewart_1 stewart_2 stewart_3 stewart_4 stewart_5 stewart_6 right_antenna left_antenna; do
+  stream=$(cd "$repo_root/python" && UV_DEFAULT_INDEX=https://pypi.org/simple \
+    uv run --extra visualization rerun rrd print --entity "/actuators/$actuator/requested" "$output_dir/evidence.rrd")
+  [[ $stream == *"/actuators/$actuator/requested - data columns: [Scalars:scalars]"* ]] || {
+    echo "Rerun archive lacks requested stream for $actuator" >&2
+    exit 1
+  }
+done
+events=$(cd "$repo_root/python" && UV_DEFAULT_INDEX=https://pypi.org/simple \
+  uv run --extra visualization rerun rrd print -vvv --entity /events "$output_dir/evidence.rrd")
+for evidence in "TTL expiry: measured-position hold applied" \
+  "Plant timeline reset to 2" "command rejected: Timeline"; do
+  [[ $events == *"$evidence"* ]] || {
+    echo "Rerun archive lacks acceptance evidence: $evidence" >&2
+    exit 1
+  }
+done
+robot_motion=$(cd "$repo_root/python" && UV_DEFAULT_INDEX=https://pypi.org/simple \
+  uv run --extra visualization rerun rrd print -vvv --entity /robot/bodies/xl_330 "$output_dir/evidence.rrd")
+[[ $robot_motion == *"PT13."* ]] || {
+  echo "Rerun robot motion does not span the continuous capture" >&2
+  exit 1
+}
+echo "verified 14-second continuous multi-axis PNG/WebM/Rerun artifact, acceptance evidence, report links, and provenance"

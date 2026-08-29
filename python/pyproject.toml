@@ -8,6 +8,7 @@ dependencies = [
   "mujoco==3.6.0",
   "numpy==2.3.5",
   "onnxruntime==1.24.4",
+  "reachy-mini-rust-kinematics==1.0.3",
 ]
 
 [project.optional-dependencies]

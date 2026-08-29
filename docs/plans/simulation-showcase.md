@@ -1,15 +1,15 @@
 # Reachy Mini Simulation Showcase
 
-> Plan status: DONE; local pipeline and publication workflow verified, 2026-08-26
-> Last updated: 2026-08-26
+> Plan status: DONE; published pipeline and enriched choreography verified, 2026-08-29
+> Last updated: 2026-08-29
 > Control plane: `/root`
 
 ## Plan Ledger
 
-- `status`: DONE; local artifact pipeline, report, README integration, and Pages workflow implemented
-- `current_slice`: real MuJoCo poster/WebM and Rerun archive generated and verified from the fixed scenario
-- `next_action`: merge to `main` and verify the first live Pages deployment
-- `evidence`: `scripts/verify-sim-showcase`, responsive browser screenshots, and the generated ignored `output/simulation-showcase/`
+- `status`: DONE; artifact pipeline, live report, deterministic choreography, and Pages workflow implemented
+- `current_slice`: 12-second multi-axis choreography plus acceptance tail captured on one continuous 14-second MuJoCo/Rerun timeline
+- `next_action`: merge the choreography update and confirm the refreshed Pages deployment
+- `evidence`: `scripts/verify-sim-showcase`, browser/Rerun screenshots, and the generated ignored `output/simulation-showcase/`
 - `no_touch`: public protocol, Plant/RT semantics, robot profile, hardware gates, repository settings
 - `stop_condition`: reopen before any hardware claim, additional robot/backend, or interactive report control
 
@@ -24,7 +24,10 @@ the fixed-case comparison summary, and provenance for the exact commit and run.
 - Add one owning command, `scripts/build-sim-showcase`, which generates the
   complete static report without changing the existing headless scenario.
 - Generate a fixed-camera MuJoCo poster and browser-playable WebM from the
-  existing fixed Reachy simulation scenario.
+  existing fixed Reachy simulation command path.
+- Add a deterministic showcase-only choreography covering body yaw, antennae,
+  coordinated motion, and safe head nod/tilt targets derived by the pinned
+  official Reachy Mini analytical kinematics binding.
 - Persist the existing Rerun evidence as a downloadable `.rrd`.
 - Generate a self-contained static HTML report with scenario status, media,
   comparison metrics, commit provenance, and artifact links.
@@ -58,9 +61,9 @@ profiles, or deployment target requires renewed approval.
 2. The generated report visibly identifies Reachy Mini, embeds the poster and
    motion, links the `.rrd`, shows the declared Soma/official metrics, and names
    commit SHA plus scenario result.
-3. Generated media comes from the authoritative fixed simulation scenario and
-   uses a fixed reviewed camera; capture does not send commands or write back to
-   simulation.
+3. Generated media comes from the authoritative fixed simulation path and uses
+   a fixed reviewed camera; choreography commands use the existing public
+   command route, while capture remains read-only and cannot write back.
 4. The existing headless and interactive visualization commands retain their
    behavior and acceptance assertions.
 5. The Pages workflow runs the owning command, validates the report, uploads a
@@ -79,12 +82,11 @@ scripts/cargo-mujoco clippy --workspace --all-targets -- -D warnings
 scripts/run-sim-scenario
 ```
 
-Artifact verification must additionally check nonblank image pixels, media
-dimensions/duration, `.rrd` non-emptiness, HTML-local link resolution, metadata
-schema/content, and absence of hardware claims. The generated HTML requires a
-browser screenshot check at desktop and mobile widths. A real Pages deployment
-is an external repository-permission gate; local generation and workflow syntax
-must pass before that gate is reported.
+Artifact verification additionally checks nonblank image pixels, exact media
+duration, all nine requested Rerun streams, continuous robot transforms through
+the acceptance tail, TTL/reset/rejection events, HTML-local link resolution,
+metadata content, and absence of hardware claims. The generated HTML requires
+a browser screenshot check at desktop and mobile widths.
 
 ## Stop Gates
 
@@ -95,7 +97,7 @@ rendering rather than weakening the media acceptance criteria.
 
 ## Completion
 
-The complete local artifact pipeline, responsive report, README integration,
-and Pages workflow are implemented. The only remaining operational check is a
-successful deployment from `main`, which requires repository permissions and
-cannot be established by a feature-branch run.
+The artifact pipeline, responsive report, README integration, and Pages
+workflow are implemented and published. The richer choreography and continuous
+Rerun synchronization are locally product-verified; the refreshed deployment
+will follow the next merge to `main`.

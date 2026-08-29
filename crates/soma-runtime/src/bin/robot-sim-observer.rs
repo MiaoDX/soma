@@ -19,6 +19,8 @@ use soma_sim::ReachySimRenderer;
 use soma_sim::{
     ReachySimSnapshot, ReachySimViewer, ACTUATOR_NAMES, REACHY_SCENE_PATH, SNAPSHOT_LEN,
 };
+
+const SHOWCASE_CAPTURE_DURATION_NS: u64 = 14_000_000_000;
 use zenoh::Config;
 
 enum Evidence {
@@ -548,7 +550,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             let capture_complete = frames_dir.is_some()
                 && first_capture_ns.is_some_and(|start| {
-                    snapshot.capture_monotonic_ns.saturating_sub(start) >= 6_000_000_000
+                    snapshot.capture_monotonic_ns.saturating_sub(start)
+                        >= SHOWCASE_CAPTURE_DURATION_NS
                 });
             if let Err(TrySendError::Full(_)) | Err(TrySendError::Disconnected(_)) =
                 rerun.try_send(Evidence::Snapshot(Box::new(snapshot)))

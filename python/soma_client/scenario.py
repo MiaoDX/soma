@@ -3,6 +3,7 @@ from __future__ import annotations
 import queue
 import argparse
 import time
+from pathlib import Path
 
 import zenoh
 
@@ -30,9 +31,42 @@ def pace(enabled: bool, seconds: float) -> None:
         time.sleep(seconds)
 
 
+def run_showcase(session, states: queue.Queue, initial, data_path: Path) -> None:
+    from soma_client.showcase import TTL_NS, samples, validate_target
+
+    sequence = initial.sequence + 1
+    start = time.monotonic()
+    for sample in samples(data_path):
+        deadline = start + sample.time_seconds
+        delay = deadline - time.monotonic()
+        if delay > 0:
+            time.sleep(delay)
+        validate_target(sample.positions)
+        session.put(
+            COMMAND_KEY,
+            soma_pb2.RtRequest(
+                target=soma_pb2.ActuatorTarget(
+                    positions_rad=sample.positions,
+                    sequence=sequence,
+                    timeline=initial.timeline,
+                    issued_at_ns=time.monotonic_ns(),
+                    ttl_ns=TTL_NS,
+                )
+            ).SerializeToString(),
+        )
+        sequence += 1
+    accepted = wait_for(
+        states,
+        lambda state: state.command_disposition == soma_pb2.COMMAND_DISPOSITION_ACCEPTED
+        and state.applied_sequence == sequence - 1,
+    )
+    assert accepted.timeline == initial.timeline
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--visualize", action="store_true")
+    parser.add_argument("--showcase", type=Path, metavar="KINEMATICS_DATA")
     args = parser.parse_args()
     config = zenoh.Config.from_json5(
         """{
@@ -47,31 +81,36 @@ def main() -> None:
             initial = wait_for(states, lambda state: len(state.positions_rad) == 9)
             old_timeline = initial.timeline
             start_yaw = initial.positions_rad[0]
-            pace(args.visualize, 1.0)
+            if args.showcase:
+                run_showcase(session, states, initial, args.showcase)
+                held = wait_for(states, lambda state: state.expiry_transition)
+                assert held.applied_source == soma_pb2.APPLIED_SOURCE_MEASURED_POSITION_HOLD
+            else:
+                pace(args.visualize, 1.0)
 
-            positions = list(initial.positions_rad)
-            positions[0] += 0.2
-            command = soma_pb2.RtRequest(
-                target=soma_pb2.ActuatorTarget(
-                    positions_rad=positions,
-                    sequence=initial.sequence + 100,
-                    timeline=initial.timeline,
-                    ttl_ns=200_000_000,
+                positions = list(initial.positions_rad)
+                positions[0] += 0.2
+                command = soma_pb2.RtRequest(
+                    target=soma_pb2.ActuatorTarget(
+                        positions_rad=positions,
+                        sequence=initial.sequence + 100,
+                        timeline=initial.timeline,
+                        ttl_ns=200_000_000,
+                    )
                 )
-            )
-            session.put(COMMAND_KEY, command.SerializeToString())
-            accepted = wait_for(
-                states,
-                lambda state: state.command_disposition
-                == soma_pb2.COMMAND_DISPOSITION_ACCEPTED,
-            )
-            assert accepted.health == soma_pb2.PLANT_HEALTH_HEALTHY
-            assert accepted.state_age_ns > 0
-            wait_for(states, lambda state: abs(state.positions_rad[0] - start_yaw) > 0.01)
-            pace(args.visualize, 2.0)
-            held = wait_for(states, lambda state: state.expiry_transition)
-            assert held.applied_source == soma_pb2.APPLIED_SOURCE_MEASURED_POSITION_HOLD
-            pace(args.visualize, 1.0)
+                session.put(COMMAND_KEY, command.SerializeToString())
+                accepted = wait_for(
+                    states,
+                    lambda state: state.command_disposition
+                    == soma_pb2.COMMAND_DISPOSITION_ACCEPTED,
+                )
+                assert accepted.health == soma_pb2.PLANT_HEALTH_HEALTHY
+                assert accepted.state_age_ns > 0
+                wait_for(states, lambda state: abs(state.positions_rad[0] - start_yaw) > 0.01)
+                pace(args.visualize, 2.0)
+                held = wait_for(states, lambda state: state.expiry_transition)
+                assert held.applied_source == soma_pb2.APPLIED_SOURCE_MEASURED_POSITION_HOLD
+                pace(args.visualize, 1.0)
 
             session.put(
                 COMMAND_KEY,

@@ -23,8 +23,8 @@ cleanup() {
   local remove_runtime_socket=false
   sim_stack_lock_names_pid "${rt_pid:-}" /tmp/soma-robot-rt.sock.lock && remove_rt_socket=true
   sim_stack_lock_names_pid "${runtime_pid:-}" /tmp/soma-robot-runtime.sock.lock && remove_runtime_socket=true
-  kill "${rt_pid:-}" "${runtime_pid:-}" "${observer_pid:-}" 2>/dev/null || true
-  wait "${rt_pid:-}" "${runtime_pid:-}" "${observer_pid:-}" 2>/dev/null || true
+  kill "${rt_pid:-}" "${runtime_pid:-}" "${observer_pid:-}" "${scenario_pid:-}" 2>/dev/null || true
+  wait "${rt_pid:-}" "${runtime_pid:-}" "${observer_pid:-}" "${scenario_pid:-}" 2>/dev/null || true
   $remove_rt_socket && rm -f /tmp/soma-robot-rt.sock
   $remove_runtime_socket && rm -f /tmp/soma-robot-runtime.sock
   rm -f "$socket_path" "$socket_path.lock" "$socket_path.ready" "$socket_path.ready.lock" "$rt_log" "$runtime_log" "$observer_log"
@@ -45,8 +45,10 @@ for _ in $(seq 1 100); do [[ -S $socket_path && -f $socket_path.ready ]] && brea
 "$repo_root/target/release/robot-rt" --observe-socket "$socket_path" >"$rt_log" 2>&1 & rt_pid=$!
 for _ in $(seq 1 50); do sim_stack_fixed_endpoints_owned "$rt_pid" "$runtime_pid" && break; sleep 0.1; done
 sim_stack_fixed_endpoints_owned "$rt_pid" "$runtime_pid" || { cat "$rt_log" "$runtime_log" >&2; echo "showcase stack did not become ready" >&2; exit 1; }
-(cd "$repo_root/python" && timeout 20 env UV_DEFAULT_INDEX=https://pypi.org/simple uv run python -m soma_client.scenario --visualize)
+(cd "$repo_root/python" && timeout 25 env UV_DEFAULT_INDEX=https://pypi.org/simple uv run python -m soma_client.scenario \
+  --showcase "$repo_root/crates/soma-sim/assets/reachy-mini/kinematics_data.json") & scenario_pid=$!
 wait "$observer_pid" || { cat "$observer_log" >&2; exit 1; }
+wait "$scenario_pid"
 
 (
   cd "$repo_root/crates/soma-sim/assets/reachy-mini"
@@ -100,16 +102,23 @@ if (( frame_count < 2 )); then
   exit 1
 fi
 # The observer is intentionally lossy, so software-rendering throughput changes
-# the frame count. Map the captured scenario span to six seconds deterministically.
-"$ffmpeg" -hide_banner -loglevel error -framerate "$frame_count/6" -i "$frames_dir/frame-%04d.png" -c:v libvpx-vp9 -pix_fmt yuv420p -an -y "$output_dir/motion.webm"
+# the frame count. Map the continuous capture to its deterministic 14-second span.
+"$ffmpeg" -hide_banner -loglevel error -framerate "$frame_count/14" -i "$frames_dir/frame-%04d.png" -c:v libvpx-vp9 -pix_fmt yuv420p -an -y "$output_dir/motion.webm"
 rm -rf "$frames_dir"
 commit=$(git -C "$repo_root" rev-parse HEAD)
 generated=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 rrd_url="https://miaodx.com/soma/evidence.rrd"
 sed -e "s/@@COMMIT@@/$commit/g" -e 's/@@ROBOT@@/Reachy Mini/g' -e "s#@@RRD_URL@@#$rrd_url#g" "$repo_root/docs/showcase/index.template.html" >"$output_dir/index.html"
-python3 - "$output_dir/metadata.json" "$commit" "$generated" <<'PY'
+(
+cd "$repo_root/python"
+uv run python - "$output_dir/metadata.json" "$commit" "$generated" "$repo_root/crates/soma-sim/assets/reachy-mini/kinematics_data.json" <<'PY'
 import json,sys
-json.dump({"schema_version":1,"robot":"Reachy Mini","scope":"simulation-only","scenario":"fixed acceptance scenario","scenario_result":"passed","commit":sys.argv[2],"generated_utc":sys.argv[3],"renderer":{"engine":"mujoco-rs MjRenderer EGL offscreen","camera_id":0,"camera_name":"studio_close","width":640,"height":480},"rerun_3d":{"source":"compiled Reachy Mini MJCF robot model","loader":"rerun-loader-mjcf","loader_version":"1.0.1","timeline":"program_time"},"artifacts":{"poster":"poster.png","motion":"motion.webm","rerun":"evidence.rrd"}},open(sys.argv[1],"w"),indent=2)
+from pathlib import Path
+from soma_client.showcase import DURATION_SECONDS, SAMPLE_HZ, keyframes
+poses=keyframes(Path(sys.argv[4]))
+ranges=[max(p.positions[i] for p in poses)-min(p.positions[i] for p in poses) for i in range(9)]
+json.dump({"schema_version":1,"robot":"Reachy Mini","scope":"simulation-only","scenario":"deterministic 12-second Pages choreography plus acceptance proof","scenario_result":"passed","commit":sys.argv[2],"generated_utc":sys.argv[3],"choreography":{"duration_seconds":DURATION_SECONDS,"capture_duration_seconds":14.0,"sample_hz":SAMPLE_HZ,"pose_order":[p.name for p in poses],"target_ranges_rad":ranges,"complete_target_positions":9},"renderer":{"engine":"mujoco-rs MjRenderer EGL offscreen","camera_id":0,"camera_name":"studio_close","width":640,"height":480},"rerun_3d":{"source":"compiled Reachy Mini MJCF robot model","loader":"rerun-loader-mjcf","loader_version":"1.0.1","timeline":"program_time"},"artifacts":{"poster":"poster.png","motion":"motion.webm","rerun":"evidence.rrd"}},open(sys.argv[1],"w"),indent=2)
 PY
+)
 "$repo_root/scripts/verify-sim-showcase" "$output_dir"
 echo "showcase built and verified: $output_dir"
