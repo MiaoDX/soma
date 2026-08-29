@@ -10,6 +10,9 @@ if [[ -e $output_dir ]]; then
   exit 2
 fi
 frames_dir="$output_dir/frames"
+snapshots_file="$output_dir/reachy-snapshots.csv"
+telemetry_rrd="$output_dir/telemetry.rrd"
+robot_rrd="$output_dir/reachy-model.rrd"
 socket_path="/tmp/soma-showcase-$$.sock"
 rt_log=$(mktemp /tmp/soma-showcase-rt.XXXXXX.log)
 runtime_log=$(mktemp /tmp/soma-showcase-runtime.XXXXXX.log)
@@ -34,7 +37,9 @@ mkdir -p "$frames_dir"
 "$repo_root/scripts/cargo-mujoco" build --quiet --release -p soma-runtime --features sim-showcase --bin robot-rt --bin robot-runtime --bin robot-sim-observer
 export LD_LIBRARY_PATH="$repo_root/.mujoco/mujoco-3.9.0/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 "$repo_root/target/release/robot-runtime" >"$runtime_log" 2>&1 & runtime_pid=$!
-"$repo_root/target/release/robot-sim-observer" --snapshot-socket "$socket_path" --rerun-file "$output_dir/evidence.rrd" --frames-dir "$frames_dir" >"$observer_log" 2>&1 & observer_pid=$!
+"$repo_root/target/release/robot-sim-observer" --snapshot-socket "$socket_path" \
+  --rerun-file "$telemetry_rrd" --frames-dir "$frames_dir" \
+  --snapshots-file "$snapshots_file" >"$observer_log" 2>&1 & observer_pid=$!
 for _ in $(seq 1 100); do [[ -S $socket_path && -f $socket_path.ready ]] && break; kill -0 "$observer_pid" 2>/dev/null || { cat "$observer_log" >&2; exit 1; }; sleep 0.1; done
 [[ -S $socket_path && -f $socket_path.ready ]] || { cat "$observer_log" >&2; echo "showcase observer did not become ready" >&2; exit 1; }
 "$repo_root/target/release/robot-rt" --observe-socket "$socket_path" >"$rt_log" 2>&1 & rt_pid=$!
@@ -42,6 +47,49 @@ for _ in $(seq 1 50); do sim_stack_fixed_endpoints_owned "$rt_pid" "$runtime_pid
 sim_stack_fixed_endpoints_owned "$rt_pid" "$runtime_pid" || { cat "$rt_log" "$runtime_log" >&2; echo "showcase stack did not become ready" >&2; exit 1; }
 (cd "$repo_root/python" && timeout 20 env UV_DEFAULT_INDEX=https://pypi.org/simple uv run python -m soma_client.scenario --visualize)
 wait "$observer_pid" || { cat "$observer_log" >&2; exit 1; }
+
+(
+  cd "$repo_root/crates/soma-sim/assets/reachy-mini"
+  UV_DEFAULT_INDEX=https://pypi.org/simple uv run --project "$repo_root/python" \
+    --extra visualization python - "$snapshots_file" "$robot_rrd" <<'PY'
+import pathlib
+import sys
+
+import mujoco
+import numpy as np
+import rerun as rr
+from rerun_loader_mjcf import MJCFLogger, MJCFRecorder
+
+samples = np.loadtxt(sys.argv[1], delimiter=",", skiprows=1, ndmin=2)
+if samples.shape[1] != 41 or samples.shape[0] < 2:
+    raise SystemExit(f"unexpected Reachy snapshot trace shape: {samples.shape}")
+
+model = mujoco.MjModel.from_xml_path("reachy_mini.xml")
+if (model.nq, model.nv) != (37, 30):
+    raise SystemExit(f"unexpected Reachy model dimensions: {(model.nq, model.nv)}")
+data = mujoco.MjData(model)
+
+rr.init("soma_simulation", recording_id="reachy-showcase")
+rr.save(sys.argv[2])
+rr.set_time("program_time", duration=float(samples[0, 0]))
+logger = MJCFLogger(model, entity_path_prefix="robot")
+logger.log_model()
+
+with MJCFRecorder(logger, timeline_name="program_time") as recorder:
+    for sample in samples:
+        data.qpos[:] = sample[4:]
+        data.time = float(sample[1])
+        mujoco.mj_forward(model, data)
+        recorder.record(data, duration=float(sample[0]))
+PY
+)
+
+(
+  cd "$repo_root/python"
+  UV_DEFAULT_INDEX=https://pypi.org/simple uv run --extra visualization rerun rrd merge \
+    -o "$output_dir/evidence.rrd" "$telemetry_rrd" "$robot_rrd"
+)
+rm -f "$snapshots_file" "$telemetry_rrd" "$robot_rrd"
 
 ffmpeg=$(cd "$repo_root/python" && UV_DEFAULT_INDEX=https://pypi.org/simple \
   uv run --extra visualization python -c 'import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())')
@@ -61,7 +109,7 @@ rrd_url="https://miaodx.com/soma/evidence.rrd"
 sed -e "s/@@COMMIT@@/$commit/g" -e 's/@@ROBOT@@/Reachy Mini/g' -e "s#@@RRD_URL@@#$rrd_url#g" "$repo_root/docs/showcase/index.template.html" >"$output_dir/index.html"
 python3 - "$output_dir/metadata.json" "$commit" "$generated" <<'PY'
 import json,sys
-json.dump({"schema_version":1,"robot":"Reachy Mini","scope":"simulation-only","scenario":"fixed acceptance scenario","scenario_result":"passed","commit":sys.argv[2],"generated_utc":sys.argv[3],"renderer":{"engine":"mujoco-rs MjRenderer EGL offscreen","camera_id":0,"camera_name":"studio_close","width":640,"height":480},"artifacts":{"poster":"poster.png","motion":"motion.webm","rerun":"evidence.rrd"}},open(sys.argv[1],"w"),indent=2)
+json.dump({"schema_version":1,"robot":"Reachy Mini","scope":"simulation-only","scenario":"fixed acceptance scenario","scenario_result":"passed","commit":sys.argv[2],"generated_utc":sys.argv[3],"renderer":{"engine":"mujoco-rs MjRenderer EGL offscreen","camera_id":0,"camera_name":"studio_close","width":640,"height":480},"rerun_3d":{"source":"compiled Reachy Mini MJCF robot model","loader":"rerun-loader-mjcf","loader_version":"1.0.1","timeline":"program_time"},"artifacts":{"poster":"poster.png","motion":"motion.webm","rerun":"evidence.rrd"}},open(sys.argv[1],"w"),indent=2)
 PY
 "$repo_root/scripts/verify-sim-showcase" "$output_dir"
 echo "showcase built and verified: $output_dir"

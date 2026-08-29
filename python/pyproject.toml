@@ -11,7 +11,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-visualization = ["rerun-sdk==0.36.2", "imageio-ffmpeg==0.6.0"]
+visualization = [
+  "rerun-sdk==0.36.2",
+  "rerun-loader-mjcf==1.0.1",
+  "imageio-ffmpeg==0.6.0",
+]
 
 [dependency-groups]
 dev = ["pytest==8.4.2"]
