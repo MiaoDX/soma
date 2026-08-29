@@ -51,7 +51,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         let now = monotonic_ns();
         let tick = core
-            .tick(&mut plant, pending.take(), now)
+            .tick_async(&mut plant, pending.take(), now)
             .map_err(|e| format!("Duck control tick: {e:?}"))?;
         plant.advance_physics_step();
         ticks += 1;
@@ -79,6 +79,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 velocities_rad_s: facts.velocities_rad_s,
                 gyro_rad_s: facts.gyro_rad_s,
                 acceleration_m_s2: facts.acceleration_m_s2,
+                feet_contacts: facts.feet_contacts,
                 root_height_m: facts.root_height_m,
                 root_roll_rad: facts.root_roll_rad,
                 root_pitch_rad: facts.root_pitch_rad,

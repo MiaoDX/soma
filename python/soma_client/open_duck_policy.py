@@ -14,8 +14,9 @@ import zenoh
 
 STATE_KEY = "soma/open-duck-v2/state"
 TARGET_KEY = "soma/open-duck-v2/target"
-STATE = struct.Struct("<7QI37f")
+STATE = struct.Struct("<7QI39f")
 TARGET = struct.Struct("<4Q14f")
+GAIT_PHASE_PERIOD = 27
 DEFAULT_POSE = np.array([
     0.002, 0.053, -0.63, 1.368, -0.784, 0.0, 0.0, 0.0, 0.0,
     -0.003, -0.065, 0.635, 1.379, -0.796,
@@ -33,7 +34,8 @@ def decode_state(payload: bytes) -> dict[str, object]:
         "velocities": np.asarray(facts[14:28], dtype=np.float32),
         "gyro": np.asarray(facts[28:31], dtype=np.float32),
         "acceleration": np.asarray(facts[31:34], dtype=np.float32),
-        "root_height": facts[34], "root_roll": facts[35], "root_pitch": facts[36],
+        "contacts": np.asarray(facts[34:36], dtype=np.float32),
+        "root_height": facts[36], "root_roll": facts[37], "root_pitch": facts[38],
     }
 
 
@@ -64,7 +66,8 @@ class Policy:
         command = np.array([self.velocity_x, 0, 0, 0, 0, 0, 0], np.float32)
         observation = np.concatenate((state["gyro"], acceleration, command,
             positions - self.default, np.asarray(state["velocities"]) * 0.05,
-            *self.history, self.previous, np.zeros(2, np.float32), self.phase)).astype(np.float32)
+            *self.history, self.previous, np.asarray(state["contacts"], np.float32),
+            self.phase)).astype(np.float32)
         action = self.session.run(None, {"obs": observation[None, :]})[0][0].astype(np.float32)
         if observation.size != 101 or not np.isfinite(action).all():
             raise RuntimeError("invalid Open Duck policy observation or action")
@@ -73,9 +76,11 @@ class Policy:
         self.last_action = action.copy()
         proposed = self.default + action * 0.25
         self.previous = np.clip(proposed, self.previous - 5.24 * 0.02, self.previous + 5.24 * 0.02)
-        self.phase_tick = (self.phase_tick + 1) % 100
-        self.phase = np.array([math.cos(self.phase_tick / 100 * 2 * math.pi),
-                               math.sin(self.phase_tick / 100 * 2 * math.pi)], np.float32)
+        self.phase_tick = (self.phase_tick + 1) % GAIT_PHASE_PERIOD
+        self.phase = np.array([
+            math.cos(self.phase_tick / GAIT_PHASE_PERIOD * 2 * math.pi),
+            math.sin(self.phase_tick / GAIT_PHASE_PERIOD * 2 * math.pi),
+        ], np.float32)
         return self.previous
 
     @staticmethod
@@ -89,6 +94,7 @@ def main() -> None:
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--stall-after", type=int)
     parser.add_argument("--duration", type=float)
+    parser.add_argument("--ready-file", type=Path)
     args = parser.parse_args()
     config = zenoh.Config.from_json5('{mode:"client",connect:{endpoints:["tcp/127.0.0.1:7448"]},scouting:{multicast:{enabled:false}}}')
     policy = Policy(args.checkpoint)
@@ -101,6 +107,8 @@ def main() -> None:
         try: states.put_nowait(bytes(sample.payload))
         except queue.Full: dropped_states += 1
     with zenoh.open(config) as session, session.declare_subscriber(STATE_KEY, latest):
+        if args.ready_file is not None:
+            args.ready_file.touch()
         emitted = 0
         started = time.monotonic()
         evidence = {"states": 0, "applied": False, "expiry": False, "rejected": False,
@@ -133,10 +141,12 @@ def main() -> None:
             evidence["max_abs_roll_rad"] = max(evidence["max_abs_roll_rad"], abs(float(state["root_roll"])))
             evidence["max_abs_pitch_rad"] = max(evidence["max_abs_pitch_rad"], abs(float(state["root_pitch"])))
             if args.stall_after is not None and emitted >= args.stall_after:
-                if args.duration is not None and time.monotonic() - started >= args.duration:
-                    print(json.dumps({"status": "stall-complete", "emitted": emitted, **evidence}))
-                    return
-                continue
+                if evidence["applied"]:
+                    if (args.duration is not None and time.monotonic() - started >= args.duration
+                            and evidence["expiry"]):
+                        print(json.dumps({"status": "stall-complete", "emitted": emitted, **evidence}))
+                        return
+                    continue
             inference_started = time.monotonic_ns()
             target = policy.infer(state)
             evidence["max_inference_ns"] = max(
@@ -144,7 +154,8 @@ def main() -> None:
             emitted += 1
             payload = policy.target_payload(int(state["sequence"]), state, target)
             session.put(TARGET_KEY, payload)
-            if args.duration is not None and time.monotonic() - started >= args.duration:
+            if (args.duration is not None and time.monotonic() - started >= args.duration
+                    and evidence["applied"]):
                 print(json.dumps({"status": "complete", "emitted": emitted, **evidence}))
                 return
 

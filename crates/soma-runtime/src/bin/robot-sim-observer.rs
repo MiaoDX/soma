@@ -363,7 +363,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         [socket_flag, path, rerun_flag, endpoint]
             if socket_flag == "--snapshot-socket" && rerun_flag == "--rerun-endpoint" =>
         {
-            (path.clone(), RerunDestination::Grpc(endpoint.clone()), None)
+            (
+                path.clone(),
+                RerunDestination::Grpc(endpoint.clone()),
+                None::<PathBuf>,
+            )
         }
         #[cfg(feature = "sim-showcase")]
         [socket_flag, path, rerun_flag, archive, frames_flag, frames]

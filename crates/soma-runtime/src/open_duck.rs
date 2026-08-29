@@ -8,7 +8,7 @@ pub const OPEN_DUCK_ACTUATORS: usize = 14;
 pub const OPEN_DUCK_PHYSICS_HZ: u32 = 500;
 pub const OPEN_DUCK_POLICY_HZ: u32 = 50;
 pub const OPEN_DUCK_TARGET_BYTES: usize = 8 * 4 + 14 * 4;
-pub const OPEN_DUCK_STATE_FLOATS: usize = 14 + 14 + 3 + 3 + 3;
+pub const OPEN_DUCK_STATE_FLOATS: usize = 14 + 14 + 3 + 3 + 2 + 3;
 pub const OPEN_DUCK_STATE_BYTES: usize = 8 * 7 + 4 + OPEN_DUCK_STATE_FLOATS * 4;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -17,6 +17,7 @@ pub struct OpenDuckState {
     pub velocities_rad_s: [f32; OPEN_DUCK_ACTUATORS],
     pub gyro_rad_s: [f32; 3],
     pub acceleration_m_s2: [f32; 3],
+    pub feet_contacts: [f32; 2],
     pub root_height_m: f32,
     pub root_roll_rad: f32,
     pub root_pitch_rad: f32,
@@ -51,7 +52,8 @@ pub fn encode_state(state: &OpenDuckState, out: &mut [u8; OPEN_DUCK_STATE_BYTES]
         .iter()
         .chain(state.velocities_rad_s.iter())
         .chain(state.gyro_rad_s.iter())
-        .chain(state.acceleration_m_s2.iter());
+        .chain(state.acceleration_m_s2.iter())
+        .chain(state.feet_contacts.iter());
     let values = values.chain([
         &state.root_height_m,
         &state.root_roll_rad,
@@ -80,14 +82,16 @@ pub fn decode_state(bytes: &[u8]) -> Option<OpenDuckState> {
     let velocities_rad_s = std::array::from_fn(|i| f32_at(14 + i).unwrap());
     let gyro_rad_s = std::array::from_fn(|i| f32_at(28 + i).unwrap());
     let acceleration_m_s2 = std::array::from_fn(|i| f32_at(31 + i).unwrap());
-    let root_height_m = f32_at(34)?;
-    let root_roll_rad = f32_at(35)?;
-    let root_pitch_rad = f32_at(36)?;
+    let feet_contacts = std::array::from_fn(|i| f32_at(34 + i).unwrap());
+    let root_height_m = f32_at(36)?;
+    let root_roll_rad = f32_at(37)?;
+    let root_pitch_rad = f32_at(38)?;
     let state = OpenDuckState {
         positions_rad,
         velocities_rad_s,
         gyro_rad_s,
         acceleration_m_s2,
+        feet_contacts,
         root_height_m,
         root_roll_rad,
         root_pitch_rad,
@@ -106,14 +110,12 @@ pub fn decode_state(bytes: &[u8]) -> Option<OpenDuckState> {
         .chain(state.velocities_rad_s.iter())
         .chain(state.gyro_rad_s.iter())
         .chain(state.acceleration_m_s2.iter())
-        .chain(
-            [
-                &state.root_height_m,
-                &state.root_roll_rad,
-                &state.root_pitch_rad,
-            ]
-            .into_iter(),
-        )
+        .chain(state.feet_contacts.iter())
+        .chain([
+            &state.root_height_m,
+            &state.root_roll_rad,
+            &state.root_pitch_rad,
+        ])
         .all(|v| v.is_finite());
     finite.then_some(state)
 }
@@ -255,6 +257,7 @@ mod tests {
             velocities_rad_s: [2.0; 14],
             gyro_rad_s: [3.0; 3],
             acceleration_m_s2: [4.0; 3],
+            feet_contacts: [0.0, 1.0],
             root_height_m: 0.15,
             root_roll_rad: 0.1,
             root_pitch_rad: -0.1,
@@ -271,6 +274,10 @@ mod tests {
         encode_state(&state, &mut bytes);
         assert_eq!(decode_state(&bytes), Some(state));
         state.gyro_rad_s[0] = f32::NAN;
+        encode_state(&state, &mut bytes);
+        assert!(decode_state(&bytes).is_none());
+        state.gyro_rad_s[0] = 3.0;
+        state.feet_contacts[0] = f32::NAN;
         encode_state(&state, &mut bytes);
         assert!(decode_state(&bytes).is_none());
     }
