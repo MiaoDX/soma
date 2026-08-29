@@ -188,6 +188,24 @@ fn map_command(received_ns: u64, request: &v1::RtRequest) -> Vec<LogRecord> {
     records
 }
 
+fn enqueue_state(
+    sender: &SyncSender<Evidence>,
+    last_timeline: &mut Option<u64>,
+    state: v1::ActuatorState,
+) {
+    let timeline_transition = last_timeline
+        .replace(state.timeline)
+        .is_none_or(|timeline| timeline != state.timeline);
+    let categorical = timeline_transition
+        || state.expiry_transition
+        || state.command_disposition == v1::CommandDisposition::Rejected as i32;
+    if categorical {
+        let _ = sender.send(Evidence::State(state));
+    } else {
+        let _ = sender.try_send(Evidence::State(state));
+    }
+}
+
 fn elapsed_seconds(start_ns: u64, timestamp_ns: u64) -> f64 {
     timestamp_ns.saturating_sub(start_ns) as f64 / 1e9
 }
@@ -402,10 +420,11 @@ fn start_zenoh(
             let commands = match session.declare_subscriber(COMMAND_KEY).await { Ok(value) => value, Err(_) => return };
             let states = match session.declare_subscriber(STATE_KEY).await { Ok(value) => value, Err(_) => return };
             let _ = ready_tx.send(());
+            let mut last_state_timeline = None;
             while worker_running.load(Ordering::Relaxed) {
                 tokio::select! {
                     sample = commands.recv_async() => if let Ok(sample) = sample { let observed_ns = monotonic_ns(); let bytes = sample.payload().to_bytes(); let event = v1::RtRequest::decode(bytes.as_ref()).map(|request| Evidence::Command { received_ns: observed_ns, request }).unwrap_or(Evidence::Malformed { observed_ns, kind: "command" }); let _ = sender.try_send(event); },
-                    sample = states.recv_async() => if let Ok(sample) = sample { let observed_ns = monotonic_ns(); let bytes = sample.payload().to_bytes(); let event = v1::ActuatorState::decode(bytes.as_ref()).map(Evidence::State).unwrap_or(Evidence::Malformed { observed_ns, kind: "state" }); let _ = sender.try_send(event); },
+                    sample = states.recv_async() => if let Ok(sample) = sample { let observed_ns = monotonic_ns(); let bytes = sample.payload().to_bytes(); match v1::ActuatorState::decode(bytes.as_ref()) { Ok(state) => enqueue_state(&sender, &mut last_state_timeline, state), Err(_) => { let _ = sender.try_send(Evidence::Malformed { observed_ns, kind: "state" }); } } },
                     _ = tokio::time::sleep(Duration::from_millis(20)) => {},
                 }
             }
@@ -692,5 +711,38 @@ mod tests {
         assert!(records.contains(&state_record(1_234, "state/health", "Healthy")));
         assert!(records.contains(&text(1_234, "TTL expiry: measured-position hold applied")));
         assert!(records.contains(&text(1_234, "command rejected: Timeline")));
+    }
+
+    #[test]
+    fn categorical_state_survives_a_saturated_rerun_queue() {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        sender
+            .send(Evidence::Malformed {
+                observed_ns: 1,
+                kind: "test",
+            })
+            .unwrap();
+        let sender_thread = sender.clone();
+        let producer = thread::spawn(move || {
+            let mut timeline = Some(1);
+            enqueue_state(
+                &sender_thread,
+                &mut timeline,
+                v1::ActuatorState {
+                    timeline: 1,
+                    expiry_transition: true,
+                    ..Default::default()
+                },
+            );
+        });
+
+        assert!(matches!(
+            receiver.recv().unwrap(),
+            Evidence::Malformed { .. }
+        ));
+        producer.join().unwrap();
+        assert!(
+            matches!(receiver.recv().unwrap(), Evidence::State(state) if state.expiry_transition)
+        );
     }
 }
