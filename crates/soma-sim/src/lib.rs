@@ -13,9 +13,31 @@ use mujoco_rs::{
     wrappers::mj_visualization::MjvCamera,
 };
 use soma_core::{
-    ActuatorPositions, Lifecycle, Plant, PlantHealth, PositionApplication, ReachyActuatorState,
-    ACTUATOR_COUNT,
+    ActuatorPositions, ActuatorState, Lifecycle, Plant, PlantHealth, PositionApplication,
+    ReachyActuatorState, ACTUATOR_COUNT,
 };
+
+pub const OPEN_DUCK_ACTUATOR_COUNT: usize = 14;
+pub const OPEN_DUCK_ACTUATOR_NAMES: [&str; OPEN_DUCK_ACTUATOR_COUNT] = [
+    "left_hip_yaw",
+    "left_hip_roll",
+    "left_hip_pitch",
+    "left_knee",
+    "left_ankle",
+    "neck_pitch",
+    "head_pitch",
+    "head_yaw",
+    "head_roll",
+    "right_hip_yaw",
+    "right_hip_roll",
+    "right_hip_pitch",
+    "right_knee",
+    "right_ankle",
+];
+pub const OPEN_DUCK_SCENE_PATH: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/assets/open-duck-mini-v2/xmls/scene_flat_terrain.xml"
+);
 
 pub const ACTUATOR_NAMES: [&str; ACTUATOR_COUNT] = [
     "yaw_body",
@@ -284,6 +306,125 @@ pub struct ReachySimPlant {
     limited: [bool; ACTUATOR_COUNT],
 }
 
+/// Fixed Open Duck Mini v2 simulation Plant. This profile intentionally does
+/// not participate in Reachy's public protocol or runtime endpoints.
+pub struct OpenDuckSimPlant {
+    data: MjData<Arc<MjModel>>,
+    physics_schedule: PhysicsSchedule,
+    timeline: u64,
+    sequence: u64,
+}
+
+impl OpenDuckSimPlant {
+    pub fn load(control_period: Duration) -> Result<Self, SimError> {
+        let model = Arc::new(
+            MjModel::from_xml(Path::new(OPEN_DUCK_SCENE_PATH))
+                .map_err(|e| SimError::Load(e.to_string()))?,
+        );
+        if (
+            model.nq() as usize,
+            model.nv() as usize,
+            model.nu() as usize,
+        ) != (21, 20, OPEN_DUCK_ACTUATOR_COUNT)
+        {
+            return Err(SimError::WrongModelSize {
+                qpos: model.nq() as usize,
+                qvel: model.nv() as usize,
+                actuators: model.nu() as usize,
+            });
+        }
+        for (expected, name) in OPEN_DUCK_ACTUATOR_NAMES.into_iter().enumerate() {
+            let actuator = model
+                .actuator(name)
+                .ok_or(SimError::MissingActuator(name))?;
+            if actuator.id != expected {
+                return Err(SimError::WrongActuatorOrder {
+                    name,
+                    expected,
+                    actual: actuator.id,
+                });
+            }
+        }
+        let physics_schedule = PhysicsSchedule::new(control_period, model.opt().timestep)
+            .map_err(SimError::PhysicsSchedule)?;
+        Ok(Self {
+            data: MjData::new(model),
+            physics_schedule,
+            timeline: 1,
+            sequence: 0,
+        })
+    }
+
+    pub fn policy_decimation(&self) -> usize {
+        10
+    }
+    pub fn physics_schedule(&self) -> PhysicsSchedule {
+        self.physics_schedule
+    }
+    pub fn advance_physics_step(&mut self) {
+        self.data.step();
+    }
+    pub fn advance_control_period(&mut self) {
+        for _ in 0..self.physics_schedule.substeps_per_control_period() {
+            self.advance_physics_step();
+        }
+    }
+    pub fn model_dimensions(&self) -> (usize, usize, usize) {
+        (
+            self.data.model().nq() as usize,
+            self.data.model().nv() as usize,
+            self.data.model().nu() as usize,
+        )
+    }
+    fn positions(&self) -> [f32; OPEN_DUCK_ACTUATOR_COUNT] {
+        std::array::from_fn(|i| {
+            self.data
+                .joint(OPEN_DUCK_ACTUATOR_NAMES[i])
+                .expect("validated joint")
+                .view(&self.data)
+                .qpos[0] as f32
+        })
+    }
+    pub fn reset(&mut self) {
+        self.data.reset();
+        self.timeline = self.timeline.wrapping_add(1);
+        self.sequence = 0;
+    }
+}
+
+impl Plant<OPEN_DUCK_ACTUATOR_COUNT> for OpenDuckSimPlant {
+    type Error = SimError;
+    fn read_state(&mut self) -> Result<ActuatorState<OPEN_DUCK_ACTUATOR_COUNT>, Self::Error> {
+        self.sequence = self.sequence.wrapping_add(1);
+        Ok(ActuatorState {
+            positions_rad: self.positions(),
+            sequence: self.sequence,
+            timeline: self.timeline,
+            timestamp_ns: (self.data.time() * 1e9) as u64,
+            lifecycle: Lifecycle::Enabled,
+            health: PlantHealth::Healthy,
+        })
+    }
+    fn apply_positions(
+        &mut self,
+        positions_rad: [f32; OPEN_DUCK_ACTUATOR_COUNT],
+        _application: PositionApplication,
+    ) -> Result<(), Self::Error> {
+        for (i, value) in positions_rad.into_iter().enumerate() {
+            if !value.is_finite() {
+                return Err(SimError::TargetOutOfRange {
+                    name: OPEN_DUCK_ACTUATOR_NAMES[i],
+                    value,
+                    min: f32::NEG_INFINITY,
+                    max: f32::INFINITY,
+                });
+            }
+            self.data.ctrl_mut()[i] = value as f64;
+        }
+        Ok(())
+    }
+}
+
 impl ReachySimPlant {
     pub fn load(path: impl AsRef<Path>, control_period: Duration) -> Result<Self, SimError> {
         let model =
@@ -426,7 +567,7 @@ impl ReachySimPlant {
     }
 }
 
-impl Plant for ReachySimPlant {
+impl Plant<{ soma_core::ACTUATOR_COUNT }> for ReachySimPlant {
     type Error = SimError;
 
     fn read_state(&mut self) -> Result<ReachyActuatorState, Self::Error> {
@@ -521,6 +662,49 @@ mod tests {
         let reset = plant.read_state().unwrap();
         assert_ne!(reset.timeline, moved.timeline);
         assert_eq!(reset.sequence, 1);
+    }
+
+    #[test]
+    fn open_duck_profile_validates_dimensions_order_and_cadence() {
+        let plant = OpenDuckSimPlant::load(Duration::from_millis(20)).unwrap();
+        assert_eq!(plant.model_dimensions(), (21, 20, 14));
+        assert_eq!(plant.physics_schedule().substeps_per_control_period(), 10);
+        assert_eq!(plant.policy_decimation(), 10);
+    }
+
+    #[test]
+    fn open_duck_profile_advances_and_resets_timeline() {
+        let mut plant = OpenDuckSimPlant::load(Duration::from_millis(2)).unwrap();
+        let before = plant.read_state().unwrap();
+        plant.advance_physics_step();
+        let after = plant.read_state().unwrap();
+        assert!(after.timestamp_ns > before.timestamp_ns);
+        plant.reset();
+        assert_eq!(plant.read_state().unwrap().timeline, before.timeline + 1);
+    }
+
+    #[test]
+    fn open_duck_control_core_applies_target_on_fixed_physics_path() {
+        use soma_core::{ActuatorTarget, ControlCore};
+        let mut plant = OpenDuckSimPlant::load(Duration::from_millis(2)).unwrap();
+        let timeline = plant.read_state().unwrap().timeline;
+        let mut core = ControlCore::<OPEN_DUCK_ACTUATOR_COUNT>::new();
+        let target = ActuatorTarget {
+            positions_rad: [0.0; OPEN_DUCK_ACTUATOR_COUNT],
+            sequence: 3,
+            timeline,
+            issued_at_ns: 0,
+            ttl_ns: 1_000_000_000,
+        };
+        let tick = core.tick(&mut plant, Some(target), 1).unwrap();
+        assert_eq!(
+            tick.command_result,
+            soma_core::CommandResult::Accepted { sequence: 3 }
+        );
+        for _ in 0..10 {
+            plant.advance_physics_step();
+        }
+        assert!(plant.read_state().unwrap().timestamp_ns >= 20_000_000);
     }
 
     #[test]
