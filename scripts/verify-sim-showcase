@@ -26,6 +26,8 @@ assert len(frame_hashes)>1, "WebM contains no visible frame changes"
 html=(d/"index.html").read_text(); links=re.findall(r'(?:src|href)="([^"]+)"',html)
 for link in links:
  if "://" not in link and not link.startswith("#"): assert (d/link).is_file(), f"broken local link: {link}"
+assert "https://miaodx.com/soma/evidence.rrd" in html, "Rerun data URL must avoid the github.io redirect"
+assert "miaodx.github.io" not in html, "redirected Rerun data URL breaks browser CORS"
 meta=json.loads((d/"metadata.json").read_text()); assert meta["scenario_result"]=="passed" and meta["scope"]=="simulation-only"
 assert meta["renderer"]["camera_id"]==0 and meta["renderer"]["camera_name"]=="studio_close"
 text=(html+json.dumps(meta)).lower()
