@@ -6,16 +6,19 @@ output_dir=$(realpath -m "$1")
 if [[ -e $output_dir ]]; then echo "output path already exists: $output_dir" >&2; exit 2; fi
 mkdir -p "$output_dir"
 metrics=$(mktemp /tmp/soma-open-duck-showcase.XXXXXX.json)
-trap 'rm -f "$metrics"' EXIT
+trace=$(mktemp /tmp/soma-open-duck-showcase.XXXXXX.trace.json)
+trap 'rm -f "$metrics" "$trace"' EXIT
 MUJOCO_GL=egl uv run --project "$repo_root/python" python "$repo_root/scripts/run-open-duck-walk" \
-  reference --repeat 2 --frames-dir "$output_dir/frames" >"$metrics"
+  reference --repeat 2 --frames-dir "$output_dir/frames" --trace-file "$trace" >"$metrics"
 commit=$(git -C "$repo_root" rev-parse HEAD)
 generated=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 cd "$repo_root/python"
-uv run --extra visualization python - "$metrics" "$output_dir/evidence.rrd" <<'PY'
+uv run --extra visualization python - "$metrics" "$trace" "$output_dir/evidence.rrd" <<'PY'
 import json, pathlib, sys
 import rerun as rr
+import rerun.blueprint as rrb
 data=json.loads(pathlib.Path(sys.argv[1]).read_text())
+trace=json.loads(pathlib.Path(sys.argv[2]).read_text())
 rr.init("Soma Open Duck Mini", recording_id="open-duck-showcase")
 for run in data["runs"]:
     prefix=f"rollout/run_{run['run']}"
@@ -23,7 +26,28 @@ for run in data["runs"]:
     rr.log(f"{prefix}/min_root_height_m", rr.Scalars([run["min_root_height_m"]]))
     rr.log(f"{prefix}/max_stance_slip_m", rr.Scalars([run["max_stance_slip_m"]]))
     rr.log(f"{prefix}/contact_transitions", rr.Scalars([run["contact_transitions"]]))
-rr.save(sys.argv[2])
+for run_index, samples in enumerate(trace["runs"]):
+    prefix=f"rollout/run_{run_index}/timeseries"
+    for sample in samples:
+        rr.set_time("sim_time", duration=sample["time_s"])
+        rr.log(f"{prefix}/root/x_m", rr.Scalars([sample["root_position_m"][0]]))
+        rr.log(f"{prefix}/root/height_m", rr.Scalars([sample["root_position_m"][2]]))
+        rr.log(f"{prefix}/root/roll_rad", rr.Scalars([sample["root_roll_rad"]]))
+        rr.log(f"{prefix}/root/pitch_rad", rr.Scalars([sample["root_pitch_rad"]]))
+        rr.log(f"{prefix}/contacts/left", rr.Scalars([sample["contacts"][0]]))
+        rr.log(f"{prefix}/contacts/right", rr.Scalars([sample["contacts"][1]]))
+        for joint, position, target, action in zip(trace["joints"], sample["joint_position_rad"], sample["joint_target_rad"], sample["policy_action"]):
+            rr.log(f"{prefix}/joints/{joint}/position_rad", rr.Scalars([position]))
+            rr.log(f"{prefix}/joints/{joint}/target_rad", rr.Scalars([target]))
+            rr.log(f"{prefix}/actions/{joint}", rr.Scalars([action]))
+rr.send_blueprint(rrb.Blueprint(rrb.Grid(
+    rrb.TimeSeriesView(origin="rollout/run_0/timeseries/root", name="Root motion and stability"),
+    rrb.TimeSeriesView(origin="rollout/run_0/timeseries/contacts", name="Foot contacts"),
+    rrb.TimeSeriesView(origin="rollout/run_0/timeseries/joints", name="Joint positions and targets"),
+    rrb.TimeSeriesView(origin="rollout/run_0/timeseries/actions", name="Policy actions"),
+    grid_columns=2,
+)))
+rr.save(sys.argv[3])
 PY
 cd "$repo_root"
 rrd_url="https://miaodx.com/soma/open-duck/evidence.rrd"

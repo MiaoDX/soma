@@ -60,6 +60,7 @@ def main():
     p.add_argument("--vx", type=float, default=0.3)
     p.add_argument("--visualize", action="store_true", help=argparse.SUPPRESS)
     p.add_argument("--frames-dir", type=Path, help=argparse.SUPPRESS)
+    p.add_argument("--trace-file", type=Path, help=argparse.SUPPRESS)
     p.add_argument("--diagnostic-delay-steps", type=int, default=0, help=argparse.SUPPRESS)
     p.add_argument("--diagnostic-drop-policy-tick", type=int, help=argparse.SUPPRESS)
     args = p.parse_args()
@@ -81,6 +82,7 @@ def main():
     if session.get_inputs()[0].shape != [1, 101] or session.get_outputs()[0].shape != [1, 14]:
         raise SystemExit("unexpected ONNX contract")
     results = []
+    traces = []
     renderer = mujoco.Renderer(model, height=480, width=640) if args.frames_dir else None
     camera = mujoco.MjvCamera()
     camera.type = mujoco.mjtCamera.mjCAMERA_TRACKING
@@ -96,6 +98,7 @@ def main():
     foot_sites = [mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, name)
                   for name in ("left_foot", "right_foot")]
     for run in range(args.repeat):
+        trace = []
         data = mujoco.MjData(model)
         mujoco.mj_resetDataKeyframe(model, data, mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_KEY, "home"))
         default = data.ctrl.copy()
@@ -171,12 +174,17 @@ def main():
             max_abs_angle = max(max_abs_angle, float(np.max(np.abs(data.qpos[7:]))))
             w,x,y,z=data.qpos[3:7]; roll=math.atan2(2*(w*x+y*z),1-2*(x*x+y*y)); pitch=math.asin(np.clip(2*(w*y-z*x),-1,1))
             min_root_height=min(min_root_height,float(data.qpos[2])); max_abs_roll=max(max_abs_roll,abs(roll)); max_abs_pitch=max(max_abs_pitch,abs(pitch))
+            if args.trace_file:
+                trace.append({"time_s": tick * model.opt.timestep, "root_position_m": data.qpos[:3].tolist(), "root_roll_rad": roll, "root_pitch_rad": pitch, "joint_position_rad": qpos.tolist(), "joint_target_rad": target.tolist(), "policy_action": action.tolist(), "contacts": contacts.tolist()})
         result = {"run": run, "physics_steps": 4000, "policy_ticks": 400, "command_vx_mps": args.vx, "forward_displacement_m": float(data.qpos[0]-x0), "max_abs_joint_angle_rad": max_abs_angle, "min_root_height_m":min_root_height,"max_abs_roll_rad":max_abs_roll,"max_abs_pitch_rad":max_abs_pitch, "contact_transitions": contact_transitions, "max_stance_slip_m": max_stance_slip_m, "non_foot_collision_count": non_foot_collision_count, "observation_width": len(obs_fixture), "action_width": len(action_fixture), "first_observation": obs_fixture, "first_action": action_fixture, "mode": args.mode}
         if args.diagnostic_delay_steps == 0 and args.diagnostic_drop_policy_tick is None:
             validate_frozen_run(result)
         results.append(result)
+        traces.append(trace)
     if renderer is not None:
         renderer.close()
+    if args.trace_file:
+        args.trace_file.write_text(json.dumps({"joints": JOINTS, "runs": traces}))
     print(json.dumps({"scenario_result": "passed", "contract": {"nq":21,"nv":20,"nu":14,"observation":101,"action":14,"timestep":0.002}, "runs": results}, indent=2))
 
 def run_process_mode(args):
