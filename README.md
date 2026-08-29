@@ -44,6 +44,12 @@ commit provenance. The GitHub Pages workflow rebuilds the report from the
 authoritative acceptance scenario on `main`; the committed poster keeps the
 result visible before or between successful deployments.
 
+The fixed Open Duck Mini v2 simulation has its own CI-generated report at
+[Open Duck Mini status](https://miaodx.github.io/soma/open-duck/). It embeds the
+Rerun web viewer and shows the two-run walk metrics; the `.rrd` recording remains
+available as a download. Both reports are simulation-only and make no hardware
+or physical-actuation claim.
+
 Run the visual acceptance scenario locally:
 
 ```bash

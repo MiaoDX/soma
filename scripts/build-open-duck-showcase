@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ $# -ne 1 ]]; then echo "usage: scripts/build-open-duck-showcase OUTPUT_DIR" >&2; exit 2; fi
+repo_root=$(cd "$(dirname "$0")/.." && pwd)
+output_dir=$(realpath -m "$1")
+if [[ -e $output_dir ]]; then echo "output path already exists: $output_dir" >&2; exit 2; fi
+mkdir -p "$output_dir"
+metrics=$(mktemp /tmp/soma-open-duck-showcase.XXXXXX.json)
+trap 'rm -f "$metrics"' EXIT
+"$repo_root/scripts/run-open-duck-walk" reference --repeat 2 >"$metrics"
+commit=$(git -C "$repo_root" rev-parse HEAD)
+generated=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+cd "$repo_root/python"
+uv run --extra visualization python - "$metrics" "$output_dir/evidence.rrd" <<'PY'
+import json, pathlib, sys
+import rerun as rr
+data=json.loads(pathlib.Path(sys.argv[1]).read_text())
+rr.init("Soma Open Duck Mini", recording_id="open-duck-showcase")
+for run in data["runs"]:
+    prefix=f"rollout/run_{run['run']}"
+    rr.log(f"{prefix}/forward_displacement_m", rr.Scalars([run["forward_displacement_m"]]))
+    rr.log(f"{prefix}/min_root_height_m", rr.Scalars([run["min_root_height_m"]]))
+    rr.log(f"{prefix}/max_stance_slip_m", rr.Scalars([run["max_stance_slip_m"]]))
+    rr.log(f"{prefix}/contact_transitions", rr.Scalars([run["contact_transitions"]]))
+rr.save(sys.argv[2])
+PY
+cd "$repo_root"
+rrd_url="https://miaodx.github.io/soma/open-duck/evidence.rrd"
+rows=$(python3 - "$metrics" <<'PY'
+import json,sys
+for r in json.load(open(sys.argv[1]))["runs"]:
+ print(f"<tr><td>{r['run']}</td><td>{r['forward_displacement_m']:.5f}</td><td>{r['min_root_height_m']:.5f}</td><td>{r['contact_transitions']}</td><td>{r['max_stance_slip_m']:.6f}</td><td>{r['non_foot_collision_count']}</td></tr>")
+PY
+)
+python3 - "$repo_root/docs/showcase/open-duck.template.html" "$output_dir/index.html" "$commit" "$rrd_url" "$rows" <<'PY'
+import pathlib,sys
+template=pathlib.Path(sys.argv[1]).read_text()
+for key,value in (("@@COMMIT@@",sys.argv[3]),("@@RRD_URL@@",sys.argv[4]),("@@ROWS@@",sys.argv[5])):
+ template=template.replace(key,value)
+pathlib.Path(sys.argv[2]).write_text(template)
+PY
+python3 - "$output_dir/metadata.json" "$commit" "$generated" "$metrics" <<'PY'
+import json, pathlib, sys
+metrics=json.loads(pathlib.Path(sys.argv[4]).read_text())
+json.dump({"schema_version":1,"robot":"Open Duck Mini","scope":"simulation-only","scenario":"fixed 8-second walk case","scenario_result":"passed","commit":sys.argv[2],"generated_utc":sys.argv[3],"artifacts":{"rerun":"evidence.rrd"},"runs":metrics["runs"]},open(sys.argv[1],"w"),indent=2)
+PY
+UV_DEFAULT_INDEX=https://pypi.org/simple uv run --extra visualization rerun rrd verify "$output_dir/evidence.rrd"
+echo "Open Duck showcase built: $output_dir"
