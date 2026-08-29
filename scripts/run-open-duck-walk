@@ -15,12 +15,14 @@ def main():
     p.add_argument("mode", choices=["reference", "policy", "stall"])
     p.add_argument("--case", default=str(ROOT / "docs/status/active/open-duck-stage0-case.md"))
     p.add_argument("--repeat", type=int, default=1)
+    p.add_argument("--checkpoint", type=Path, default=BUNDLE / "BEST_WALK_ONNX.onnx")
+    p.add_argument("--vx", type=float, default=0.3)
     args = p.parse_args()
     model_file = BUNDLE / "xmls/scene_flat_terrain.xml"
-    checkpoint = BUNDLE / "BEST_WALK_ONNX_2.onnx"
+    checkpoint = args.checkpoint.resolve()
     digest = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
-    expected = "3c606f9381a1710cc8fecdb7442787dcbfce3ee9bc02a6f1224774ab2b3a1067"
-    if digest != expected or not Path(args.case).read_text().find("FROZEN") >= 0:
+    expected = {"3c606f9381a1710cc8fecdb7442787dcbfce3ee9bc02a6f1224774ab2b3a1067", "cb61453a8bcb547ccfdeb4f03ba0fa67ebcf767dcf4aa6e5c9a0d92b302f9b23"}
+    if digest not in expected or not Path(args.case).read_text().find("FROZEN") >= 0:
         raise SystemExit("refusing rollout: frozen case or pinned checkpoint is invalid")
     # MuJoCo resolves mesh includes relative to the scene XML directory.
     os.chdir(model_file.parent)
@@ -37,7 +39,6 @@ def main():
     for run in range(args.repeat):
         data = mujoco.MjData(model)
         mujoco.mj_resetDataKeyframe(model, data, mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_KEY, "home"))
-        mujoco.mj_step(model, data)
         default = data.ctrl.copy()
         history = [np.zeros(14, dtype=np.float32) for _ in range(3)]
         target = default.copy()
@@ -46,6 +47,7 @@ def main():
         max_abs_angle = 0.0
         contacts = [0, 0]
         obs_fixture = action_fixture = None
+        phase = np.zeros(2, dtype=np.float32)
         for tick in range(4000):
             mujoco.mj_step(model, data)
             if tick % 10: continue
@@ -53,18 +55,19 @@ def main():
             accel = data.sensordata[6:9].astype(np.float32).copy(); accel[0] += 1.3
             qpos = np.array([data.qpos[model.jnt_qposadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, n)]] for n in JOINTS], dtype=np.float32)
             qvel = np.array([data.qvel[model.jnt_dofadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, n)]] for n in JOINTS], dtype=np.float32)
-            phase = np.array([math.cos(tick / 10 * 0.2), math.sin(tick / 10 * 0.2)], dtype=np.float32)
-            obs = np.concatenate((gyro, accel, np.array([0.1,0,0,0,0,0,0], dtype=np.float32), qpos-default.astype(np.float32), qvel*0.05, *history, target.astype(np.float32), np.array([0,0], dtype=np.float32), phase)).astype(np.float32)
+            obs = np.concatenate((gyro, accel, np.array([args.vx,0,0,0,0,0,0], dtype=np.float32), qpos-default.astype(np.float32), qvel*0.05, *history, target.astype(np.float32), np.array([0,0], dtype=np.float32), phase)).astype(np.float32)
             if obs.size != 101: raise SystemExit(f"observation width {obs.size}")
             action = session.run(None, {"obs": obs[None, :]})[0][0].astype(np.float32)
             if not np.isfinite(action).all(): raise SystemExit("non-finite policy output")
             history = [action, *history[:2]]
+            phase_i = (tick // 10 + 1) % 100
+            phase = np.array([math.cos(phase_i / 100 * 2 * math.pi), math.sin(phase_i / 100 * 2 * math.pi)], dtype=np.float32)
             proposed = default + action * 0.25
             limit = 5.24 * 0.02
             target = np.clip(proposed, previous-limit, previous+limit); previous = target.copy(); data.ctrl[:] = target
             if tick == 0: obs_fixture, action_fixture = obs.tolist(), action.tolist()
             max_abs_angle = max(max_abs_angle, float(np.max(np.abs(data.qpos[7:]))))
-        results.append({"run": run, "physics_steps": 4000, "policy_ticks": 400, "forward_displacement_m": float(data.qpos[0]-x0), "max_abs_joint_angle_rad": max_abs_angle, "observation_width": len(obs_fixture), "action_width": len(action_fixture), "first_observation": obs_fixture, "first_action": action_fixture, "mode": args.mode})
+        results.append({"run": run, "physics_steps": 4000, "policy_ticks": 400, "command_vx_mps": args.vx, "forward_displacement_m": float(data.qpos[0]-x0), "max_abs_joint_angle_rad": max_abs_angle, "observation_width": len(obs_fixture), "action_width": len(action_fixture), "first_observation": obs_fixture, "first_action": action_fixture, "mode": args.mode})
     print(json.dumps({"contract": {"nq":21,"nv":20,"nu":14,"observation":101,"action":14,"timestep":0.002}, "runs": results}, indent=2))
 
 if __name__ == "__main__": main()
