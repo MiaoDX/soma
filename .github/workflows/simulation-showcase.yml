@@ -48,7 +48,7 @@ jobs:
       - name: Install native rendering dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --yes libegl1-mesa-dev libgl1-mesa-dev libwayland-dev libxkbcommon-dev
+          sudo apt-get install --yes libegl1-mesa-dev libgl1-mesa-dev libwayland-dev libxkbcommon-dev protobuf-compiler
       - name: Build verified report
         run: scripts/build-sim-showcase output/simulation-showcase
       - uses: actions/configure-pages@v5
