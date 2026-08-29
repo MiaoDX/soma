@@ -1,13 +1,14 @@
 # Open Duck Mini v2 Frozen Case
 
-Status: FROZEN Stage 0 reference contract.
+Status: FROZEN Stage 0 reference contract (baseline revised by user approval,
+2026-08-27).
 
 | Field | Frozen value |
 |---|---|
-| checkpoint | `BEST_WALK_ONNX_2.onnx`, SHA-256 `3c606f9381a1710cc8fecdb7442787dcbfce3ee9bc02a6f1224774ab2b3a1067` |
+| checkpoint | `BEST_WALK_ONNX.onnx`, SHA-256 `cb61453a8bcb547ccfdeb4f03ba0fa67ebcf767dcf4aa6e5c9a0d92b302f9b23` |
 | seed | `7` |
 | duration | `8 s` |
-| command | `[0.1, 0, 0]` m/s, yaw `0` |
+| command | `[0.3, 0, 0]` m/s, yaw `0` (approved baseline; diagnostic range extension) |
 | cadence | 500 Hz physics/RT, 50 Hz policy, decimation 10 |
 | reset | model `home` keyframe |
 | minimum duration | `7.5 s` |
