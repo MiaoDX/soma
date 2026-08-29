@@ -1,19 +1,22 @@
-# Open Duck Mini v2 Frozen Case (Stage 0 Draft)
+# Open Duck Mini v2 Frozen Case
 
-This file remains incomplete until Stage 0 freezes the acceptance case. The
-earlier eight-second rollout is exploratory, not an acceptance sample. Absolute
-gait floors must now be declared from robot scale and documented examples
-before collecting the accepted reference runs.
+Status: FROZEN Stage 0 reference contract.
 
 | Field | Frozen value |
 |---|---|
-| policy checkpoint | `BEST_WALK_ONNX_2.onnx` SHA-256 `3c606f9381a1710cc8fecdb7442787dcbfce3ee9bc02a6f1224774ab2b3a1067` |
-| cadence | 500 Hz RT/physics; 50 Hz policy frame/target; decimation 10 |
-| inference provider | ONNX Runtime CPU execution provider |
-| observation width | 101 float32 values |
-| action width | 14 float32 values |
-| normal schedule | observe, infer, send immediately, apply on the first available RT tick, then zero-order hold until replaced/expired |
-| injected delay | explicit 20 ms fault case; consumes the original deadline and is not subject to the normal gait floor |
-| seed, duration, command, reset pose, floors | PENDING Stage 0 reference contract |
+| checkpoint | `BEST_WALK_ONNX_2.onnx`, SHA-256 `3c606f9381a1710cc8fecdb7442787dcbfce3ee9bc02a6f1224774ab2b3a1067` |
+| seed | `7` |
+| duration | `8 s` |
+| command | `[0.1, 0, 0]` m/s, yaw `0` |
+| cadence | 500 Hz physics/RT, 50 Hz policy, decimation 10 |
+| reset | model `home` keyframe |
+| minimum duration | `7.5 s` |
+| minimum forward displacement | `0.10 m` |
+| root height floor | `0.08 m` |
+| roll/pitch envelope | `|roll| <= 0.8 rad`, `|pitch| <= 0.8 rad` |
+| non-foot collision count | `0` |
+| injected delay | `20 ms`, original deadline retained; gait floors not required |
 
-The reference command must fail closed while any PENDING field remains.
+The reference command must fail closed if this file or the provenance manifest
+is incomplete. Numeric tolerances for named golden observation/action ticks are
+`1e-5` absolute for float32 values.
