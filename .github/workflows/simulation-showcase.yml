@@ -67,11 +67,22 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes libegl1-mesa-dev libgl1-mesa-dev libwayland-dev libxkbcommon-dev protobuf-compiler
       - name: Build verified report
-        run: scripts/build-sim-showcase output/simulation-showcase
+        run: |
+          mkdir -p output/simulation-showcase
+          cp docs/showcase/home.html output/simulation-showcase/index.html
+          scripts/build-sim-showcase output/simulation-showcase/reachy
       - name: Build Open Duck report
         run: |
           scripts/cargo-mujoco build --quiet --bin open-duck-runtime --bin open-duck-rt
           scripts/build-open-duck-showcase output/simulation-showcase/open-duck
+      - name: Verify Pages routes
+        run: |
+          test -s output/simulation-showcase/index.html
+          test -s output/simulation-showcase/reachy/index.html
+          test -s output/simulation-showcase/open-duck/index.html
+          test ! -e output/simulation-showcase/motion.webm
+          grep -F 'href="reachy/"' output/simulation-showcase/index.html
+          grep -F 'href="open-duck/"' output/simulation-showcase/index.html
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
