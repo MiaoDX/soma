@@ -1,4 +1,4 @@
-use std::io::ErrorKind;
+use std::io::{BufWriter, ErrorKind, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, SyncSender, TrySendError};
@@ -7,7 +7,10 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use prost::Message;
-use rerun::blueprint::{Blueprint, StateTimelineView, TextLogView, TimeSeriesView, Vertical};
+use rerun::blueprint::{
+    Blueprint, ContainerLike, Horizontal, Spatial3DView, StateTimelineView, Tabs, TextLogView,
+    TimeSeriesView, Vertical,
+};
 use rerun::{RecordingStreamBuilder, Scalars, StateChange, TextLog};
 use soma_protocol::v1::{self, rt_request};
 use soma_runtime::{bind_owned_datagram, monotonic_ns, COMMAND_KEY, STATE_KEY};
@@ -187,6 +190,33 @@ fn elapsed_seconds(start_ns: u64, timestamp_ns: u64) -> f64 {
     timestamp_ns.saturating_sub(start_ns) as f64 / 1e9
 }
 
+fn write_snapshot_trace_header(writer: &mut impl Write) -> std::io::Result<()> {
+    write!(writer, "program_time_s,simulation_time_s,timeline,sequence")?;
+    for index in 0..37 {
+        write!(writer, ",qpos_{index}")?;
+    }
+    writeln!(writer)
+}
+
+fn write_snapshot_trace_row(
+    writer: &mut impl Write,
+    recording_start_ns: u64,
+    snapshot: &ReachySimSnapshot,
+) -> std::io::Result<()> {
+    write!(
+        writer,
+        "{:.9},{:.9},{},{}",
+        elapsed_seconds(recording_start_ns, snapshot.capture_monotonic_ns),
+        snapshot.simulation_time_ns as f64 / 1e9,
+        snapshot.timeline,
+        snapshot.sequence
+    )?;
+    for value in snapshot.qpos {
+        write!(writer, ",{value:.17}")?;
+    }
+    writeln!(writer)
+}
+
 fn emit(
     rec: &rerun::RecordingStream,
     recording_start_ns: u64,
@@ -216,11 +246,8 @@ enum RerunDestination {
     File(PathBuf),
 }
 
-fn start_rerun(
-    destination: RerunDestination,
-) -> Result<(SyncSender<Evidence>, JoinHandle<()>), Box<dyn std::error::Error>> {
-    let recording_start_ns = monotonic_ns();
-    let blueprint = Blueprint::new(Vertical::new([
+fn telemetry_views() -> Vec<ContainerLike> {
+    vec![
         TimeSeriesView::new("Body yaw")
             .with_origin("actuators/yaw_body")
             .into(),
@@ -245,11 +272,39 @@ fn start_rerun(
             .with_origin("simulation/timeline")
             .into(),
         TextLogView::new("Events").with_origin("events").into(),
-    ]));
+    ]
+}
+
+fn start_rerun(
+    destination: RerunDestination,
+    recording_start_ns: u64,
+) -> Result<(SyncSender<Evidence>, JoinHandle<()>), Box<dyn std::error::Error>> {
+    let showcase = matches!(&destination, RerunDestination::File(_));
+    let blueprint = if showcase {
+        let mut views = telemetry_views();
+        let state_and_events = views.split_off(4);
+        views.push(
+            Tabs::new(state_and_events)
+                .with_name("State and events")
+                .into(),
+        );
+        Blueprint::new(
+            Horizontal::new([
+                Spatial3DView::new("Reachy Mini")
+                    .with_origin("robot")
+                    .with_contents(["robot/**"])
+                    .into(),
+                Vertical::new(views).into(),
+            ])
+            .with_column_shares([1.2, 1.0]),
+        )
+    } else {
+        Blueprint::new(Vertical::new(telemetry_views()))
+    };
     let builder = RecordingStreamBuilder::new("soma_simulation").with_blueprint(blueprint);
     let rec = match destination {
         RerunDestination::Grpc(endpoint) => builder.connect_grpc_opts(endpoint)?,
-        RerunDestination::File(path) => builder.save(path)?,
+        RerunDestination::File(path) => builder.recording_id("reachy-showcase").save(path)?,
     };
     let (sender, receiver) = mpsc::sync_channel::<Evidence>(32);
     let worker = thread::spawn(move || {
@@ -359,7 +414,7 @@ fn start_zenoh(
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args().skip(1).collect();
-    let (socket_path, destination, frames_dir) = match args.as_slice() {
+    let (socket_path, destination, frames_dir, snapshots_file) = match args.as_slice() {
         [socket_flag, path, rerun_flag, endpoint]
             if socket_flag == "--snapshot-socket" && rerun_flag == "--rerun-endpoint" =>
         {
@@ -367,29 +422,42 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 path.clone(),
                 RerunDestination::Grpc(endpoint.clone()),
                 None::<PathBuf>,
+                None::<PathBuf>,
             )
         }
         #[cfg(feature = "sim-showcase")]
-        [socket_flag, path, rerun_flag, archive, frames_flag, frames]
+        [
+            socket_flag,
+            path,
+            rerun_flag,
+            archive,
+            frames_flag,
+            frames,
+            snapshots_flag,
+            snapshots,
+        ]
             if socket_flag == "--snapshot-socket"
                 && rerun_flag == "--rerun-file"
-                && frames_flag == "--frames-dir" =>
+                && frames_flag == "--frames-dir"
+                && snapshots_flag == "--snapshots-file" =>
         {
             std::fs::create_dir_all(frames)?;
             (
                 path.clone(),
                 RerunDestination::File(PathBuf::from(archive)),
                 Some(PathBuf::from(frames)),
+                Some(PathBuf::from(snapshots)),
             )
         }
-        _ => return Err("usage: robot-sim-observer --snapshot-socket PATH --rerun-endpoint URL\n       robot-sim-observer --snapshot-socket PATH --rerun-file FILE --frames-dir DIR".into()),
+        _ => return Err("usage: robot-sim-observer --snapshot-socket PATH --rerun-endpoint URL\n       robot-sim-observer --snapshot-socket PATH --rerun-file FILE --frames-dir DIR --snapshots-file FILE".into()),
     };
     let readiness_path = format!("{socket_path}.ready");
     let owned = bind_owned_datagram(&socket_path)
         .map_err(|error| format!("bind showcase snapshot socket {socket_path}: {error}"))?;
     let _cleanup = SocketCleanup(socket_path);
     owned.socket.set_nonblocking(true)?;
-    let (rerun, rerun_worker) = start_rerun(destination)?;
+    let recording_start_ns = monotonic_ns();
+    let (rerun, rerun_worker) = start_rerun(destination, recording_start_ns)?;
     let (zenoh_ready, zenoh_running, zenoh_worker) = start_zenoh(rerun.clone());
     zenoh_ready
         .recv_timeout(Duration::from_secs(10))
@@ -417,6 +485,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut previous = None;
     let mut rerun_drops = 0_u64;
     let mut snapshot_drops = 0_u64;
+    let mut snapshot_trace = snapshots_file
+        .map(std::fs::File::create)
+        .transpose()?
+        .map(BufWriter::new);
+    if let Some(trace) = &mut snapshot_trace {
+        write_snapshot_trace_header(trace)?;
+    }
 
     loop {
         let mut newest = None;
@@ -447,6 +522,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         if let Some(snapshot) = newest {
+            if let Some(trace) = &mut snapshot_trace {
+                write_snapshot_trace_row(trace, recording_start_ns, &snapshot)?;
+            }
             first_capture_ns.get_or_insert(snapshot.capture_monotonic_ns);
             if let Some(active) = &mut viewer {
                 active
@@ -500,6 +578,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     zenoh_worker.join().map_err(|_| "Zenoh observer panicked")?;
     drop(rerun);
     rerun_worker.join().map_err(|_| "Rerun writer panicked")?;
+    if let Some(trace) = &mut snapshot_trace {
+        trace.flush()?;
+    }
     if frames_dir.is_some() && frame_index < 2 {
         return Err("showcase capture produced fewer than two frames".into());
     }
@@ -535,6 +616,27 @@ mod tests {
         assert_eq!(elapsed_seconds(20_000_000_000, 20_000_000_000), 0.0);
         assert_eq!(elapsed_seconds(20_000_000_000, 21_500_000_000), 1.5);
         assert_eq!(elapsed_seconds(20_000_000_000, 19_999_999_999), 0.0);
+    }
+
+    #[test]
+    fn snapshot_trace_preserves_program_time_and_complete_qpos() {
+        let mut sample = snapshot(3, 7);
+        sample.capture_monotonic_ns = 21_500_000_000;
+        sample.simulation_time_ns = 2_000_000_000;
+        for (index, value) in sample.qpos.iter_mut().enumerate() {
+            *value = index as f64;
+        }
+        let mut output = Vec::new();
+        write_snapshot_trace_header(&mut output).unwrap();
+        write_snapshot_trace_row(&mut output, 20_000_000_000, &sample).unwrap();
+        let text = String::from_utf8(output).unwrap();
+        let mut lines = text.lines();
+        assert_eq!(lines.next().unwrap().split(',').count(), 41);
+        let values: Vec<_> = lines.next().unwrap().split(',').collect();
+        assert_eq!(values.len(), 41);
+        assert_eq!(&values[..4], &["1.500000000", "2.000000000", "3", "7"]);
+        assert_eq!(values[4], "0.00000000000000000");
+        assert_eq!(values[40], "36.00000000000000000");
     }
 
     #[test]

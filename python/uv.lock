@@ -503,6 +503,20 @@ wheels = [
 ]
 
 [[package]]
+name = "rerun-loader-mjcf"
+version = "1.0.1"
+source = { registry = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple/" }
+dependencies = [
+    { name = "mujoco" },
+    { name = "numpy" },
+    { name = "rerun-sdk" },
+]
+sdist = { url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/fa/04/9ce0af976cdfea7eb06d9cab19075ba7fadca8fac93388339186af2c486b/rerun_loader_mjcf-1.0.1.tar.gz", hash = "sha256:e41d05bcb4963e6f6fa06d1afab5c99901385f07eaf925f145262cf2112bbd30", size = 11188, upload-time = "2026-02-01T12:41:06.855Z" }
+wheels = [
+    { url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/f1/8c/c36d7dab449ec6e0b0a686276abcbff35abe61d1459f8a9cec0ef9ad4fcb/rerun_loader_mjcf-1.0.1-py3-none-any.whl", hash = "sha256:8aaee454285a7fcc7e2184f9528eafcc6140cca3db49e597e53c95de3fd836e8", size = 12106, upload-time = "2026-02-01T12:41:05.335Z" },
+]
+
+[[package]]
 name = "rerun-sdk"
 version = "0.36.2"
 source = { registry = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple/" }
@@ -536,6 +550,7 @@ dependencies = [
 [package.optional-dependencies]
 visualization = [
     { name = "imageio-ffmpeg" },
+    { name = "rerun-loader-mjcf" },
     { name = "rerun-sdk" },
 ]
 
@@ -552,6 +567,7 @@ requires-dist = [
     { name = "numpy", specifier = "==2.3.5" },
     { name = "onnxruntime", specifier = "==1.24.4" },
     { name = "protobuf", specifier = ">=6,<8" },
+    { name = "rerun-loader-mjcf", marker = "extra == 'visualization'", specifier = "==1.0.1" },
     { name = "rerun-sdk", marker = "extra == 'visualization'", specifier = "==0.36.2" },
 ]
 provides-extras = ["visualization"]

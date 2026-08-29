@@ -30,8 +30,21 @@ assert "https://miaodx.com/soma/evidence.rrd" in html, "Rerun data URL must avoi
 assert "miaodx.github.io" not in html, "redirected Rerun data URL breaks browser CORS"
 meta=json.loads((d/"metadata.json").read_text()); assert meta["scenario_result"]=="passed" and meta["scope"]=="simulation-only"
 assert meta["renderer"]["camera_id"]==0 and meta["renderer"]["camera_name"]=="studio_close"
+assert meta["rerun_3d"]=={"source":"compiled Reachy Mini MJCF robot model","loader":"rerun-loader-mjcf","loader_version":"1.0.1","timeline":"program_time"}
 text=(html+json.dumps(meta)).lower()
 for claim in ["hardware validated","hardware parity","physical robot","real robot"]: assert claim not in text, f"hardware claim present: {claim}"
 PY
 (cd "$repo_root/python" && UV_DEFAULT_INDEX=https://pypi.org/simple uv run --extra visualization rerun rrd verify "$output_dir/evidence.rrd")
-echo "verified real PNG, WebM, Rerun archive, report links, and provenance"
+robot_transform=$(cd "$repo_root/python" && UV_DEFAULT_INDEX=https://pypi.org/simple \
+  uv run --extra visualization rerun rrd print -vv --entity /robot/bodies/xl_330 "$output_dir/evidence.rrd")
+robot_mesh=$(cd "$repo_root/python" && UV_DEFAULT_INDEX=https://pypi.org/simple \
+  uv run --extra visualization rerun rrd print --entity /robot/visual_geometries/xl_330/geom_118 "$output_dir/evidence.rrd")
+[[ $robot_transform == *"Transform3D:translation"* && $robot_transform == *"program_time"* ]] || {
+  echo "Rerun archive lacks time-indexed Reachy body transforms" >&2
+  exit 1
+}
+[[ $robot_mesh == *"Mesh3D:vertex_positions"* ]] || {
+  echo "Rerun archive lacks Reachy MJCF mesh geometry" >&2
+  exit 1
+}
+echo "verified real PNG, WebM, synchronized Reachy 3D, report links, and provenance"
