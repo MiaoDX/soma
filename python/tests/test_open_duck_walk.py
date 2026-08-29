@@ -52,3 +52,16 @@ def test_frozen_acceptance_reports_failed_thresholds():
     }
     with pytest.raises(SystemExit, match="forward displacement, root height, roll, pitch, non-foot collision"):
         WALK["validate_frozen_run"](run)
+
+
+def test_showcase_command_is_one_bounded_composite_reel():
+    command = WALK["showcase_command"]
+    samples = [command(step / 10) for step in range(121)]
+
+    assert samples[0] == (0.0, 0.0, 0.0)
+    assert samples[-1] == (0.0, 0.0, 0.0)
+    assert max(value[0] for value in samples) == pytest.approx(0.28)
+    assert min(value[1] for value in samples) == pytest.approx(-0.10)
+    assert max(value[1] for value in samples) == pytest.approx(0.10)
+    assert max(value[2] for value in samples) == pytest.approx(0.22)
+    assert max(abs(b[i] - a[i]) for a, b in zip(samples, samples[1:]) for i in range(3)) < 0.07

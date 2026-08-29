@@ -9,44 +9,73 @@ metrics=$(mktemp /tmp/soma-open-duck-showcase.XXXXXX.json)
 trace=$(mktemp /tmp/soma-open-duck-showcase.XXXXXX.trace.json)
 trap 'rm -f "$metrics" "$trace"' EXIT
 MUJOCO_GL=egl uv run --project "$repo_root/python" python "$repo_root/scripts/run-open-duck-walk" \
-  reference --repeat 2 --frames-dir "$output_dir/frames" --trace-file "$trace" >"$metrics"
+  reference --showcase --frames-dir "$output_dir/frames" --trace-file "$trace" >"$metrics"
 commit=$(git -C "$repo_root" rev-parse HEAD)
 generated=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 cd "$repo_root/python"
 uv run --extra visualization python - "$metrics" "$trace" "$output_dir/evidence.rrd" <<'PY'
 import json, pathlib, sys
+import mujoco
 import rerun as rr
 import rerun.blueprint as rrb
+from rerun_loader_mjcf import MJCFLogger, MJCFRecorder
 data=json.loads(pathlib.Path(sys.argv[1]).read_text())
 trace=json.loads(pathlib.Path(sys.argv[2]).read_text())
 rr.init("Soma Open Duck Mini", recording_id="open-duck-showcase")
-for run in data["runs"]:
-    prefix=f"rollout/run_{run['run']}"
-    rr.log(f"{prefix}/forward_displacement_m", rr.Scalars([run["forward_displacement_m"]]))
-    rr.log(f"{prefix}/min_root_height_m", rr.Scalars([run["min_root_height_m"]]))
-    rr.log(f"{prefix}/max_stance_slip_m", rr.Scalars([run["max_stance_slip_m"]]))
-    rr.log(f"{prefix}/contact_transitions", rr.Scalars([run["contact_transitions"]]))
-for run_index, samples in enumerate(trace["runs"]):
-    prefix=f"rollout/run_{run_index}/timeseries"
+run=data["runs"][0]; samples=trace["runs"][0]; prefix="rollout/timeseries"
+for sample in samples:
+    rr.set_time("sim_time", duration=sample["time_s"])
+    rr.log(f"{prefix}/root/x_m", rr.Scalars([sample["root_position_m"][0]]))
+    rr.log(f"{prefix}/root/height_m", rr.Scalars([sample["root_position_m"][2]]))
+    rr.log(f"{prefix}/root/roll_rad", rr.Scalars([sample["root_roll_rad"]]))
+    rr.log(f"{prefix}/root/pitch_rad", rr.Scalars([sample["root_pitch_rad"]]))
+    rr.log(f"{prefix}/command/vx_mps", rr.Scalars([sample["command"][0]]))
+    rr.log(f"{prefix}/command/vy_mps", rr.Scalars([sample["command"][1]]))
+    rr.log(f"{prefix}/command/yaw_rps", rr.Scalars([sample["command"][2]]))
+    rr.log(f"{prefix}/contacts/left", rr.Scalars([sample["contacts"][0]]))
+    rr.log(f"{prefix}/contacts/right", rr.Scalars([sample["contacts"][1]]))
+    for joint, position, target, action in zip(trace["joints"], sample["joint_position_rad"], sample["joint_target_rad"], sample["policy_action"]):
+        rr.log(f"{prefix}/joints/{joint}/position_rad", rr.Scalars([position]))
+        rr.log(f"{prefix}/joints/{joint}/target_rad", rr.Scalars([target]))
+        rr.log(f"{prefix}/actions/{joint}", rr.Scalars([action]))
+model=mujoco.MjModel.from_xml_path(str(pathlib.Path("../crates/soma-sim/assets/open-duck-mini-v2/xmls/scene_flat_terrain.xml")))
+md=mujoco.MjData(model); rr.set_time("sim_time", duration=0.0)
+logger=MJCFLogger(model, entity_path_prefix="robot"); logger.log_model()
+with MJCFRecorder(logger, timeline_name="sim_time") as recorder:
     for sample in samples:
+        md.qpos[:]=sample["qpos"]; md.qvel[:]=sample["qvel"]; md.time=sample["time_s"]
+        mujoco.mj_forward(model, md); recorder.record(md, duration=sample["time_s"])
         rr.set_time("sim_time", duration=sample["time_s"])
-        rr.log(f"{prefix}/root/x_m", rr.Scalars([sample["root_position_m"][0]]))
-        rr.log(f"{prefix}/root/height_m", rr.Scalars([sample["root_position_m"][2]]))
-        rr.log(f"{prefix}/root/roll_rad", rr.Scalars([sample["root_roll_rad"]]))
-        rr.log(f"{prefix}/root/pitch_rad", rr.Scalars([sample["root_pitch_rad"]]))
-        rr.log(f"{prefix}/contacts/left", rr.Scalars([sample["contacts"][0]]))
-        rr.log(f"{prefix}/contacts/right", rr.Scalars([sample["contacts"][1]]))
-        for joint, position, target, action in zip(trace["joints"], sample["joint_position_rad"], sample["joint_target_rad"], sample["policy_action"]):
-            rr.log(f"{prefix}/joints/{joint}/position_rad", rr.Scalars([position]))
-            rr.log(f"{prefix}/joints/{joint}/target_rad", rr.Scalars([target]))
-            rr.log(f"{prefix}/actions/{joint}", rr.Scalars([action]))
-rr.send_blueprint(rrb.Blueprint(rrb.Grid(
-    rrb.TimeSeriesView(origin="rollout/run_0/timeseries/root", name="Root motion and stability"),
-    rrb.TimeSeriesView(origin="rollout/run_0/timeseries/contacts", name="Foot contacts"),
-    rrb.TimeSeriesView(origin="rollout/run_0/timeseries/joints", name="Joint positions and targets"),
-    rrb.TimeSeriesView(origin="rollout/run_0/timeseries/actions", name="Policy actions"),
-    grid_columns=2,
-)))
+        for body_id in range(1, model.nbody):
+            body=mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, body_id)
+            if body == "floor":
+                continue
+            w, x, y, z=md.xquat[body_id]
+            rr.log(
+                f"robot/visual_geometries/{body}",
+                rr.Transform3D(
+                    translation=md.xpos[body_id],
+                    rotation=rr.Quaternion(xyzw=[x, y, z, w]),
+                ),
+            )
+spatial=rrb.Spatial3DView(
+        origin="robot",
+        contents=["/robot/**", "-/robot/visual_geometries/floor/**"],
+        name="Open Duck Mini",
+        eye_controls=rrb.EyeControls3D(
+            position=(0.6, -1.25, 0.46),
+            look_target=(0.6, 0.1, 0.16),
+            eye_up=(0.0, 0.0, 1.0),
+        ),
+    )
+telemetry=rrb.Vertical(
+    rrb.TimeSeriesView(origin="rollout/timeseries/command", name="Velocity commands"),
+    rrb.TimeSeriesView(origin="rollout/timeseries/root", name="Root motion and stability"),
+    rrb.TimeSeriesView(origin="rollout/timeseries/contacts", name="Foot contacts"),
+    rrb.TimeSeriesView(origin="rollout/timeseries/joints", name="Joint positions and targets"),
+    rrb.TimeSeriesView(origin="rollout/timeseries/actions", name="Policy actions"),
+)
+rr.send_blueprint(rrb.Blueprint(rrb.Horizontal(spatial, telemetry, column_shares=[1.15, 1.0])))
 rr.save(sys.argv[3])
 PY
 cd "$repo_root"
@@ -56,13 +85,13 @@ ffmpeg=$(cd "$repo_root/python" && UV_DEFAULT_INDEX=https://pypi.org/simple \
 cp "$output_dir/frames/frame-0000.ppm" "$output_dir/poster.ppm"
 frame_count=$(find "$output_dir/frames" -name 'frame-*.ppm' | wc -l)
 "$ffmpeg" -hide_banner -loglevel error -i "$output_dir/poster.ppm" -frames:v 1 -y "$output_dir/poster.png"
-"$ffmpeg" -hide_banner -loglevel error -framerate "$frame_count/6" -i "$output_dir/frames/frame-%04d.ppm" -c:v libvpx-vp9 -pix_fmt yuv420p -an -y "$output_dir/motion.webm"
+"$ffmpeg" -hide_banner -loglevel error -framerate "$frame_count/12" -i "$output_dir/frames/frame-%04d.ppm" -c:v libvpx-vp9 -pix_fmt yuv420p -an -y "$output_dir/motion.webm"
 rm -f "$output_dir/poster.ppm"
 rm -rf "$output_dir/frames"
 rows=$(python3 - "$metrics" <<'PY'
 import json,sys
-for r in json.load(open(sys.argv[1]))["runs"]:
- print(f"<tr><td>{r['run']}</td><td>{r['forward_displacement_m']:.5f}</td><td>{r['min_root_height_m']:.5f}</td><td>{r['contact_transitions']}</td><td>{r['max_stance_slip_m']:.6f}</td><td>{r['non_foot_collision_count']}</td></tr>")
+r=json.load(open(sys.argv[1]))["runs"][0]
+print(f"<p>Forward displacement: <strong>{r['forward_displacement_m']:.5f} m</strong>; minimum root height: <strong>{r['min_root_height_m']:.5f} m</strong>; foot contact transitions: <strong>{r['contact_transitions']}</strong>.</p>")
 PY
 )
 python3 - "$repo_root/docs/showcase/open-duck.template.html" "$output_dir/index.html" "$commit" "$rrd_url" "$rows" <<'PY'
@@ -75,7 +104,7 @@ PY
 python3 - "$output_dir/metadata.json" "$commit" "$generated" "$metrics" <<'PY'
 import json, pathlib, sys
 metrics=json.loads(pathlib.Path(sys.argv[4]).read_text())
-json.dump({"schema_version":1,"robot":"Open Duck Mini","scope":"simulation-only","scenario":"fixed 8-second walk case","scenario_result":metrics["scenario_result"],"commit":sys.argv[2],"generated_utc":sys.argv[3],"renderer":{"engine":"MuJoCo EGL offscreen","camera":"tracking base","width":640,"height":480},"artifacts":{"poster":"poster.png","motion":"motion.webm","rerun":"evidence.rrd"},"runs":metrics["runs"]},open(sys.argv[1],"w"),indent=2)
+json.dump({"schema_version":1,"robot":"Open Duck Mini","scope":"simulation-only","scenario":"single 12-second composite showcase rollout","scenario_result":metrics["scenario_result"],"commit":sys.argv[2],"generated_utc":sys.argv[3],"renderer":{"engine":"MuJoCo EGL offscreen","camera":"fixed path overview","width":640,"height":480},"artifacts":{"poster":"poster.png","motion":"motion.webm","rerun":"evidence.rrd"},"run":metrics["runs"][0]},open(sys.argv[1],"w"),indent=2)
 PY
 UV_DEFAULT_INDEX=https://pypi.org/simple uv run --project "$repo_root/python" \
   --extra visualization rerun rrd verify "$output_dir/evidence.rrd"
@@ -87,11 +116,33 @@ assert png[:8] == b"\x89PNG\r\n\x1a\n"
 assert (int.from_bytes(png[16:20], "big"), int.from_bytes(png[20:24], "big")) == (640, 480)
 probe = subprocess.run([ffmpeg, "-hide_banner", "-i", str(d / "motion.webm"), "-f", "null", "-"], stderr=subprocess.PIPE, text=True)
 duration = re.search(r"Duration: (\d+):(\d+):(\d+(?:\.\d+)?)", probe.stderr)
-assert duration and float(duration[3]) >= 6.0
+assert duration and 12.0 <= float(duration[3]) <= 12.2
 hashes = subprocess.check_output([ffmpeg, "-hide_banner", "-loglevel", "error", "-i", str(d / "motion.webm"), "-f", "framemd5", "-"], text=True)
 assert len({line.rsplit(",", 1)[-1].strip() for line in hashes.splitlines() if line and not line.startswith("#")}) > 1
 html = (d / "index.html").read_text()
 assert "https://miaodx.com/soma/open-duck/evidence.rrd" in html
 assert "miaodx.github.io" not in html
+meta = __import__("json").loads((d / "metadata.json").read_text())
+assert meta["scenario"] == "single 12-second composite showcase rollout"
+assert "run" in meta and "runs" not in meta
+assert meta["run"]["physics_steps"] == 6000
 PY
+robot_mesh=$(cd "$repo_root/python" && UV_DEFAULT_INDEX=https://pypi.org/simple \
+  uv run --extra visualization rerun rrd print "$output_dir/evidence.rrd")
+[[ $robot_mesh == *"/robot/visual_geometries/"*"Mesh3D:triangle_indices"* ]] || {
+  echo "Open Duck Rerun archive lacks robot mesh geometry" >&2
+  exit 1
+}
+for stream in vx_mps vy_mps yaw_rps; do
+  [[ $robot_mesh == *"/rollout/timeseries/command/$stream - data columns: [Scalars:scalars]"* ]] || {
+    echo "Open Duck Rerun archive lacks command stream: $stream" >&2
+    exit 1
+  }
+done
+robot_motion=$(cd "$repo_root/python" && UV_DEFAULT_INDEX=https://pypi.org/simple \
+  uv run --extra visualization rerun rrd print -vvv --entity /robot/bodies/base "$output_dir/evidence.rrd")
+[[ $robot_motion == *"PT11."* ]] || {
+  echo "Open Duck robot transforms do not span the composite rollout" >&2
+  exit 1
+}
 echo "Open Duck showcase built: $output_dir"

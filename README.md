@@ -49,9 +49,12 @@ keeps the result visible before or between successful deployments.
 
 The fixed Open Duck Mini v2 simulation has its own CI-generated report at
 [Open Duck Mini status](https://miaodx.github.io/soma/open-duck/). It embeds the
-Rerun web viewer and shows the two-run walk metrics; the `.rrd` recording remains
-available as a download. Both reports are simulation-only and make no hardware
-or physical-actuation claim.
+Rerun web viewer and one 12-second composite policy rollout. The rollout starts,
+walks forward, adds lateral and yaw commands, and settles to rest; Rerun shows
+the complete animated MJCF robot beside commands, root stability, foot contacts,
+joint targets/positions, and policy actions. The frozen straight-walk case
+remains an internal regression gate rather than a second user-facing demo. Both
+reports are simulation-only and make no hardware or physical-actuation claim.
 
 Run the visual acceptance scenario locally:
 
@@ -78,6 +81,7 @@ To build and verify the same static report locally:
 
 ```bash
 scripts/build-sim-showcase output/simulation-showcase
+scripts/build-open-duck-showcase output/open-duck-showcase
 ```
 
 The Pages showcase is intentionally richer than `run-sim-scenario`: it samples
