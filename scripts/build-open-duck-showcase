@@ -45,19 +45,6 @@ with MJCFRecorder(logger, timeline_name="sim_time") as recorder:
     for sample in samples:
         md.qpos[:]=sample["qpos"]; md.qvel[:]=sample["qvel"]; md.time=sample["time_s"]
         mujoco.mj_forward(model, md); recorder.record(md, duration=sample["time_s"])
-        rr.set_time("sim_time", duration=sample["time_s"])
-        for body_id in range(1, model.nbody):
-            body=mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, body_id)
-            if body == "floor":
-                continue
-            w, x, y, z=md.xquat[body_id]
-            rr.log(
-                f"robot/visual_geometries/{body}",
-                rr.Transform3D(
-                    translation=md.xpos[body_id],
-                    rotation=rr.Quaternion(xyzw=[x, y, z, w]),
-                ),
-            )
 spatial=rrb.Spatial3DView(
         origin="robot",
         contents=["/robot/**", "-/robot/visual_geometries/floor/**"],
@@ -122,6 +109,8 @@ assert len({line.rsplit(",", 1)[-1].strip() for line in hashes.splitlines() if l
 html = (d / "index.html").read_text()
 assert "https://miaodx.com/soma/open-duck/evidence.rrd" in html
 assert "miaodx.github.io" not in html
+assert 'loading="eager"' in html and 'loading="lazy"' not in html
+assert "persist=false" in html
 meta = __import__("json").loads((d / "metadata.json").read_text())
 assert meta["scenario"] == "single 12-second composite showcase rollout"
 assert "run" in meta and "runs" not in meta
@@ -131,6 +120,16 @@ robot_mesh=$(cd "$repo_root/python" && UV_DEFAULT_INDEX=https://pypi.org/simple 
   uv run --extra visualization rerun rrd print "$output_dir/evidence.rrd")
 [[ $robot_mesh == *"/robot/visual_geometries/"*"Mesh3D:triangle_indices"* ]] || {
   echo "Open Duck Rerun archive lacks robot mesh geometry" >&2
+  exit 1
+}
+[[ $robot_mesh == *"CoordinateFrame:frame"* ]] || {
+  echo "Open Duck Rerun meshes are not attached to body coordinate frames" >&2
+  exit 1
+}
+visual_root=$(cd "$repo_root/python" && UV_DEFAULT_INDEX=https://pypi.org/simple \
+  uv run --extra visualization rerun rrd print --entity /robot/visual_geometries/base "$output_dir/evidence.rrd")
+[[ $visual_root != *"Transform3D:"* ]] || {
+  echo "Open Duck visual hierarchy contains a duplicate body transform" >&2
   exit 1
 }
 for stream in vx_mps vy_mps yaw_rps; do
