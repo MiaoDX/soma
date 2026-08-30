@@ -28,6 +28,8 @@ for link in links:
  if "://" not in link and not link.startswith("#") and not link.endswith("/"): assert (d/link).is_file(), f"broken local file: {link}"
 assert "https://miaodx.com/soma/reachy/evidence.rrd" in html, "Rerun data URL must use the Reachy report path and avoid the github.io redirect"
 assert "miaodx.github.io" not in html, "redirected Rerun data URL breaks browser CORS"
+assert 'loading="eager"' in html and 'loading="lazy"' not in html, "Rerun must start loading before it scrolls into view"
+assert "persist=false" in html, "Rerun must not restore a stale camera or layout"
 meta=json.loads((d/"metadata.json").read_text()); assert meta["scenario_result"]=="passed" and meta["scope"]=="simulation-only"
 motion=meta["choreography"]
 assert motion["duration_seconds"]==12.0 and motion["capture_duration_seconds"]==14.0
