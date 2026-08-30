@@ -50,8 +50,8 @@ spatial=rrb.Spatial3DView(
         contents=["/robot/**", "-/robot/visual_geometries/floor/**"],
         name="Open Duck Mini",
         eye_controls=rrb.EyeControls3D(
-            position=(0.6, -1.25, 0.46),
-            look_target=(0.6, 0.1, 0.16),
+            position=(0.6, -2.0, 0.62),
+            look_target=(0.6, 0.1, 0.22),
             eye_up=(0.0, 0.0, 1.0),
         ),
     )
