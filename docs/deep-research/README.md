@@ -31,6 +31,7 @@ Architecture documents should stay concise and opinionated. Deep Research is int
 ### Robot model, simulation, and safety
 
 - [`fast-open-robot-reference-path.md`](fast-open-robot-reference-path.md) — Reachy Mini-only simulation/native decision, direct Dynamixel feasibility evidence, official-stack comparison, and prior candidate research.
+- [`reachy-native-bus-worker.md`](reachy-native-bus-worker.md) — Reachy Lite native bus-worker case study: transaction shape, Protocol 2.0 error semantics, model identity, watchdog behavior, and N0 gaps.
 - [`open-duck-and-microduck.md`](open-duck-and-microduck.md) — separate Open Duck Mini/Playground and MicroDuck lineages, implementation comparison, source pins, and lessons for Soma.
 - [`viam-roboparty-tars.md`](viam-roboparty-tars.md) — Viam, RoboParty, and TARS-AI organization/project analysis for runtime, policy, deployment, and application references.
 - [`open-robot-stack-gap-scan.md`](open-robot-stack-gap-scan.md) — bounded scan for overlooked from-scratch robot and complete-stack projects, including Pupper, Mini Pupper, Poppy, BotBrain, and LeRobot.
