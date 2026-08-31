@@ -4,6 +4,11 @@
 
 This directory preserves the evidence base behind Soma.
 
+The recurring workflow is documented in
+[`periodic-bottom-up-research.md`](periodic-bottom-up-research.md). It keeps
+community comparison tied to Soma's actual bottom-up implementation and proof
+boundaries.
+
 Architecture documents should stay concise and opinionated. Deep Research is intentionally broader: it captures competing approaches, implementation references, failure modes, adjacent-industry practices, and unresolved questions so that architectural decisions remain traceable.
 
 ## Current research notes
@@ -26,6 +31,9 @@ Architecture documents should stay concise and opinionated. Deep Research is int
 ### Robot model, simulation, and safety
 
 - [`fast-open-robot-reference-path.md`](fast-open-robot-reference-path.md) — Reachy Mini-only simulation/native decision, direct Dynamixel feasibility evidence, official-stack comparison, and prior candidate research.
+- [`open-duck-and-microduck.md`](open-duck-and-microduck.md) — separate Open Duck Mini/Playground and MicroDuck lineages, implementation comparison, source pins, and lessons for Soma.
+- [`viam-roboparty-tars.md`](viam-roboparty-tars.md) — Viam, RoboParty, and TARS-AI organization/project analysis for runtime, policy, deployment, and application references.
+- [`open-robot-stack-gap-scan.md`](open-robot-stack-gap-scan.md) — bounded scan for overlooked from-scratch robot and complete-stack projects, including Pupper, Mini Pupper, Poppy, BotBrain, and LeRobot.
 - [`robot-model-manifest-calibration.md`](robot-model-manifest-calibration.md) — product model, instance inventory, calibration, control and SafetyProfile boundaries, simulator overlays, hashes, and PolicyBundle compatibility.
 - [`simulation-architecture.md`](simulation-architecture.md) — MuJoCo, Isaac, Genesis, SIL/HIL, simulation time, model identity, PolicyBundle, and conformance testing.
 - [`safety-and-fault-architecture.md`](safety-and-fault-architecture.md) — SA-0 through SA-5 safety authority, SafetyProfile governance, standards landscape, safe behavior, fault lifecycle, watchdog hierarchy, and research-mode controls.
