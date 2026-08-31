@@ -7,7 +7,8 @@ use fs2::FileExt;
 use prost::Message;
 use soma_core::{
     AppliedCommand, ApplyDisposition as CoreApplyDisposition, CommandResult, ControlTick,
-    PlantHealth as CorePlantHealth, ReachyActuatorTarget, RejectionReason as CoreRejectionReason,
+    Lifecycle as CoreLifecycle, PlantHealth as CorePlantHealth, ReachyActuatorTarget,
+    RejectionReason as CoreRejectionReason, SourceTimeDomain as CoreSourceTimeDomain,
 };
 use soma_protocol::v1::{self, rt_request};
 
@@ -79,9 +80,29 @@ pub fn monotonic_ns() -> u64 {
     time.tv_sec as u64 * 1_000_000_000 + time.tv_nsec as u64
 }
 
-pub fn stamp_request_received(request: &mut v1::RtRequest, received_ns: u64) {
+pub fn stamp_request_received(
+    request: &mut v1::RtRequest,
+    received_ns: u64,
+    runtime_generation: u64,
+) {
     if let Some(rt_request::Request::Target(target)) = request.request.as_mut() {
         target.issued_at_ns = received_ns;
+        target.runtime_generation = runtime_generation;
+    }
+}
+
+pub fn admit_public_request(
+    mut request: v1::RtRequest,
+    received_ns: u64,
+    runtime_generation: u64,
+) -> v1::RtRequest {
+    match request.request.as_ref() {
+        Some(rt_request::Request::Target(_)) => {
+            stamp_request_received(&mut request, received_ns, runtime_generation);
+            request
+        }
+        Some(rt_request::Request::Reset(true)) => request,
+        _ => ingress_rejection(0, v1::RejectionReason::Invalid),
     }
 }
 
@@ -93,6 +114,14 @@ pub fn ingress_rejection(sequence: u64, reason: v1::RejectionReason) -> v1::RtRe
                 reason: reason as i32,
             },
         )),
+    }
+}
+
+pub fn runtime_started(generation: u64) -> v1::RtRequest {
+    v1::RtRequest {
+        request: Some(rt_request::Request::RuntimeStarted(v1::RuntimeStarted {
+            generation,
+        })),
     }
 }
 
@@ -118,6 +147,7 @@ pub fn decode_target(
         timeline: target.timeline,
         issued_at_ns: target.issued_at_ns,
         ttl_ns: target.ttl_ns,
+        runtime_generation: target.runtime_generation,
     })
 }
 
@@ -151,6 +181,7 @@ pub fn update_state(
                 CoreRejectionReason::Sequence => v1::RejectionReason::Sequence,
                 CoreRejectionReason::Expired => v1::RejectionReason::Expired,
                 CoreRejectionReason::Invalid => v1::RejectionReason::Invalid,
+                CoreRejectionReason::RuntimeGeneration => v1::RejectionReason::RuntimeGeneration,
             },
         ),
     };
@@ -160,7 +191,7 @@ pub fn update_state(
         .extend_from_slice(&tick.measured.positions_rad);
     state.sequence = tick.measured.sequence;
     state.timeline = tick.measured.timeline;
-    state.timestamp_ns = tick.measured.timestamp_ns;
+    state.source_timestamp_ns = tick.measured.source_timestamp_ns;
     state.state_age_ns = state_age_ns;
     state.applied_source = applied_source;
     state.applied_sequence = applied_sequence;
@@ -168,6 +199,18 @@ pub fn update_state(
     state.command_disposition = command_disposition as i32;
     state.rejection_reason = rejection_reason as i32;
     state.command_sequence = command_sequence;
+    state.source_time_domain = match tick.measured.source_time_domain {
+        CoreSourceTimeDomain::Simulation => v1::SourceTimeDomain::Simulation,
+        CoreSourceTimeDomain::HostMonotonic => v1::SourceTimeDomain::HostMonotonic,
+        CoreSourceTimeDomain::Device => v1::SourceTimeDomain::Device,
+    } as i32;
+    state.runtime_generation = tick.runtime_generation;
+    state.runtime_transition = tick.runtime_transition;
+    state.lifecycle = match tick.measured.lifecycle {
+        CoreLifecycle::Disabled => v1::Lifecycle::Disabled,
+        CoreLifecycle::Enabled => v1::Lifecycle::Enabled,
+        CoreLifecycle::Stopped => v1::Lifecycle::Stopped,
+    } as i32;
     state.health = match tick.measured.health {
         CorePlantHealth::Healthy => v1::PlantHealth::Healthy,
         CorePlantHealth::StaleState => v1::PlantHealth::StaleState,
@@ -205,15 +248,17 @@ mod tests {
                 timeline: 1,
                 issued_at_ns: 123,
                 ttl_ns: 50,
+                runtime_generation: 0,
             })),
         };
-        stamp_request_received(&mut request, 900);
+        stamp_request_received(&mut request, 900, 77);
         let rt_request::Request::Target(target) = request.request.unwrap() else {
             unreachable!()
         };
         let decoded = decode_target(target).unwrap();
         assert_eq!(decoded.issued_at_ns, 900);
         assert_eq!(decoded.positions_rad.len(), 9);
+        assert_eq!(decoded.runtime_generation, 77);
         assert!(decoded.is_expired(950));
     }
 
@@ -225,6 +270,7 @@ mod tests {
             timeline: 1,
             issued_at_ns: 3,
             ttl_ns: 4,
+            runtime_generation: 0,
         })
         .unwrap_err();
         assert_eq!(error, TargetDecodeError::WrongPositionCount { actual: 8 });
@@ -245,6 +291,16 @@ mod tests {
     }
 
     #[test]
+    fn public_ingress_cannot_inject_internal_runtime_messages() {
+        let injected = runtime_started(41);
+        let admitted = admit_public_request(injected, 100, 42);
+        assert_eq!(admitted, ingress_rejection(0, v1::RejectionReason::Invalid));
+
+        let empty = admit_public_request(v1::RtRequest::default(), 100, 42);
+        assert_eq!(empty, ingress_rejection(0, v1::RejectionReason::Invalid));
+    }
+
+    #[test]
     fn periodic_state_encoding_reuses_preallocated_storage() {
         use soma_core::{AppliedControl, Lifecycle, PlantHealth, ReachyActuatorState};
 
@@ -253,7 +309,8 @@ mod tests {
                 positions_rad: [0.1; 9],
                 sequence: 1,
                 timeline: 2,
-                timestamp_ns: 3,
+                source_timestamp_ns: 3,
+                source_time_domain: soma_core::SourceTimeDomain::HostMonotonic,
                 lifecycle: Lifecycle::Enabled,
                 health: PlantHealth::Healthy,
             },
@@ -264,6 +321,8 @@ mod tests {
                 expiry_transition: false,
             },
             apply_disposition: CoreApplyDisposition::Confirmed,
+            runtime_generation: 9,
+            runtime_transition: true,
         };
         let mut state = v1::ActuatorState {
             positions_rad: Vec::with_capacity(9),

@@ -69,6 +69,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             reason: RejectionReason::Invalid,
                         };
                     }
+                    Some(rt_request::Request::RuntimeStarted(started)) => {
+                        pending = CommandInput::RuntimeStarted {
+                            generation: started.generation,
+                        };
+                    }
                     _ => {}
                 }
             }

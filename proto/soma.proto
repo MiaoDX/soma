@@ -8,6 +8,7 @@ message ActuatorTarget {
   uint64 timeline = 3;
   uint64 issued_at_ns = 4;
   uint64 ttl_ns = 5;
+  uint64 runtime_generation = 6;
 }
 
 message RtRequest {
@@ -15,7 +16,12 @@ message RtRequest {
     ActuatorTarget target = 1;
     bool reset = 2;
     IngressRejection ingress_rejection = 3;
+    RuntimeStarted runtime_started = 4;
   }
+}
+
+message RuntimeStarted {
+  uint64 generation = 1;
 }
 
 message IngressRejection {
@@ -42,6 +48,7 @@ enum RejectionReason {
   REJECTION_REASON_SEQUENCE = 2;
   REJECTION_REASON_EXPIRED = 3;
   REJECTION_REASON_INVALID = 4;
+  REJECTION_REASON_RUNTIME_GENERATION = 5;
 }
 
 enum ApplyDisposition {
@@ -58,11 +65,25 @@ enum PlantHealth {
   PLANT_HEALTH_CONFIGURATION_MISMATCH = 4;
 }
 
+enum SourceTimeDomain {
+  SOURCE_TIME_DOMAIN_UNSPECIFIED = 0;
+  SOURCE_TIME_DOMAIN_SIMULATION = 1;
+  SOURCE_TIME_DOMAIN_HOST_MONOTONIC = 2;
+  SOURCE_TIME_DOMAIN_DEVICE = 3;
+}
+
+enum Lifecycle {
+  LIFECYCLE_UNSPECIFIED = 0;
+  LIFECYCLE_DISABLED = 1;
+  LIFECYCLE_ENABLED = 2;
+  LIFECYCLE_STOPPED = 3;
+}
+
 message ActuatorState {
   repeated float positions_rad = 1;
   uint64 sequence = 2;
   uint64 timeline = 3;
-  uint64 timestamp_ns = 4;
+  uint64 source_timestamp_ns = 4;
   uint64 state_age_ns = 5;
   AppliedSource applied_source = 6;
   uint64 applied_sequence = 7;
@@ -73,4 +94,8 @@ message ActuatorState {
   uint64 capture_monotonic_ns = 12;
   ApplyDisposition apply_disposition = 13;
   uint64 command_sequence = 14;
+  SourceTimeDomain source_time_domain = 15;
+  uint64 runtime_generation = 16;
+  bool runtime_transition = 17;
+  Lifecycle lifecycle = 18;
 }

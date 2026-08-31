@@ -18,6 +18,13 @@ pub enum PlantHealth {
     ConfigurationMismatch,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SourceTimeDomain {
+    Simulation,
+    HostMonotonic,
+    Device,
+}
+
 pub type ActuatorPositions = [f32; ACTUATOR_COUNT];
 pub type ActuatorArray<const N: usize> = [f32; N];
 
@@ -26,7 +33,8 @@ pub struct ActuatorState<const N: usize> {
     pub positions_rad: ActuatorArray<N>,
     pub sequence: u64,
     pub timeline: u64,
-    pub timestamp_ns: u64,
+    pub source_timestamp_ns: u64,
+    pub source_time_domain: SourceTimeDomain,
     pub lifecycle: Lifecycle,
     pub health: PlantHealth,
 }
@@ -39,6 +47,7 @@ pub struct ActuatorTarget<const N: usize> {
     pub timeline: u64,
     pub issued_at_ns: u64,
     pub ttl_ns: u64,
+    pub runtime_generation: u64,
 }
 pub type ReachyActuatorTarget = ActuatorTarget<ACTUATOR_COUNT>;
 
@@ -85,6 +94,7 @@ pub enum RejectionReason {
     Sequence,
     Expired,
     Invalid,
+    RuntimeGeneration,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -102,6 +112,9 @@ pub enum CommandResult {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum CommandInput<const N: usize> {
     None,
+    RuntimeStarted {
+        generation: u64,
+    },
     Target(ActuatorTarget<N>),
     Rejected {
         sequence: u64,
@@ -129,6 +142,8 @@ pub struct ControlTick<const N: usize> {
     pub command_result: CommandResult,
     pub applied: AppliedControl<N>,
     pub apply_disposition: ApplyDisposition,
+    pub runtime_generation: u64,
+    pub runtime_transition: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -143,6 +158,7 @@ pub struct ControlCore<const N: usize> {
     timeline: Option<u64>,
     last_sequence: Option<u64>,
     active_target: Option<ActuatorTarget<N>>,
+    runtime_generation: u64,
 }
 
 impl<const N: usize> ControlCore<N> {
@@ -203,8 +219,22 @@ impl<const N: usize> ControlCore<N> {
             self.last_sequence = Some(measured.sequence);
         }
 
+        let runtime_transition = match command {
+            CommandInput::RuntimeStarted { generation } => {
+                let changed = self.runtime_generation != generation;
+                if changed {
+                    self.runtime_generation = generation;
+                    self.last_sequence = None;
+                    self.active_target = None;
+                }
+                changed
+            }
+            _ => false,
+        };
+
         let command_result = match command {
             CommandInput::None => CommandResult::NoCommand,
+            CommandInput::RuntimeStarted { .. } => CommandResult::NoCommand,
             CommandInput::Rejected { sequence, reason } => {
                 CommandResult::Rejected { sequence, reason }
             }
@@ -212,6 +242,14 @@ impl<const N: usize> ControlCore<N> {
                 CommandResult::Rejected {
                     sequence: target.sequence,
                     reason: RejectionReason::Timeline,
+                }
+            }
+            CommandInput::Target(target)
+                if target.runtime_generation != self.runtime_generation =>
+            {
+                CommandResult::Rejected {
+                    sequence: target.sequence,
+                    reason: RejectionReason::RuntimeGeneration,
                 }
             }
             CommandInput::Target(target)
@@ -276,6 +314,8 @@ impl<const N: usize> ControlCore<N> {
             command_result,
             applied,
             apply_disposition,
+            runtime_generation: self.runtime_generation,
+            runtime_transition,
         })
     }
 
@@ -305,7 +345,8 @@ mod tests {
                     positions_rad: [0.1; ACTUATOR_COUNT],
                     sequence: 3,
                     timeline: 7,
-                    timestamp_ns: 100,
+                    source_timestamp_ns: 100,
+                    source_time_domain: SourceTimeDomain::HostMonotonic,
                     lifecycle: Lifecycle::Enabled,
                     health: PlantHealth::Healthy,
                 },
@@ -340,6 +381,7 @@ mod tests {
             timeline,
             issued_at_ns: 100,
             ttl_ns: 10,
+            runtime_generation: 0,
         }
     }
 
@@ -486,6 +528,44 @@ mod tests {
             }
         );
         assert_eq!(tick.applied.command, AppliedCommand::Target { sequence: 4 });
+    }
+
+    #[test]
+    fn runtime_restart_drops_old_authority_and_requires_new_generation() {
+        let mut core = ControlCore::new();
+        let mut plant = TestPlant::new();
+        core.tick(&mut plant, Some(target(4, 7)), 105).unwrap();
+
+        let transition = core
+            .tick_ingress(
+                &mut plant,
+                CommandInput::RuntimeStarted { generation: 9 },
+                106,
+            )
+            .unwrap();
+        assert!(transition.runtime_transition);
+        assert_eq!(transition.runtime_generation, 9);
+        assert!(matches!(
+            transition.applied.command,
+            AppliedCommand::MeasuredPositionHold { .. }
+        ));
+
+        let rejected = core.tick(&mut plant, Some(target(5, 7)), 107).unwrap();
+        assert_eq!(
+            rejected.command_result,
+            CommandResult::Rejected {
+                sequence: 5,
+                reason: RejectionReason::RuntimeGeneration,
+            }
+        );
+
+        let mut current = target(5, 7);
+        current.runtime_generation = 9;
+        let accepted = core.tick(&mut plant, Some(current), 108).unwrap();
+        assert_eq!(
+            accepted.command_result,
+            CommandResult::Accepted { sequence: 5 }
+        );
     }
 
     #[test]

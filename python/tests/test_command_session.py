@@ -20,6 +20,30 @@ def state(*, positions=None, timeline=4, sequence=10, **changes):
 
 
 class CommandSessionTest(unittest.TestCase):
+    def test_state_schema_round_trips_time_application_and_lifecycle_evidence(self):
+        encoded = state(
+            source_timestamp_ns=123,
+            source_time_domain=soma_pb2.SOURCE_TIME_DOMAIN_SIMULATION,
+            runtime_generation=9,
+            runtime_transition=True,
+            lifecycle=soma_pb2.LIFECYCLE_ENABLED,
+            apply_disposition=soma_pb2.APPLY_DISPOSITION_CONFIRMED,
+        ).SerializeToString()
+
+        decoded = soma_pb2.ActuatorState.FromString(encoded)
+        self.assertEqual(decoded.source_timestamp_ns, 123)
+        self.assertEqual(
+            decoded.source_time_domain,
+            soma_pb2.SOURCE_TIME_DOMAIN_SIMULATION,
+        )
+        self.assertEqual(decoded.runtime_generation, 9)
+        self.assertTrue(decoded.runtime_transition)
+        self.assertEqual(decoded.lifecycle, soma_pb2.LIFECYCLE_ENABLED)
+        self.assertEqual(
+            decoded.apply_disposition,
+            soma_pb2.APPLY_DISPOSITION_CONFIRMED,
+        )
+
     def test_bootstrap_requires_healthy_nine_finite_positions(self):
         machine = CommandSession()
         for positions in ([0.0] * 8, [0.0] * 8 + [math.inf]):
