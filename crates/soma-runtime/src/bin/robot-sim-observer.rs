@@ -266,24 +266,35 @@ enum RerunDestination {
     File(PathBuf),
 }
 
+const STEWART_MOTOR_QUERIES: [&str; 6] = [
+    "/actuators/stewart_1/**",
+    "/actuators/stewart_2/**",
+    "/actuators/stewart_3/**",
+    "/actuators/stewart_4/**",
+    "/actuators/stewart_5/**",
+    "/actuators/stewart_6/**",
+];
+const ANTENNA_QUERIES: [&str; 2] = ["/actuators/left_antenna/**", "/actuators/right_antenna/**"];
+const TIMING_OBSERVER_QUERIES: [&str; 4] = [
+    "/simulation/**",
+    "/state/age_ms",
+    "/command/ttl_ms",
+    "/observer/**",
+];
+
 fn telemetry_views() -> Vec<ContainerLike> {
     vec![
         TimeSeriesView::new("Body yaw")
             .with_origin("actuators/yaw_body")
             .into(),
         TimeSeriesView::new("Stewart motors")
-            .with_contents(["actuators/stewart_*/**"])
+            .with_contents(STEWART_MOTOR_QUERIES)
             .into(),
         TimeSeriesView::new("Antennae")
-            .with_contents(["actuators/*_antenna/**"])
+            .with_contents(ANTENNA_QUERIES)
             .into(),
         TimeSeriesView::new("Timing and observer integrity")
-            .with_contents([
-                "simulation/**",
-                "state/age_ms",
-                "command/ttl_ms",
-                "observer/**",
-            ])
+            .with_contents(TIMING_OBSERVER_QUERIES)
             .into(),
         StateTimelineView::new("Control state")
             .with_origin("state")
@@ -638,6 +649,25 @@ mod tests {
         assert_eq!(elapsed_seconds(20_000_000_000, 20_000_000_000), 0.0);
         assert_eq!(elapsed_seconds(20_000_000_000, 21_500_000_000), 1.5);
         assert_eq!(elapsed_seconds(20_000_000_000, 19_999_999_999), 0.0);
+    }
+
+    #[test]
+    fn telemetry_queries_use_explicit_absolute_rerun_paths() {
+        let queries = STEWART_MOTOR_QUERIES
+            .into_iter()
+            .chain(ANTENNA_QUERIES)
+            .chain(TIMING_OBSERVER_QUERIES);
+
+        for query in queries {
+            assert!(query.starts_with('/'), "query must be absolute: {query}");
+            let path = query.strip_suffix("/**").unwrap_or(query);
+            assert!(
+                !path.contains('*'),
+                "Rerun only supports wildcard matching through a final /**: {query}"
+            );
+        }
+        assert_eq!(STEWART_MOTOR_QUERIES.len(), 6);
+        assert_eq!(ANTENNA_QUERIES.len(), 2);
     }
 
     #[test]
