@@ -111,6 +111,7 @@ def main():
                   for name in ("left_foot_bottom_tpu", "right_foot_bottom_tpu")]
     foot_sites = [mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, name)
                   for name in ("left_foot", "right_foot")]
+    base_body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "base")
     total_ticks = round((SHOWCASE_DURATION_S if args.showcase else 8.0) / model.opt.timestep)
     for run in range(args.repeat if not args.showcase else 1):
         trace = []
@@ -191,7 +192,12 @@ def main():
             w,x,y,z=data.qpos[3:7]; roll=math.atan2(2*(w*x+y*z),1-2*(x*x+y*y)); pitch=math.asin(np.clip(2*(w*y-z*x),-1,1))
             min_root_height=min(min_root_height,float(data.qpos[2])); max_abs_roll=max(max_abs_roll,abs(roll)); max_abs_pitch=max(max_abs_pitch,abs(pitch))
             if args.trace_file:
-                trace.append({"time_s": tick * model.opt.timestep, "qpos": data.qpos.tolist(), "qvel": data.qvel.tolist(), "root_position_m": data.qpos[:3].tolist(), "root_roll_rad": roll, "root_pitch_rad": pitch, "joint_position_rad": qpos.tolist(), "joint_target_rad": target.tolist(), "policy_action": action.tolist(), "command": [vx, vy, yaw], "contacts": contacts.tolist()})
+                base_velocity = np.zeros(6, dtype=np.float64)
+                mujoco.mj_objectVelocity(
+                    model, data, mujoco.mjtObj.mjOBJ_BODY, base_body,
+                    base_velocity, 1,
+                )
+                trace.append({"time_s": tick * model.opt.timestep, "qpos": data.qpos.tolist(), "qvel": data.qvel.tolist(), "root_position_m": data.qpos[:3].tolist(), "root_roll_rad": roll, "root_pitch_rad": pitch, "joint_position_rad": qpos.tolist(), "joint_target_rad": target.tolist(), "policy_action": action.tolist(), "command": [vx, vy, yaw], "response": [base_velocity[3], base_velocity[4], base_velocity[2]], "contacts": contacts.tolist()})
         result = {"run": run, "physics_steps": total_ticks, "policy_ticks": total_ticks // 10, "command_vx_mps": args.vx, "forward_displacement_m": float(data.qpos[0]-x0), "max_abs_joint_angle_rad": max_abs_angle, "min_root_height_m":min_root_height,"max_abs_roll_rad":max_abs_roll,"max_abs_pitch_rad":max_abs_pitch, "contact_transitions": contact_transitions, "max_stance_slip_m": max_stance_slip_m, "non_foot_collision_count": non_foot_collision_count, "observation_width": len(obs_fixture), "action_width": len(action_fixture), "first_observation": obs_fixture, "first_action": action_fixture, "mode": args.mode}
         if not args.showcase and args.diagnostic_delay_steps == 0 and args.diagnostic_drop_policy_tick is None:
             validate_frozen_run(result)

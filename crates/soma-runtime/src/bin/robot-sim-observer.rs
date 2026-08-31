@@ -8,8 +8,7 @@ use std::time::Duration;
 
 use prost::Message;
 use rerun::blueprint::{
-    Blueprint, ContainerLike, Horizontal, Spatial3DView, StateTimelineView, Tabs, TextLogView,
-    TimeSeriesView, Vertical,
+    Blueprint, ContainerLike, StateTimelineView, TextLogView, TimeSeriesView, Vertical,
 };
 use rerun::{RecordingStreamBuilder, Scalars, StateChange, TextLog};
 use soma_protocol::v1::{self, rt_request};
@@ -275,12 +274,6 @@ const STEWART_MOTOR_QUERIES: [&str; 6] = [
     "/actuators/stewart_6/**",
 ];
 const ANTENNA_QUERIES: [&str; 2] = ["/actuators/left_antenna/**", "/actuators/right_antenna/**"];
-const TIMING_OBSERVER_QUERIES: [&str; 4] = [
-    "/simulation/**",
-    "/state/age_ms",
-    "/command/ttl_ms",
-    "/observer/**",
-];
 
 fn telemetry_views() -> Vec<ContainerLike> {
     vec![
@@ -293,14 +286,8 @@ fn telemetry_views() -> Vec<ContainerLike> {
         TimeSeriesView::new("Antennae")
             .with_contents(ANTENNA_QUERIES)
             .into(),
-        TimeSeriesView::new("Timing and observer integrity")
-            .with_contents(TIMING_OBSERVER_QUERIES)
-            .into(),
         StateTimelineView::new("Control state")
             .with_origin("state")
-            .into(),
-        StateTimelineView::new("Plant timeline")
-            .with_origin("simulation/timeline")
             .into(),
         TextLogView::new("Events").with_origin("events").into(),
     ]
@@ -311,28 +298,12 @@ fn start_rerun(
     recording_start_ns: u64,
 ) -> Result<(SyncSender<Evidence>, JoinHandle<()>), Box<dyn std::error::Error>> {
     let showcase = matches!(&destination, RerunDestination::File(_));
-    let blueprint = if showcase {
-        let mut views = telemetry_views();
-        let state_and_events = views.split_off(4);
-        views.push(
-            Tabs::new(state_and_events)
-                .with_name("State and events")
-                .into(),
-        );
-        Blueprint::new(
-            Horizontal::new([
-                Spatial3DView::new("Reachy Mini")
-                    .with_origin("robot")
-                    .with_contents(["robot/**"])
-                    .into(),
-                Vertical::new(views).into(),
-            ])
-            .with_column_shares([1.2, 1.0]),
-        )
+    let builder = RecordingStreamBuilder::new("soma_simulation");
+    let builder = if showcase {
+        builder
     } else {
-        Blueprint::new(Vertical::new(telemetry_views()))
+        builder.with_blueprint(Blueprint::new(Vertical::new(telemetry_views())))
     };
-    let builder = RecordingStreamBuilder::new("soma_simulation").with_blueprint(blueprint);
     let rec = match destination {
         RerunDestination::Grpc(endpoint) => builder.connect_grpc_opts(endpoint)?,
         RerunDestination::File(path) => builder.recording_id("reachy-showcase").save(path)?,
@@ -653,10 +624,7 @@ mod tests {
 
     #[test]
     fn telemetry_queries_use_explicit_absolute_rerun_paths() {
-        let queries = STEWART_MOTOR_QUERIES
-            .into_iter()
-            .chain(ANTENNA_QUERIES)
-            .chain(TIMING_OBSERVER_QUERIES);
+        let queries = STEWART_MOTOR_QUERIES.into_iter().chain(ANTENNA_QUERIES);
 
         for query in queries {
             assert!(query.starts_with('/'), "query must be absolute: {query}");
@@ -668,6 +636,7 @@ mod tests {
         }
         assert_eq!(STEWART_MOTOR_QUERIES.len(), 6);
         assert_eq!(ANTENNA_QUERIES.len(), 2);
+        assert_eq!(telemetry_views().len(), 5);
     }
 
     #[test]
