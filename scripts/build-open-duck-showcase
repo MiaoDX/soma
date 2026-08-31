@@ -7,7 +7,8 @@ if [[ -e $output_dir ]]; then echo "output path already exists: $output_dir" >&2
 mkdir -p "$output_dir"
 metrics=$(mktemp /tmp/soma-open-duck-showcase.XXXXXX.json)
 trace=$(mktemp /tmp/soma-open-duck-showcase.XXXXXX.trace.json)
-trap 'rm -f "$metrics" "$trace"' EXIT
+blueprint_dump=$(mktemp /tmp/soma-open-duck-showcase.XXXXXX.blueprint.txt)
+trap 'rm -f "$metrics" "$trace" "$blueprint_dump"' EXIT
 MUJOCO_GL=egl uv run --project "$repo_root/python" python "$repo_root/scripts/run-open-duck-walk" \
   reference --showcase --frames-dir "$output_dir/frames" --trace-file "$trace" >"$metrics"
 commit=$(git -C "$repo_root" rev-parse HEAD)
@@ -23,6 +24,8 @@ data=json.loads(pathlib.Path(sys.argv[1]).read_text())
 trace=json.loads(pathlib.Path(sys.argv[2]).read_text())
 rr.init("Soma Open Duck Mini", recording_id="open-duck-showcase")
 run=data["runs"][0]; samples=trace["runs"][0]; prefix="rollout/timeseries"
+if not all(len(sample["response"]) == 3 for sample in samples):
+    raise SystemExit("Open Duck trace lacks the three-axis base velocity response")
 for sample in samples:
     rr.set_time("sim_time", duration=sample["time_s"])
     rr.log(f"{prefix}/root/x_m", rr.Scalars([sample["root_position_m"][0]]))
@@ -32,6 +35,9 @@ for sample in samples:
     rr.log(f"{prefix}/command/vx_mps", rr.Scalars([sample["command"][0]]))
     rr.log(f"{prefix}/command/vy_mps", rr.Scalars([sample["command"][1]]))
     rr.log(f"{prefix}/command/yaw_rps", rr.Scalars([sample["command"][2]]))
+    rr.log(f"{prefix}/response/vx_mps", rr.Scalars([sample["response"][0]]))
+    rr.log(f"{prefix}/response/vy_mps", rr.Scalars([sample["response"][1]]))
+    rr.log(f"{prefix}/response/yaw_rps", rr.Scalars([sample["response"][2]]))
     rr.log(f"{prefix}/contacts/left", rr.Scalars([sample["contacts"][0]]))
     rr.log(f"{prefix}/contacts/right", rr.Scalars([sample["contacts"][1]]))
     for joint, position, target, action in zip(trace["joints"], sample["joint_position_rad"], sample["joint_target_rad"], sample["policy_action"]):
@@ -56,11 +62,31 @@ spatial=rrb.Spatial3DView(
         ),
     )
 telemetry=rrb.Vertical(
-    rrb.TimeSeriesView(origin="rollout/timeseries/command", name="Velocity commands"),
-    rrb.TimeSeriesView(origin="rollout/timeseries/root", name="Root motion and stability"),
+    rrb.TimeSeriesView(
+        contents=[
+            "/rollout/timeseries/command/vx_mps",
+            "/rollout/timeseries/command/vy_mps",
+            "/rollout/timeseries/response/vx_mps",
+            "/rollout/timeseries/response/vy_mps",
+        ],
+        name="Planar velocity",
+    ),
+    rrb.TimeSeriesView(
+        contents=[
+            "/rollout/timeseries/command/yaw_rps",
+            "/rollout/timeseries/response/yaw_rps",
+        ],
+        name="Yaw rate",
+    ),
+    rrb.TimeSeriesView(
+        contents=[
+            "/rollout/timeseries/root/height_m",
+            "/rollout/timeseries/root/roll_rad",
+            "/rollout/timeseries/root/pitch_rad",
+        ],
+        name="Base stability",
+    ),
     rrb.TimeSeriesView(origin="rollout/timeseries/contacts", name="Foot contacts"),
-    rrb.TimeSeriesView(origin="rollout/timeseries/joints", name="Joint positions and targets"),
-    rrb.TimeSeriesView(origin="rollout/timeseries/actions", name="Policy actions"),
 )
 rr.send_blueprint(rrb.Blueprint(rrb.Horizontal(spatial, telemetry, column_shares=[1.15, 1.0])))
 rr.save(sys.argv[3])
@@ -118,6 +144,9 @@ assert meta["run"]["physics_steps"] == 6000
 PY
 robot_mesh=$(cd "$repo_root/python" && UV_DEFAULT_INDEX=https://pypi.org/simple \
   uv run --extra visualization rerun rrd print "$output_dir/evidence.rrd")
+(cd "$repo_root/python" && UV_DEFAULT_INDEX=https://pypi.org/simple \
+  uv run --extra visualization rerun rrd print -vvv "$output_dir/evidence.rrd" \
+  > "$blueprint_dump")
 [[ $robot_mesh == *"/robot/visual_geometries/"*"Mesh3D:triangle_indices"* ]] || {
   echo "Open Duck Rerun archive lacks robot mesh geometry" >&2
   exit 1
@@ -137,6 +166,23 @@ for stream in vx_mps vy_mps yaw_rps; do
     echo "Open Duck Rerun archive lacks command stream: $stream" >&2
     exit 1
   }
+  [[ $robot_mesh == *"/rollout/timeseries/response/$stream - data columns: [Scalars:scalars]"* ]] || {
+    echo "Open Duck Rerun archive lacks response stream: $stream" >&2
+    exit 1
+  }
+done
+for view in "Planar velocity" "Yaw rate" "Base stability" "Foot contacts"; do
+  grep -Fq "[$view]" "$blueprint_dump" || {
+    echo "Open Duck Rerun blueprint lacks semantic view: $view" >&2
+    exit 1
+  }
+done
+for stale_view in "Velocity commands" "Root motion and stability" \
+  "Joint positions and targets" "Policy actions"; do
+  if grep -Fq "[$stale_view]" "$blueprint_dump"; then
+    echo "Open Duck Rerun blueprint still exposes stale default view: $stale_view" >&2
+    exit 1
+  fi
 done
 robot_motion=$(cd "$repo_root/python" && UV_DEFAULT_INDEX=https://pypi.org/simple \
   uv run --extra visualization rerun rrd print -vvv --entity /robot/bodies/base "$output_dir/evidence.rrd")

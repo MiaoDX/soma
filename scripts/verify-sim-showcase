@@ -3,6 +3,8 @@ set -euo pipefail
 if [[ $# -ne 1 ]]; then echo "usage: scripts/verify-sim-showcase OUTPUT_DIR" >&2; exit 2; fi
 repo_root=$(cd "$(dirname "$0")/.." && pwd)
 output_dir=$(realpath "$1")
+blueprint_dump=$(mktemp /tmp/soma-reachy-showcase.XXXXXX.blueprint.txt)
+trap 'rm -f "$blueprint_dump"' EXIT
 ffmpeg=$(cd "$repo_root/python" && UV_DEFAULT_INDEX=https://pypi.org/simple \
   uv run --extra visualization python -c 'import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())')
 python3 - "$output_dir" "$ffmpeg" <<'PY'
@@ -44,6 +46,25 @@ text=(html+json.dumps(meta)).lower()
 for claim in ["hardware validated","hardware parity","physical robot","real robot"]: assert claim not in text, f"hardware claim present: {claim}"
 PY
 (cd "$repo_root/python" && UV_DEFAULT_INDEX=https://pypi.org/simple uv run --extra visualization rerun rrd verify "$output_dir/evidence.rrd")
+(cd "$repo_root/python" && UV_DEFAULT_INDEX=https://pypi.org/simple \
+  uv run --extra visualization rerun rrd print -vvv "$output_dir/evidence.rrd" \
+  > "$blueprint_dump")
+grep -Fq "EyeControls3D:eye_up" "$blueprint_dump" || {
+  echo "Reachy Rerun blueprint lacks fixed eye controls" >&2
+  exit 1
+}
+grep -Fq "[[0.0, 0.0, 1.0]]" "$blueprint_dump" || {
+  echo "Reachy Rerun camera is not Z-up" >&2
+  exit 1
+}
+grep -Fq "[[0.48, -0.12, 0.322]]" "$blueprint_dump" || {
+  echo "Reachy Rerun camera does not use the world-fixed front position" >&2
+  exit 1
+}
+grep -Fq "[[0.0, 0.0, 0.205]]" "$blueprint_dump" || {
+  echo "Reachy Rerun camera does not look at the robot's front center" >&2
+  exit 1
+}
 robot_transform=$(cd "$repo_root/python" && UV_DEFAULT_INDEX=https://pypi.org/simple \
   uv run --extra visualization rerun rrd print -vv --entity /robot/bodies/xl_330 "$output_dir/evidence.rrd")
 robot_mesh=$(cd "$repo_root/python" && UV_DEFAULT_INDEX=https://pypi.org/simple \
