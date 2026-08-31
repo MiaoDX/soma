@@ -1,6 +1,6 @@
 # Soma Status
 
-Updated: 2026-08-29
+Updated: 2026-08-31
 
 ## Current State
 
@@ -78,7 +78,11 @@ scripts/build-sim-showcase output/simulation-showcase
 ```
 
 The scenario verifies typed state delivery, actuator movement, TTL expiry to
-measured-position hold, reset timeline change, and old-timeline rejection.
+measured-position hold, reset timeline change, old-timeline rejection, and
+malformed-ingress rejection evidence. State carries explicit source time
+domain, apply disposition, lifecycle, and runtime-generation transition
+fields; a runtime restart clears prior command authority until the new
+generation is observed and a current-generation target is admitted.
 Visual mode adds paced MuJoCo motion and a Rerun evidence dashboard. Automated
 Xvfb startup, camera interaction, independent sink closure, scenario
 continuation, and teardown pass. Live human review of motion and dashboard

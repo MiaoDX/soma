@@ -98,10 +98,21 @@ semantics.
 
 - `robot-rt` owns the control loop; Python, Zenoh, async work, and blocking I/O
   stay outside its periodic path.
-- Commands are admitted by Plant timeline, increasing sequence, and local TTL.
+- Commands are admitted by Plant timeline, runtime generation, increasing
+  sequence, and local TTL. Malformed ingress and RT validation failures become
+  explicit rejection evidence; they never silently replace the active target.
   Expiry transitions to the latest measured-position hold.
+- `Plant::apply_positions` reports whether application is merely submitted or
+  synchronously confirmed by the Plant. MuJoCo control writes are submitted;
+  later measured state remains the motion evidence. State also labels its source
+  timestamp domain (`simulation`, host monotonic, or device) separately from
+  the runtime capture timestamp.
 - Simulation reset changes the Plant timeline, preventing old commands from
   crossing the reset.
+- Each `robot-runtime` start announces an opaque runtime generation. The RT
+  owner drops active authority and sequence admission on a generation change;
+  targets from an older generation are rejected until a current-generation
+  target is admitted. The transition is published in state evidence.
 - The current local datagram IPC is a bootstrap mechanism. Bounded shared
   memory remains a target architecture decision that requires measurement and
   an implementation trigger.

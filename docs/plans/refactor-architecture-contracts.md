@@ -1,6 +1,6 @@
 # Refactor Scope: Architecture Contracts
 
-Status: CONTINUE
+Status: COMPLETE
 Owner: `/root`
 Source: user-approved architecture optimization review, executed through
 `intuitive-flow` and `$intuitive-refactor`.
@@ -13,13 +13,13 @@ Reachy product scope.
 
 ## Accepted Checklist
 
-- [ ] Invalid, stale, and dropped requests produce explicit protocol evidence.
-- [ ] `Plant` application results distinguish local application from measured
+- [x] Invalid, stale, and dropped requests produce explicit protocol evidence.
+- [x] `Plant` application results distinguish local application from measured
       confirmation and preserve fault detail without a generic interface.
-- [ ] Source timestamp, capture monotonic time, simulation/device time domain,
+- [x] Source timestamp, capture monotonic time, simulation/device time domain,
       and runtime generation are explicit where currently implemented.
-- [ ] Minimal restart/re-admission lifecycle rules are implemented and tested.
-- [ ] `ARCHITECTURE.md`, `STATUS.md`, and relevant protocol docs match reality.
+- [x] Minimal restart/re-admission lifecycle rules are implemented and tested.
+- [x] `ARCHITECTURE.md`, `STATUS.md`, and relevant protocol docs match reality.
 
 ## Parked
 
