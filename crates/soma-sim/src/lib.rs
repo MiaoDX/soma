@@ -13,8 +13,8 @@ use mujoco_rs::{
     wrappers::mj_visualization::MjvCamera,
 };
 use soma_core::{
-    ActuatorPositions, ActuatorState, Lifecycle, Plant, PlantHealth, PositionApplication,
-    ReachyActuatorState, ACTUATOR_COUNT,
+    ActuatorPositions, ActuatorState, ApplyDisposition, Lifecycle, Plant, PlantHealth,
+    PositionApplication, ReachyActuatorState, ACTUATOR_COUNT,
 };
 
 pub const OPEN_DUCK_ACTUATOR_COUNT: usize = 14;
@@ -477,7 +477,7 @@ impl Plant<OPEN_DUCK_ACTUATOR_COUNT> for OpenDuckSimPlant {
         &mut self,
         positions_rad: [f32; OPEN_DUCK_ACTUATOR_COUNT],
         _application: PositionApplication,
-    ) -> Result<(), Self::Error> {
+    ) -> Result<ApplyDisposition, Self::Error> {
         for (i, value) in positions_rad.into_iter().enumerate() {
             if !value.is_finite() {
                 return Err(SimError::TargetOutOfRange {
@@ -489,7 +489,7 @@ impl Plant<OPEN_DUCK_ACTUATOR_COUNT> for OpenDuckSimPlant {
             }
             self.data.ctrl_mut()[i] = value as f64;
         }
-        Ok(())
+        Ok(ApplyDisposition::Confirmed)
     }
 }
 
@@ -654,12 +654,12 @@ impl Plant<{ soma_core::ACTUATOR_COUNT }> for ReachySimPlant {
         &mut self,
         positions_rad: ActuatorPositions,
         application: PositionApplication,
-    ) -> Result<(), Self::Error> {
+    ) -> Result<ApplyDisposition, Self::Error> {
         let applied = self.positions_for_application(positions_rad, application)?;
         self.data
             .ctrl_mut()
             .copy_from_slice(&applied.map(f64::from));
-        Ok(())
+        Ok(ApplyDisposition::Confirmed)
     }
 }
 

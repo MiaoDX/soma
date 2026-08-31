@@ -14,7 +14,13 @@ message RtRequest {
   oneof request {
     ActuatorTarget target = 1;
     bool reset = 2;
+    IngressRejection ingress_rejection = 3;
   }
+}
+
+message IngressRejection {
+  uint64 sequence = 1;
+  RejectionReason reason = 2;
 }
 
 enum AppliedSource {
@@ -35,6 +41,13 @@ enum RejectionReason {
   REJECTION_REASON_TIMELINE = 1;
   REJECTION_REASON_SEQUENCE = 2;
   REJECTION_REASON_EXPIRED = 3;
+  REJECTION_REASON_INVALID = 4;
+}
+
+enum ApplyDisposition {
+  APPLY_DISPOSITION_UNSPECIFIED = 0;
+  APPLY_DISPOSITION_SUBMITTED = 1;
+  APPLY_DISPOSITION_CONFIRMED = 2;
 }
 
 enum PlantHealth {
@@ -58,4 +71,6 @@ message ActuatorState {
   RejectionReason rejection_reason = 10;
   PlantHealth health = 11;
   uint64 capture_monotonic_ns = 12;
+  ApplyDisposition apply_disposition = 13;
+  uint64 command_sequence = 14;
 }

@@ -6,8 +6,8 @@ use std::path::Path;
 use fs2::FileExt;
 use prost::Message;
 use soma_core::{
-    AppliedCommand, CommandResult, ControlTick, PlantHealth as CorePlantHealth,
-    ReachyActuatorTarget, RejectionReason as CoreRejectionReason,
+    AppliedCommand, ApplyDisposition as CoreApplyDisposition, CommandResult, ControlTick,
+    PlantHealth as CorePlantHealth, ReachyActuatorTarget, RejectionReason as CoreRejectionReason,
 };
 use soma_protocol::v1::{self, rt_request};
 
@@ -85,12 +85,34 @@ pub fn stamp_request_received(request: &mut v1::RtRequest, received_ns: u64) {
     }
 }
 
-pub fn decode_target(request: v1::RtRequest) -> Option<ReachyActuatorTarget> {
-    let rt_request::Request::Target(target) = request.request? else {
-        return None;
-    };
-    let positions_rad = target.positions_rad.try_into().ok()?;
-    Some(ReachyActuatorTarget {
+pub fn ingress_rejection(sequence: u64, reason: v1::RejectionReason) -> v1::RtRequest {
+    v1::RtRequest {
+        request: Some(rt_request::Request::IngressRejection(
+            v1::IngressRejection {
+                sequence,
+                reason: reason as i32,
+            },
+        )),
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TargetDecodeError {
+    WrongPositionCount { actual: usize },
+}
+
+pub fn decode_target(
+    target: v1::ActuatorTarget,
+) -> Result<ReachyActuatorTarget, TargetDecodeError> {
+    let positions_rad = target
+        .positions_rad
+        .try_into()
+        .map_err(
+            |positions: Vec<f32>| TargetDecodeError::WrongPositionCount {
+                actual: positions.len(),
+            },
+        )?;
+    Ok(ReachyActuatorTarget {
         positions_rad,
         sequence: target.sequence,
         timeline: target.timeline,
@@ -110,21 +132,25 @@ pub fn update_state(
             (v1::AppliedSource::MeasuredPositionHold as i32, sequence)
         }
     };
-    let (command_disposition, rejection_reason) = match tick.command_result {
+    let (command_sequence, command_disposition, rejection_reason) = match tick.command_result {
         CommandResult::NoCommand => (
+            0,
             v1::CommandDisposition::NoCommand,
             v1::RejectionReason::Unspecified,
         ),
-        CommandResult::Accepted { .. } => (
+        CommandResult::Accepted { sequence } => (
+            sequence,
             v1::CommandDisposition::Accepted,
             v1::RejectionReason::Unspecified,
         ),
-        CommandResult::Rejected { reason, .. } => (
+        CommandResult::Rejected { sequence, reason } => (
+            sequence,
             v1::CommandDisposition::Rejected,
             match reason {
                 CoreRejectionReason::Timeline => v1::RejectionReason::Timeline,
                 CoreRejectionReason::Sequence => v1::RejectionReason::Sequence,
                 CoreRejectionReason::Expired => v1::RejectionReason::Expired,
+                CoreRejectionReason::Invalid => v1::RejectionReason::Invalid,
             },
         ),
     };
@@ -141,6 +167,7 @@ pub fn update_state(
     state.expiry_transition = tick.applied.expiry_transition;
     state.command_disposition = command_disposition as i32;
     state.rejection_reason = rejection_reason as i32;
+    state.command_sequence = command_sequence;
     state.health = match tick.measured.health {
         CorePlantHealth::Healthy => v1::PlantHealth::Healthy,
         CorePlantHealth::StaleState => v1::PlantHealth::StaleState,
@@ -148,6 +175,10 @@ pub fn update_state(
         CorePlantHealth::ConfigurationMismatch => v1::PlantHealth::ConfigurationMismatch,
     } as i32;
     state.capture_monotonic_ns = monotonic_ns();
+    state.apply_disposition = match tick.apply_disposition {
+        CoreApplyDisposition::Submitted => v1::ApplyDisposition::Submitted,
+        CoreApplyDisposition::Confirmed => v1::ApplyDisposition::Confirmed,
+    } as i32;
 }
 
 pub fn encode_state_into(
@@ -177,10 +208,40 @@ mod tests {
             })),
         };
         stamp_request_received(&mut request, 900);
-        let decoded = decode_target(request).unwrap();
+        let rt_request::Request::Target(target) = request.request.unwrap() else {
+            unreachable!()
+        };
+        let decoded = decode_target(target).unwrap();
         assert_eq!(decoded.issued_at_ns, 900);
         assert_eq!(decoded.positions_rad.len(), 9);
         assert!(decoded.is_expired(950));
+    }
+
+    #[test]
+    fn target_decode_reports_wrong_shape_instead_of_dropping_it() {
+        let error = decode_target(v1::ActuatorTarget {
+            positions_rad: vec![0.0; 8],
+            sequence: 2,
+            timeline: 1,
+            issued_at_ns: 3,
+            ttl_ns: 4,
+        })
+        .unwrap_err();
+        assert_eq!(error, TargetDecodeError::WrongPositionCount { actual: 8 });
+    }
+
+    #[test]
+    fn ingress_rejection_preserves_available_request_identity() {
+        let request = ingress_rejection(17, v1::RejectionReason::Invalid);
+        assert_eq!(
+            request.request,
+            Some(rt_request::Request::IngressRejection(
+                v1::IngressRejection {
+                    sequence: 17,
+                    reason: v1::RejectionReason::Invalid as i32,
+                }
+            ))
+        );
     }
 
     #[test]
@@ -202,6 +263,7 @@ mod tests {
                 command: AppliedCommand::MeasuredPositionHold { sequence: 1 },
                 expiry_transition: false,
             },
+            apply_disposition: CoreApplyDisposition::Confirmed,
         };
         let mut state = v1::ActuatorState {
             positions_rad: Vec::with_capacity(9),
@@ -218,6 +280,10 @@ mod tests {
         assert_eq!(payload.as_ptr(), payload_ptr);
         assert_eq!(state.positions_rad.capacity(), 9);
         assert_eq!(payload.capacity(), MAX_MESSAGE_SIZE);
+        assert_eq!(
+            state.apply_disposition,
+            v1::ApplyDisposition::Confirmed as i32
+        );
     }
 
     #[test]
