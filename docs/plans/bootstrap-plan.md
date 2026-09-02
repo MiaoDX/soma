@@ -1,11 +1,13 @@
 # Soma Bootstrap Plan
 
-> Status: Approved execution plan, Reachy Mini-only, 2026-08-23.
-> The first release has exactly two Plant profiles: Reachy simulation and
-> Reachy Mini Lite hardware. Other robot platforms are deliberately out of
-> scope. The official Reachy daemon remains a comparison target, not a runtime
-> dependency for the native hardware path. The 9-actuator public command, N1
-> physical-actuation gate, and four-way official comparison are approved.
+> Status: Approved primary Reachy execution plan, 2026-08-23.
+> Its definition of done still has exactly two Reachy Plant profiles: simulation
+> and Reachy Mini Lite hardware. A later user-approved exception qualifies one
+> fixed Open Duck Mini simulation policy without changing this plan's hardware
+> goal or creating general multi-robot support. The official Reachy daemon
+> remains a comparison target, not a runtime dependency for the native hardware
+> path. The 9-actuator public command, N1 physical-actuation gate, and four-way
+> official comparison are approved.
 
 ## Execution Status
 
@@ -299,9 +301,9 @@ physical-safety qualification.
 
 | Work | Reopen when |
 | --- | --- |
-| Other robot platforms, BHL, Atom S, Open Duck, SO-101 | Only after the Reachy two-profile path is complete and a concrete need exists |
+| Other robot platforms, BHL, Atom S, SO-101, or a third profile | Only after the Reachy two-profile path is complete and a concrete need exists; the fixed Open Duck simulation exception is tracked separately |
 | ROS 2, fleet, cloud, OTA and security qualification | A non-local or distributable product workflow exists |
-| Generic model manifests and multi-robot conformance | A second active embodiment exists |
+| Generic model manifests and multi-robot conformance | A third profile or repeated cross-profile variation proves the two fixed profiles cannot remain local |
 | Generic torque/velocity/impedance command unions | Reachy hardware evidence requires one of them |
 | Camera bulk transport and audio streaming | The motion path and state timing are stable |
 | Wireless CM4 deployment and BMI088 | Lite native path is working and Wireless hardware is available |
@@ -313,7 +315,8 @@ extension points before their trigger occurs.
 
 ## Non-Goals
 
-- supporting any robot other than Reachy Mini;
+- general support for robots other than Reachy Mini; the separately approved
+  fixed Open Duck simulation qualification is the only exception;
 - using the official daemon as an invisible dependency in native mode;
 - claiming the native serial worker is hard real-time before measurement;
 - reproducing every official media, REST, WebSocket or app feature;

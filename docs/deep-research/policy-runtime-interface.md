@@ -1,8 +1,9 @@
 # Policy/Inference to Real-Time Interface
 
-> Status: D-19 updated for the approved Open Duck workload. Latest-value
-> timing, bounded zero-order hold, command TTL, `control_mode -> SafeBehavior`,
-> and lineage are current scope. Action chunking remains deferred.
+> Status: D-19 and D-04 are resolved for the approved Open Duck workload.
+> Latest-value timing, matched-subscriber readiness, bounded zero-order hold,
+> command TTL, `control_mode -> SafeBehavior`, lineage, and the Rust-default /
+> Python-oracle split are measured. Action chunking remains deferred.
 
 ## Question
 
@@ -66,8 +67,8 @@ that profile without creating a generic observation API:
    and `plant_timeline_id` semantics and are currently unmodeled.
 
 A fifth, lower-priority question — GPU/CPU resource contention between
-inference and perception, and its effect on `robot-runtime` scheduling — is
-noted here but out of scope until a real inference workload exists.
+inference and perception, and its effect on runtime scheduling — remains out of
+scope until both workloads share representative target compute.
 
 ### Why this cannot wait for real hardware
 
@@ -99,12 +100,15 @@ coalesces to the latest target, and the 500 Hz periodic owner applies it at the
 first available 2 ms RT tick. The resulting latency is variable and measured.
 A fixed 20 ms delay is a fault-injection case, not the nominal pipeline.
 
-The process boundary is still an open optimization question, not an established
-safety result. Rust can improve memory safety and make ownership explicit, but
-`async` alone does not guarantee bounded latency, freshness, deterministic
-shutdown, or fault containment. D-04 therefore schedules a post-Duck comparison
-of isolated Python inference, Rust-hosted inference in `robot-runtime`, and a
-single Rust process with separate async and periodic execution domains.
+The process boundary remains an ownership and failure-isolation choice, not a
+safety result. D-04's completed same-host comparison selected a separate Rust
+policy worker as the deployment default and retained isolated Python inference
+as the oracle. Rust reduced mean inference latency in the representative sample,
+while startup evidence showed that publisher declaration alone did not imply a
+matched downstream subscriber. Readiness now waits for that match and fails
+closed; inference remains outside both the profile runtime adapter and periodic
+RT owner. A single-process async/periodic topology was not implemented because
+the measured path provided no need to trade away the existing process seam.
 
 ## Alternatives
 

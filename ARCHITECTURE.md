@@ -1,8 +1,10 @@
 # Soma Architecture
 
-Soma's current executable slice is a Rust-first control path for one fixed
-Reachy Mini profile. A thin Python client exists only to drive the end-to-end
-acceptance scenario.
+Soma's primary executable slice is a Rust-first control path for one fixed
+Reachy Mini profile. A second fixed Open Duck Mini profile qualifies the same
+control architecture with a simulation-only locomotion policy; it is not a
+general multi-robot framework. Reachy's thin Python clients drive scenarios
+and tools, not policy inference.
 
 ```text
 Python scenario client
@@ -71,6 +73,8 @@ Current mapping:
 | --- | --- | --- |
 | `ReachySimPlant`, `ControlCore`, `robot-rt` | Rust | authoritative Plant and deterministic control semantics |
 | `robot-runtime` and protocol bridge | Rust | robot-side non-RT runtime and lifecycle authority |
+| Open Duck policy worker | Rust default, Python oracle | fixed-profile ONNX inference outside RT |
+| `open-duck-runtime` | Rust | fixed-profile non-RT transport and latest-value coalescing |
 | `python/soma_client/scenario.py` | Python | black-box protocol acceptance client |
 | `python/soma_client/command_session.py` | Python | L4 terminal teleoperation client |
 | `python/soma_client/showcase.py` | Python | deterministic offline showcase targets using pinned official analytical kinematics |
@@ -88,11 +92,11 @@ semantics.
 | Path | Responsibility |
 | --- | --- |
 | `crates/soma-core` | Fixed Reachy state/target types, Plant boundary, command admission, expiry, and hold behavior |
-| `crates/soma-sim` | Pinned MuJoCo Reachy Plant |
+| `crates/soma-sim` | Pinned MuJoCo Reachy Plant and fixed Open Duck qualification Plant |
 | `crates/soma-protocol` and `proto/` | Minimal command, state, and reset wire schema |
-| `crates/soma-runtime` | `robot-rt`, `robot-runtime`, loopback Zenoh, and local datagram boundary |
+| `crates/soma-runtime` | Reachy runtime/RT path plus the fixed Open Duck policy, runtime adapter, RT owner, codecs, and evidence |
 | `crates/soma-probe` | Read-only Reachy Mini Lite N0 audit |
-| `python/soma_client` | Thin integration-scenario client |
+| `python/soma_client` | Thin Reachy clients and the explicit Open Duck policy oracle |
 
 ## Contracts And Proof Boundaries
 
@@ -126,10 +130,10 @@ Its 50 Hz ONNX policy keeps inference outside a 500 Hz Duck periodic RT/physics
 path:
 
 ```text
-Duck state -> Rust ONNX policy (default) -----> loopback Zenoh -> robot-runtime
-           -> Python ONNX policy (oracle) ----^                    |
-                                                                  v
-                                  Duck Plant <- robot-rt <- bounded IPC
+Duck state -> Rust ONNX policy (default) -> loopback Zenoh -> open-duck-runtime
+           -> Python ONNX policy (oracle) -------------------^             |
+                                                                         v
+                           Duck Plant <- open-duck-rt <- bounded local IPC
 ```
 
 This path uses asynchronous latest-value semantics. A captured state is sent
@@ -145,11 +149,11 @@ do not change. Running Duck with Reachy's 20 ms batching would force each
 policy response into the next policy frame and is therefore rejected.
 
 The process split provides ownership and failure-isolation boundaries, but is
-not inherently a safety proof. After the Duck path produces timing and failure
-evidence, D-04 requires a focused comparison with Rust-hosted ONNX inference
-and a single Rust process that isolates async work from its periodic RT thread.
-No alternative may move async work, middleware, inference, or unbounded
-allocation into the periodic section.
+not inherently a safety proof. D-04's focused Rust/Python comparison selected
+the separate Rust worker as the default and retained Python as an oracle; it
+did not produce evidence that merging inference into the runtime or RT process
+would improve the system. No alternative may move async work, middleware,
+inference, or unbounded allocation into the periodic section.
 
 The fixed policy ABI is observation `[1, 101]` to action `[1, 14]`, with the
 named 14-actuator order and default pose defined by `soma_runtime::open_duck`.
@@ -163,6 +167,10 @@ loaded by `robot-rt`. The Rust worker reports ready only after its target
 publisher has a matching runtime subscriber, so startup discovery cannot age
 early state-derived targets past their TTL. Rejection reasons and rejected
 target age remain attributable in the fixed-profile metrics evidence.
+
+This fixed checkpoint, ABI, and provisioning contract is qualification
+evidence toward the reference architecture's versioned `PolicyBundle`; it is
+not yet the signed, lifecycle-managed deployment bundle described there.
 
 The Pages showcase reuses the pinned direct reference runner for one 12-second
 composite `vx`/`vy`/yaw command reel. It records complete generalized state and
