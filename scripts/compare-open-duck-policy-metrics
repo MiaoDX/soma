@@ -1,0 +1,247 @@
+#!/usr/bin/env python3
+"""Compare the Rust and Python Open Duck policy process paths."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import math
+import os
+import subprocess
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+from statistics import fmean
+from typing import Any
+
+
+ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_CASE = ROOT / "docs/status/active/open-duck-stage0-case.md"
+DEFAULT_BACKENDS = ("rust", "python")
+
+METRICS = {
+    "emitted": ("Emitted targets", "count", 1.0),
+    "max_inference_ns": ("Run max inference", "ms", 1e-6),
+    "max_message_age_ns": ("Run max message age", "ms", 1e-6),
+    "dropped_states": ("Dropped states", "count", 1.0),
+    "runtime_dropped_targets": ("Runtime dropped targets", "count", 1.0),
+    "min_root_height_m": ("Run min root height", "m", 1.0),
+    "max_abs_roll_rad": ("Run max absolute roll", "rad", 1.0),
+    "max_abs_pitch_rad": ("Run max absolute pitch", "rad", 1.0),
+}
+
+REQUIRED_EVIDENCE = {
+    *METRICS,
+    "states",
+    "applied",
+    "expiry",
+    "rejected",
+}
+
+
+def parse_run_output(stdout: str, expected_backend: str) -> dict[str, Any]:
+    """Parse and validate one run-open-duck-walk process result."""
+    lines = [line for line in stdout.splitlines() if line.strip()]
+    if not lines:
+        raise ValueError("policy runner produced no output")
+    try:
+        result = json.loads(lines[-1])
+    except json.JSONDecodeError as error:
+        raise ValueError("policy runner's final line is not JSON") from error
+    if not isinstance(result, dict):
+        raise ValueError("policy runner result must be a JSON object")
+    if result.get("mode") != "policy" or result.get("backend") != expected_backend:
+        raise ValueError("policy runner result does not match the requested run")
+    if result.get("process_path") is not True:
+        raise ValueError("policy runner did not exercise the process path")
+    evidence = result.get("evidence")
+    if not isinstance(evidence, dict):
+        raise ValueError("policy runner result is missing evidence")
+    missing = REQUIRED_EVIDENCE - evidence.keys()
+    if missing:
+        raise ValueError(f"policy runner evidence is missing: {', '.join(sorted(missing))}")
+    if evidence["applied"] is not True:
+        raise ValueError("policy runner never reported applied control")
+    for name in {*METRICS, "states"}:
+        value = evidence[name]
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            raise ValueError(f"policy runner evidence {name} must be finite and numeric")
+        if value < 0:
+            raise ValueError(f"policy runner evidence {name} must be non-negative")
+    return evidence
+
+
+def summarize_runs(runs: list[dict[str, Any]]) -> dict[str, Any]:
+    if not runs:
+        raise ValueError("at least one policy run is required")
+    summary: dict[str, dict[str, float]] = {}
+    for name in METRICS:
+        values = [float(run[name]) for run in runs]
+        summary[name] = {"min": min(values), "mean": fmean(values), "max": max(values)}
+    return {
+        "run_count": len(runs),
+        "all_applied": all(run["applied"] is True for run in runs),
+        "rejected_run_count": sum(run["rejected"] is True for run in runs),
+        "summary": summary,
+        "runs": runs,
+    }
+
+
+def build_report(
+    case: Path,
+    backends: list[str],
+    runs_by_backend: dict[str, list[dict[str, Any]]],
+) -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "mode": "policy",
+        "case": str(case),
+        "case_sha256": hashlib.sha256(case.read_bytes()).hexdigest(),
+        "backends": backends,
+        "metric_contract": {
+            name: {"label": label, "unit": unit, "run_value": name}
+            for name, (label, unit, _) in METRICS.items()
+        },
+        "results": {
+            backend: summarize_runs(runs_by_backend[backend]) for backend in backends
+        },
+    }
+
+
+def _display(value: float, scale: float) -> str:
+    return f"{value * scale:.3f}"
+
+
+def render_markdown(report: dict[str, Any]) -> str:
+    backends = report["backends"]
+    columns = " | ".join(backend.capitalize() for backend in backends)
+    separator = " | ".join("---:" for _ in backends)
+    lines = [
+        "# Open Duck Policy Runtime Metrics",
+        "",
+        f"Frozen case: `{report['case']}` (`{report['case_sha256']}`).",
+        "",
+        "Each cell is `mean [min, max]` across independent process rollouts. "
+        "Inference and message-age values are per-run maxima, not latency distributions.",
+        "",
+        f"| Metric | Unit | {columns} |",
+        f"| --- | --- | {separator} |",
+    ]
+    for name, (label, unit, scale) in METRICS.items():
+        cells = []
+        for backend in backends:
+            metric = report["results"][backend]["summary"][name]
+            cells.append(
+                f"{_display(metric['mean'], scale)} "
+                f"[{_display(metric['min'], scale)}, {_display(metric['max'], scale)}]"
+            )
+        lines.append(f"| {label} | {unit} | " + " | ".join(cells) + " |")
+
+    if "rust" in backends and "python" in backends:
+        rust = report["results"]["rust"]["summary"]["max_inference_ns"]["mean"]
+        python = report["results"]["python"]["summary"]["max_inference_ns"]["mean"]
+        relative = (rust / python - 1.0) * 100.0 if python else math.nan
+        lines.extend([
+            "",
+            "## Direct Comparison",
+            "",
+            f"Rust's mean run-maximum inference latency is `{relative:+.1f}%` versus Python "
+            "(negative is lower). This benchmark does not measure CPU, RSS, startup time, "
+            "or p50/p95/p99 inference latency.",
+        ])
+
+    lines.extend(["", "## Run Validity", ""])
+    for backend in backends:
+        result = report["results"][backend]
+        lines.append(
+            f"- `{backend}`: {result['run_count']} runs, "
+            f"all applied = `{str(result['all_applied']).lower()}`, "
+            f"rejected runs = `{result['rejected_run_count']}`."
+        )
+    return "\n".join(lines) + "\n"
+
+
+def run_backend(backend: str, case: Path, repeats: int) -> list[dict[str, Any]]:
+    runs = []
+    environment = os.environ.copy()
+    if backend == "rust" and "ORT_DYLIB_PATH" not in environment:
+        provisioner = ROOT / "scripts/provision-onnx-runtime"
+        checked = subprocess.run(
+            [str(provisioner), "--check"],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if checked.returncode != 0:
+            raise RuntimeError(
+                "Rust metrics require the pinned native runtime; run "
+                "scripts/provision-onnx-runtime --install"
+            )
+        environment["ORT_DYLIB_PATH"] = checked.stdout.strip()
+    command = [
+        str(ROOT / "scripts/run-open-duck-walk"),
+        "policy",
+        "--backend",
+        backend,
+        "--case",
+        str(case),
+    ]
+    for run_index in range(repeats):
+        print(f"running {backend} policy {run_index + 1}/{repeats}", file=sys.stderr)
+        completed = subprocess.run(
+            command,
+            cwd=ROOT,
+            env=environment,
+            text=True,
+            capture_output=True,
+            timeout=30,
+            check=False,
+        )
+        if completed.returncode != 0:
+            detail = completed.stderr.strip() or completed.stdout.strip()
+            raise RuntimeError(f"{backend} policy run {run_index + 1} failed: {detail}")
+        runs.append(parse_run_output(completed.stdout, backend))
+    return runs
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--case", type=Path, default=DEFAULT_CASE)
+    parser.add_argument("--repeat", type=int, default=3)
+    parser.add_argument(
+        "--backend",
+        action="append",
+        choices=DEFAULT_BACKENDS,
+        dest="backends",
+        help="backend to measure; repeat this option to select both (default: rust and python)",
+    )
+    parser.add_argument("--output-dir", type=Path)
+    args = parser.parse_args()
+    if args.repeat < 1:
+        parser.error("--repeat must be at least 1")
+    backends = list(dict.fromkeys(args.backends or DEFAULT_BACKENDS))
+    case = args.case.resolve()
+    if not case.is_file():
+        parser.error(f"case does not exist: {case}")
+    output_dir = args.output_dir
+    if output_dir is None:
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        output_dir = ROOT / "output" / f"open-duck-policy-metrics-{stamp}"
+    output_dir = output_dir.resolve()
+    if output_dir.exists():
+        parser.error(f"output directory already exists: {output_dir}")
+
+    runs = {backend: run_backend(backend, case, args.repeat) for backend in backends}
+    report = build_report(case, backends, runs)
+    output_dir.mkdir(parents=True)
+    (output_dir / "metrics.json").write_text(
+        json.dumps(report, indent=2, sort_keys=True, allow_nan=False) + "\n"
+    )
+    (output_dir / "report.md").write_text(render_markdown(report))
+    print(output_dir / "report.md")
+
+
+if __name__ == "__main__":
+    main()
