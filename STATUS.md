@@ -1,6 +1,6 @@
 # Soma Status
 
-Updated: 2026-08-31
+Updated: 2026-09-02
 
 ## Current State
 
@@ -29,7 +29,10 @@ Open Duck's fixed 101-to-14 policy contract is shared by a Rust non-RT adapter
 and the Python oracle, with finite-value, range, lineage, slew, history, phase,
 TTL, and checkpoint checks. Native ONNX Runtime provisioning is still a
 deployment prerequisite; no inference dependency or model loading enters the
-periodic `robot-rt` path.
+periodic `robot-rt` path. Rust is the default process route and waits for a
+matched target subscriber before reporting ready; Python remains the explicit
+oracle. The reproducible comparison and rejection-attribution baseline is
+[recorded here](docs/measurements/open-duck-policy-runtime-comparison.md).
 
 ## Hardware Blocker And Interim Action
 
@@ -83,6 +86,7 @@ scripts/run-sim-teleop
 scripts/run-sim-teleop --visualize    # requires a desktop display
 scripts/run-sim-teleop --keys ADQE    # bounded integration route
 scripts/build-sim-showcase output/simulation-showcase
+scripts/compare-open-duck-policy-metrics --repeat 5
 ```
 
 The scenario verifies typed state delivery, actuator movement, TTL expiry to
@@ -104,7 +108,7 @@ TTL/reset/rejection evidence before reporting success.
 
 ## Active Work
 
-- Completed headless simulation slice: [Open Duck Mini walk policy](docs/plans/open-duck-mini-walk-policy.md). The fixed Duck Plant, isolated transport, Python ONNX client, lineage/fault evidence, and supervised launcher pass Stage 4. Two direct and two process runs are stable; delay and stall cases preserve deadline/hold behavior. The frozen published `BEST_WALK_ONNX.onnx` remains the default. A single composite user-facing rollout with synchronized MJCF/Rerun visualization is active in [the Open Duck showcase plan](docs/plans/open-duck-showcase.md); the frozen straight-walk case remains its internal regression gate.
+- Completed headless simulation slice: [Open Duck Mini walk policy](docs/plans/open-duck-mini-walk-policy.md). The fixed Duck Plant, isolated transport, Rust-default ONNX worker, explicit Python oracle, lineage/fault evidence, and supervised launcher pass the frozen acceptance and Rust/Python comparison gates. Delay and stall cases preserve deadline/hold behavior, and readiness waits for a matched target subscriber. The frozen published `BEST_WALK_ONNX.onnx` remains the default. A single composite user-facing rollout with synchronized MJCF/Rerun visualization is active in [the Open Duck showcase plan](docs/plans/open-duck-showcase.md); the frozen straight-walk case remains its internal regression gate.
 - Active comparison/hardware state: [bootstrap capsule](docs/status/active/bootstrap.md)
 - Preflighted next slice: [official simulation fixed case suite](docs/plans/official-simulation-case-suite-plan.md)
 - Completed suite evidence: [official simulation fixed case suite report](docs/measurements/official-simulation-case-suite-report.md)

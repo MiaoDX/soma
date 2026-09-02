@@ -13,9 +13,10 @@ authoritative. If a diagram disagrees with that prose, update the diagram.
   authority owns each transition, and what gets recorded. Companion to the
   "Requested, admitted, safety-output, applied" section of the
   [reference architecture](../reference-architecture.md).
-- [`soma-roadmap.svg`](soma-roadmap.svg) — the current thin happy path and the
-  concrete triggers required before recovery, evidence, hardware, or product
-  work becomes implementation scope.
+- [`soma-roadmap.svg`](soma-roadmap.svg) — the primary thin Reachy path, the
+  fixed Open Duck simulation qualification exception, and the concrete triggers
+  required before recovery, evidence, hardware, or product work becomes
+  implementation scope.
   Companion to the [bootstrap plan](../../plans/bootstrap-plan.md).
 
 The diagrams are manually maintained flat SVGs with no external font or script

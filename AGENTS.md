@@ -10,7 +10,8 @@ by task:
 - run or setup work: `README.md` and `docs/agents/operating-runbook.md`;
 - architecture or boundary changes: `ARCHITECTURE.md`, then the detailed
   document it routes to;
-- approved bootstrap scope: `docs/plans/bootstrap-plan.md`;
+- primary Reachy bootstrap scope: `docs/plans/bootstrap-plan.md`;
+- approved fixed Open Duck exception: `docs/plans/open-duck-mini-walk-policy.md`;
 - optional visualization planning: `docs/plans/simulation-visualization-plan.md`.
 
 `README.md`, `ARCHITECTURE.md`, `STATUS.md`, and `docs/human/**` are the compact
@@ -20,9 +21,10 @@ execution evidence, not the human project manual.
 
 ## Non-Negotiable Boundaries
 
-- The active bootstrap supports one fixed Reachy Mini profile only. Do not add
-  generic robot manifests, multi-robot abstractions, or deferred subsystems
-  without an approved scope change.
+- Reachy Mini remains the primary simulation and future hardware profile. Open
+  Duck Mini is one separately approved, fixed simulation-only policy
+  qualification. Do not generalize these into robot manifests, multi-robot
+  abstractions, or a third profile without another approved scope change.
 - The native N0 probe is read-only. Do not write hardware registers, enable
   torque, or implement physical motion until N0 passes and a human explicitly
   approves the N1 physical-actuation gate.

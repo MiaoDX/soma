@@ -58,7 +58,7 @@
 
   <rect class="box" x="62" y="356" width="776" height="58" fill="#DFEFF0" stroke="#16656E"/>
   <text class="t m id" x="76" y="376" fill="#0E4A51">L1</text>
-  <text class="t nm" x="112" y="376" fill="#0E4A51">robot-rt · Rust, deterministic 1 kHz</text>
+  <text class="t nm" x="112" y="376" fill="#0E4A51">robot-rt · Rust, deterministic periodic control</text>
   <text class="t dt" x="112" y="395">ControlCore · estimator · controller · SA-3 safety supervisor · watchdog · command validation</text>
   <text class="t dt" x="112" y="409" fill="#0E4A51">no async runtime · no Python · no middleware · no blocking I/O · no allocation in the cyclic path</text>
 

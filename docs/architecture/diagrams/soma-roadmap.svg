@@ -17,7 +17,7 @@
   <rect x="0.5" y="0.5" width="1119" height="825" fill="none" stroke="#D6DBDF"/>
 
   <text class="t h1" x="44" y="36">Milestones — and what opens each one</text>
-  <text class="t h2" x="44" y="58">Only the thin M1 happy path is current implementation scope. Every later capability needs a concrete trigger before it becomes a task.</text>
+  <text class="t h2" x="44" y="58">The thin Reachy path and one fixed Open Duck qualification are current. Every later capability still needs a concrete trigger.</text>
 
   <!-- bands -->
   <g>
@@ -52,8 +52,8 @@
     <text class="t nm" x="132" y="208" fill="#0E4A51">Thin end-to-end happy path</text>
     <rect x="952" y="195" width="118" height="17" rx="2" fill="#DFEFF0" stroke="#16656E" stroke-width="1"/>
     <text class="t m bg" x="1011" y="207.5" text-anchor="middle" fill="#0E4A51">SIL</text>
-    <text class="t gt" x="90" y="229">Gate — Python commands MuJoCo through separate <tspan class="m">robot-runtime</tspan> and <tspan class="m">robot-rt</tspan> processes. TTL selects SafeBehavior; reset rejects the stale Plant timeline.</text>
-    <text class="t rt" x="90" y="247">One model, client, command mode and local profile. No compatibility, release, recovery, or qualification promise.</text>
+    <text class="t gt" x="90" y="229">Reachy gate — Python commands MuJoCo through separate <tspan class="m">robot-runtime</tspan> and <tspan class="m">robot-rt</tspan> processes. TTL selects SafeBehavior; reset rejects stale timelines.</text>
+    <text class="t rt" x="90" y="247">Approved exception — fixed Open Duck SIL policy qualification; no generic multi-robot, hardware, release, or safety promise.</text>
   </g>
 
   <!-- Recovery trigger -->
