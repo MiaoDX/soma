@@ -126,8 +126,10 @@ Its 50 Hz ONNX policy keeps inference outside a 500 Hz Duck periodic RT/physics
 path:
 
 ```text
-Duck state -> Python ONNX policy -> loopback Zenoh -> robot-runtime
-           -> bounded local IPC -> robot-rt -> Duck MuJoCo Plant
+Duck state -> Rust ONNX policy (default) -----> loopback Zenoh -> robot-runtime
+           -> Python ONNX policy (oracle) ----^                    |
+                                                                  v
+                                  Duck Plant <- robot-rt <- bounded IPC
 ```
 
 This path uses asynchronous latest-value semantics. A captured state is sent
@@ -157,7 +159,10 @@ slew limit, 40 ms target TTL, and checkpoint SHA-256
 Python validates this contract as the reference/oracle path. Rust now provides
 the equivalent fixed observation and target adapter outside RT; ONNX Runtime
 native provisioning remains an explicit deployment prerequisite and is not
-loaded by `robot-rt`.
+loaded by `robot-rt`. The Rust worker reports ready only after its target
+publisher has a matching runtime subscriber, so startup discovery cannot age
+early state-derived targets past their TTL. Rejection reasons and rejected
+target age remain attributable in the fixed-profile metrics evidence.
 
 The Pages showcase reuses the pinned direct reference runner for one 12-second
 composite `vx`/`vy`/yaw command reel. It records complete generalized state and

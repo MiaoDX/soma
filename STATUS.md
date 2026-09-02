@@ -1,6 +1,6 @@
 # Soma Status
 
-Updated: 2026-08-31
+Updated: 2026-09-02
 
 ## Current State
 
@@ -29,7 +29,10 @@ Open Duck's fixed 101-to-14 policy contract is shared by a Rust non-RT adapter
 and the Python oracle, with finite-value, range, lineage, slew, history, phase,
 TTL, and checkpoint checks. Native ONNX Runtime provisioning is still a
 deployment prerequisite; no inference dependency or model loading enters the
-periodic `robot-rt` path.
+periodic `robot-rt` path. Rust is the default process route and waits for a
+matched target subscriber before reporting ready; Python remains the explicit
+oracle. The reproducible comparison and rejection-attribution baseline is
+[recorded here](docs/measurements/open-duck-policy-runtime-comparison.md).
 
 ## Hardware Blocker And Interim Action
 
@@ -83,6 +86,7 @@ scripts/run-sim-teleop
 scripts/run-sim-teleop --visualize    # requires a desktop display
 scripts/run-sim-teleop --keys ADQE    # bounded integration route
 scripts/build-sim-showcase output/simulation-showcase
+scripts/compare-open-duck-policy-metrics --repeat 5
 ```
 
 The scenario verifies typed state delivery, actuator movement, TTL expiry to
