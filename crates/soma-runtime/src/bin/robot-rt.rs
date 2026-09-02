@@ -3,7 +3,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use prost::Message;
-use soma_core::ControlCore;
+use soma_core::{CommandInput, ControlCore, RejectionReason};
 use soma_protocol::v1::{self, rt_request};
 use soma_runtime::{
     bind_owned_datagram, decode_target, encode_state_into, monotonic_ns, BestEffortDatagram,
@@ -33,7 +33,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|error| format!("load Reachy model: {error:?}"))?;
     let mut core = ControlCore::new();
     let mut next_tick = Instant::now();
-    let mut pending = None;
+    let mut pending = CommandInput::None;
     let mut buffer = [0_u8; MAX_MESSAGE_SIZE];
     let mut state = v1::ActuatorState {
         positions_rad: Vec::with_capacity(9),
@@ -49,12 +49,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 };
                 match request.request {
                     Some(rt_request::Request::Reset(true)) => plant.reset(),
-                    Some(rt_request::Request::Target(_)) => {
-                        if let Some(target) = decode_target(request) {
-                            if plant.validate_positions(target.positions_rad).is_ok() {
-                                pending = Some(target);
+                    Some(rt_request::Request::Target(target)) => {
+                        let sequence = target.sequence;
+                        pending = match decode_target(target) {
+                            Ok(target)
+                                if plant.validate_positions(target.positions_rad).is_ok() =>
+                            {
+                                CommandInput::Target(target)
                             }
+                            Ok(_) | Err(_) => CommandInput::Rejected {
+                                sequence,
+                                reason: RejectionReason::Invalid,
+                            },
                         }
+                    }
+                    Some(rt_request::Request::IngressRejection(rejection)) => {
+                        pending = CommandInput::Rejected {
+                            sequence: rejection.sequence,
+                            reason: RejectionReason::Invalid,
+                        };
+                    }
+                    Some(rt_request::Request::RuntimeStarted(started)) => {
+                        pending = CommandInput::RuntimeStarted {
+                            generation: started.generation,
+                        };
                     }
                     _ => {}
                 }
@@ -65,7 +83,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let now_ns = monotonic_ns();
         let tick = core
-            .tick(&mut plant, pending.take(), now_ns)
+            .tick_ingress(
+                &mut plant,
+                std::mem::replace(&mut pending, CommandInput::None),
+                now_ns,
+            )
             .map_err(|error| format!("control tick: {error:?}"))?;
         plant.advance_control_period();
         if let Some(observation_socket) = &observation {

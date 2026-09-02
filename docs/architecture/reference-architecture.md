@@ -188,11 +188,11 @@ The current bootstrap uses bounded, nonblocking, exclusively owned Unix
 datagrams between the two processes. State publication may drop stale samples
 rather than block the control owner. Shared-memory mailboxes remain the target
 for a measured real-time deployment, not a claim about the current code. The
-first slice carries sequence, local TTL, and Plant timeline; runtime generation,
-ownership metadata, and restart recovery are added only when their behavior is
-implemented. In the eventual deployed contract, loss or restart of
-`robot-runtime` must be handled by local `robot-rt` and lower safety authorities
-without unexpected motion.
+current slice carries sequence, local TTL, Plant timeline, and runtime
+generation. It implements local re-admission on runtime restart, but not
+ownership metadata, leases, or coordinated supervisor recovery. In the
+eventual deployed contract, loss or restart of `robot-runtime` must also be
+handled by lower safety authorities without unexpected motion.
 
 ## Communication planes
 
@@ -207,7 +207,11 @@ Direct calls and fixed-size structs only.
 The first runnable slice uses provisional bounded Unix datagrams with exclusive
 socket ownership and fixed maximum message size. It proves the process and
 backpressure boundary on a development machine; it does not claim a shared-
-memory ABI or target real-time qualification. Shared-memory/SPSC design,
+memory ABI or target real-time qualification. The implemented bootstrap now
+carries runtime generation in addition to sequence, local TTL, and Plant
+timeline: a generation change clears active command authority, and stale-
+generation targets are rejected. Ownership metadata, leases, and coordinated
+supervisor recovery remain deferred. Shared-memory/SPSC design,
 recovery semantics, cross-version ABI, target budgets, and dependency
 comparisons reopen when measured load or target hardware makes them concrete.
 

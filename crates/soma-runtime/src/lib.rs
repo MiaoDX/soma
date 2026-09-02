@@ -6,8 +6,9 @@ use std::path::Path;
 use fs2::FileExt;
 use prost::Message;
 use soma_core::{
-    AppliedCommand, CommandResult, ControlTick, PlantHealth as CorePlantHealth,
-    ReachyActuatorTarget, RejectionReason as CoreRejectionReason,
+    AppliedCommand, ApplyDisposition as CoreApplyDisposition, CommandResult, ControlTick,
+    Lifecycle as CoreLifecycle, PlantHealth as CorePlantHealth, ReachyActuatorTarget,
+    RejectionReason as CoreRejectionReason, SourceTimeDomain as CoreSourceTimeDomain,
 };
 use soma_protocol::v1::{self, rt_request};
 
@@ -79,23 +80,74 @@ pub fn monotonic_ns() -> u64 {
     time.tv_sec as u64 * 1_000_000_000 + time.tv_nsec as u64
 }
 
-pub fn stamp_request_received(request: &mut v1::RtRequest, received_ns: u64) {
+pub fn stamp_request_received(
+    request: &mut v1::RtRequest,
+    received_ns: u64,
+    runtime_generation: u64,
+) {
     if let Some(rt_request::Request::Target(target)) = request.request.as_mut() {
         target.issued_at_ns = received_ns;
+        target.runtime_generation = runtime_generation;
     }
 }
 
-pub fn decode_target(request: v1::RtRequest) -> Option<ReachyActuatorTarget> {
-    let rt_request::Request::Target(target) = request.request? else {
-        return None;
-    };
-    let positions_rad = target.positions_rad.try_into().ok()?;
-    Some(ReachyActuatorTarget {
+pub fn admit_public_request(
+    mut request: v1::RtRequest,
+    received_ns: u64,
+    runtime_generation: u64,
+) -> v1::RtRequest {
+    match request.request.as_ref() {
+        Some(rt_request::Request::Target(_)) => {
+            stamp_request_received(&mut request, received_ns, runtime_generation);
+            request
+        }
+        Some(rt_request::Request::Reset(true)) => request,
+        _ => ingress_rejection(0, v1::RejectionReason::Invalid),
+    }
+}
+
+pub fn ingress_rejection(sequence: u64, reason: v1::RejectionReason) -> v1::RtRequest {
+    v1::RtRequest {
+        request: Some(rt_request::Request::IngressRejection(
+            v1::IngressRejection {
+                sequence,
+                reason: reason as i32,
+            },
+        )),
+    }
+}
+
+pub fn runtime_started(generation: u64) -> v1::RtRequest {
+    v1::RtRequest {
+        request: Some(rt_request::Request::RuntimeStarted(v1::RuntimeStarted {
+            generation,
+        })),
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TargetDecodeError {
+    WrongPositionCount { actual: usize },
+}
+
+pub fn decode_target(
+    target: v1::ActuatorTarget,
+) -> Result<ReachyActuatorTarget, TargetDecodeError> {
+    let positions_rad = target
+        .positions_rad
+        .try_into()
+        .map_err(
+            |positions: Vec<f32>| TargetDecodeError::WrongPositionCount {
+                actual: positions.len(),
+            },
+        )?;
+    Ok(ReachyActuatorTarget {
         positions_rad,
         sequence: target.sequence,
         timeline: target.timeline,
         issued_at_ns: target.issued_at_ns,
         ttl_ns: target.ttl_ns,
+        runtime_generation: target.runtime_generation,
     })
 }
 
@@ -110,21 +162,26 @@ pub fn update_state(
             (v1::AppliedSource::MeasuredPositionHold as i32, sequence)
         }
     };
-    let (command_disposition, rejection_reason) = match tick.command_result {
+    let (command_sequence, command_disposition, rejection_reason) = match tick.command_result {
         CommandResult::NoCommand => (
+            0,
             v1::CommandDisposition::NoCommand,
             v1::RejectionReason::Unspecified,
         ),
-        CommandResult::Accepted { .. } => (
+        CommandResult::Accepted { sequence } => (
+            sequence,
             v1::CommandDisposition::Accepted,
             v1::RejectionReason::Unspecified,
         ),
-        CommandResult::Rejected { reason, .. } => (
+        CommandResult::Rejected { sequence, reason } => (
+            sequence,
             v1::CommandDisposition::Rejected,
             match reason {
                 CoreRejectionReason::Timeline => v1::RejectionReason::Timeline,
                 CoreRejectionReason::Sequence => v1::RejectionReason::Sequence,
                 CoreRejectionReason::Expired => v1::RejectionReason::Expired,
+                CoreRejectionReason::Invalid => v1::RejectionReason::Invalid,
+                CoreRejectionReason::RuntimeGeneration => v1::RejectionReason::RuntimeGeneration,
             },
         ),
     };
@@ -134,13 +191,26 @@ pub fn update_state(
         .extend_from_slice(&tick.measured.positions_rad);
     state.sequence = tick.measured.sequence;
     state.timeline = tick.measured.timeline;
-    state.timestamp_ns = tick.measured.timestamp_ns;
+    state.source_timestamp_ns = tick.measured.source_timestamp_ns;
     state.state_age_ns = state_age_ns;
     state.applied_source = applied_source;
     state.applied_sequence = applied_sequence;
     state.expiry_transition = tick.applied.expiry_transition;
     state.command_disposition = command_disposition as i32;
     state.rejection_reason = rejection_reason as i32;
+    state.command_sequence = command_sequence;
+    state.source_time_domain = match tick.measured.source_time_domain {
+        CoreSourceTimeDomain::Simulation => v1::SourceTimeDomain::Simulation,
+        CoreSourceTimeDomain::HostMonotonic => v1::SourceTimeDomain::HostMonotonic,
+        CoreSourceTimeDomain::Device => v1::SourceTimeDomain::Device,
+    } as i32;
+    state.runtime_generation = tick.runtime_generation;
+    state.runtime_transition = tick.runtime_transition;
+    state.lifecycle = match tick.measured.lifecycle {
+        CoreLifecycle::Disabled => v1::Lifecycle::Disabled,
+        CoreLifecycle::Enabled => v1::Lifecycle::Enabled,
+        CoreLifecycle::Stopped => v1::Lifecycle::Stopped,
+    } as i32;
     state.health = match tick.measured.health {
         CorePlantHealth::Healthy => v1::PlantHealth::Healthy,
         CorePlantHealth::StaleState => v1::PlantHealth::StaleState,
@@ -148,6 +218,10 @@ pub fn update_state(
         CorePlantHealth::ConfigurationMismatch => v1::PlantHealth::ConfigurationMismatch,
     } as i32;
     state.capture_monotonic_ns = monotonic_ns();
+    state.apply_disposition = match tick.apply_disposition {
+        CoreApplyDisposition::Submitted => v1::ApplyDisposition::Submitted,
+        CoreApplyDisposition::Confirmed => v1::ApplyDisposition::Confirmed,
+    } as i32;
 }
 
 pub fn encode_state_into(
@@ -174,13 +248,56 @@ mod tests {
                 timeline: 1,
                 issued_at_ns: 123,
                 ttl_ns: 50,
+                runtime_generation: 0,
             })),
         };
-        stamp_request_received(&mut request, 900);
-        let decoded = decode_target(request).unwrap();
+        stamp_request_received(&mut request, 900, 77);
+        let rt_request::Request::Target(target) = request.request.unwrap() else {
+            unreachable!()
+        };
+        let decoded = decode_target(target).unwrap();
         assert_eq!(decoded.issued_at_ns, 900);
         assert_eq!(decoded.positions_rad.len(), 9);
+        assert_eq!(decoded.runtime_generation, 77);
         assert!(decoded.is_expired(950));
+    }
+
+    #[test]
+    fn target_decode_reports_wrong_shape_instead_of_dropping_it() {
+        let error = decode_target(v1::ActuatorTarget {
+            positions_rad: vec![0.0; 8],
+            sequence: 2,
+            timeline: 1,
+            issued_at_ns: 3,
+            ttl_ns: 4,
+            runtime_generation: 0,
+        })
+        .unwrap_err();
+        assert_eq!(error, TargetDecodeError::WrongPositionCount { actual: 8 });
+    }
+
+    #[test]
+    fn ingress_rejection_preserves_available_request_identity() {
+        let request = ingress_rejection(17, v1::RejectionReason::Invalid);
+        assert_eq!(
+            request.request,
+            Some(rt_request::Request::IngressRejection(
+                v1::IngressRejection {
+                    sequence: 17,
+                    reason: v1::RejectionReason::Invalid as i32,
+                }
+            ))
+        );
+    }
+
+    #[test]
+    fn public_ingress_cannot_inject_internal_runtime_messages() {
+        let injected = runtime_started(41);
+        let admitted = admit_public_request(injected, 100, 42);
+        assert_eq!(admitted, ingress_rejection(0, v1::RejectionReason::Invalid));
+
+        let empty = admit_public_request(v1::RtRequest::default(), 100, 42);
+        assert_eq!(empty, ingress_rejection(0, v1::RejectionReason::Invalid));
     }
 
     #[test]
@@ -192,7 +309,8 @@ mod tests {
                 positions_rad: [0.1; 9],
                 sequence: 1,
                 timeline: 2,
-                timestamp_ns: 3,
+                source_timestamp_ns: 3,
+                source_time_domain: soma_core::SourceTimeDomain::HostMonotonic,
                 lifecycle: Lifecycle::Enabled,
                 health: PlantHealth::Healthy,
             },
@@ -202,6 +320,9 @@ mod tests {
                 command: AppliedCommand::MeasuredPositionHold { sequence: 1 },
                 expiry_transition: false,
             },
+            apply_disposition: CoreApplyDisposition::Confirmed,
+            runtime_generation: 9,
+            runtime_transition: true,
         };
         let mut state = v1::ActuatorState {
             positions_rad: Vec::with_capacity(9),
@@ -218,6 +339,10 @@ mod tests {
         assert_eq!(payload.as_ptr(), payload_ptr);
         assert_eq!(state.positions_rad.capacity(), 9);
         assert_eq!(payload.capacity(), MAX_MESSAGE_SIZE);
+        assert_eq!(
+            state.apply_disposition,
+            v1::ApplyDisposition::Confirmed as i32
+        );
     }
 
     #[test]

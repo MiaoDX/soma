@@ -18,6 +18,13 @@ pub enum PlantHealth {
     ConfigurationMismatch,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SourceTimeDomain {
+    Simulation,
+    HostMonotonic,
+    Device,
+}
+
 pub type ActuatorPositions = [f32; ACTUATOR_COUNT];
 pub type ActuatorArray<const N: usize> = [f32; N];
 
@@ -26,7 +33,8 @@ pub struct ActuatorState<const N: usize> {
     pub positions_rad: ActuatorArray<N>,
     pub sequence: u64,
     pub timeline: u64,
-    pub timestamp_ns: u64,
+    pub source_timestamp_ns: u64,
+    pub source_time_domain: SourceTimeDomain,
     pub lifecycle: Lifecycle,
     pub health: PlantHealth,
 }
@@ -39,6 +47,7 @@ pub struct ActuatorTarget<const N: usize> {
     pub timeline: u64,
     pub issued_at_ns: u64,
     pub ttl_ns: u64,
+    pub runtime_generation: u64,
 }
 pub type ReachyActuatorTarget = ActuatorTarget<ACTUATOR_COUNT>;
 
@@ -58,6 +67,15 @@ pub enum PositionApplication {
     MeasuredPositionHold,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ApplyDisposition {
+    /// The Plant accepted the value but a later state sample is needed to
+    /// prove device-side observation.
+    Submitted,
+    /// The Plant can prove the value is already represented in its state.
+    Confirmed,
+}
+
 /// The bounded cyclic boundary implemented by simulation and native Plant adapters.
 pub trait Plant<const N: usize> {
     type Error;
@@ -67,7 +85,7 @@ pub trait Plant<const N: usize> {
         &mut self,
         positions_rad: ActuatorArray<N>,
         application: PositionApplication,
-    ) -> Result<(), Self::Error>;
+    ) -> Result<ApplyDisposition, Self::Error>;
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -75,6 +93,8 @@ pub enum RejectionReason {
     Timeline,
     Sequence,
     Expired,
+    Invalid,
+    RuntimeGeneration,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -83,6 +103,19 @@ pub enum CommandResult {
     Accepted {
         sequence: u64,
     },
+    Rejected {
+        sequence: u64,
+        reason: RejectionReason,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum CommandInput<const N: usize> {
+    None,
+    RuntimeStarted {
+        generation: u64,
+    },
+    Target(ActuatorTarget<N>),
     Rejected {
         sequence: u64,
         reason: RejectionReason,
@@ -108,6 +141,9 @@ pub struct ControlTick<const N: usize> {
     pub measured: ActuatorState<N>,
     pub command_result: CommandResult,
     pub applied: AppliedControl<N>,
+    pub apply_disposition: ApplyDisposition,
+    pub runtime_generation: u64,
+    pub runtime_transition: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -122,6 +158,7 @@ pub struct ControlCore<const N: usize> {
     timeline: Option<u64>,
     last_sequence: Option<u64>,
     active_target: Option<ActuatorTarget<N>>,
+    runtime_generation: u64,
 }
 
 impl<const N: usize> ControlCore<N> {
@@ -135,7 +172,12 @@ impl<const N: usize> ControlCore<N> {
         command: Option<ActuatorTarget<N>>,
         now_ns: u64,
     ) -> Result<ControlTick<N>, ControlError<P::Error>> {
-        self.tick_impl(plant, command, now_ns, true)
+        self.tick_input(
+            plant,
+            command.map_or(CommandInput::None, CommandInput::Target),
+            now_ns,
+            true,
+        )
     }
 
     /// Apply an asynchronously captured target. The target sequence belongs to
@@ -147,13 +189,27 @@ impl<const N: usize> ControlCore<N> {
         command: Option<ActuatorTarget<N>>,
         now_ns: u64,
     ) -> Result<ControlTick<N>, ControlError<P::Error>> {
-        self.tick_impl(plant, command, now_ns, false)
+        self.tick_input(
+            plant,
+            command.map_or(CommandInput::None, CommandInput::Target),
+            now_ns,
+            false,
+        )
     }
 
-    fn tick_impl<P: Plant<N>>(
+    pub fn tick_ingress<P: Plant<N>>(
         &mut self,
         plant: &mut P,
-        command: Option<ActuatorTarget<N>>,
+        command: CommandInput<N>,
+        now_ns: u64,
+    ) -> Result<ControlTick<N>, ControlError<P::Error>> {
+        self.tick_input(plant, command, now_ns, true)
+    }
+
+    fn tick_input<P: Plant<N>>(
+        &mut self,
+        plant: &mut P,
+        command: CommandInput<N>,
         now_ns: u64,
         guard_against_measured_sequence: bool,
     ) -> Result<ControlTick<N>, ControlError<P::Error>> {
@@ -163,13 +219,40 @@ impl<const N: usize> ControlCore<N> {
             self.last_sequence = Some(measured.sequence);
         }
 
+        let runtime_transition = match command {
+            CommandInput::RuntimeStarted { generation } => {
+                let changed = self.runtime_generation != generation;
+                if changed {
+                    self.runtime_generation = generation;
+                    self.last_sequence = None;
+                    self.active_target = None;
+                }
+                changed
+            }
+            _ => false,
+        };
+
         let command_result = match command {
-            None => CommandResult::NoCommand,
-            Some(target) if target.timeline != measured.timeline => CommandResult::Rejected {
-                sequence: target.sequence,
-                reason: RejectionReason::Timeline,
-            },
-            Some(target)
+            CommandInput::None => CommandResult::NoCommand,
+            CommandInput::RuntimeStarted { .. } => CommandResult::NoCommand,
+            CommandInput::Rejected { sequence, reason } => {
+                CommandResult::Rejected { sequence, reason }
+            }
+            CommandInput::Target(target) if target.timeline != measured.timeline => {
+                CommandResult::Rejected {
+                    sequence: target.sequence,
+                    reason: RejectionReason::Timeline,
+                }
+            }
+            CommandInput::Target(target)
+                if target.runtime_generation != self.runtime_generation =>
+            {
+                CommandResult::Rejected {
+                    sequence: target.sequence,
+                    reason: RejectionReason::RuntimeGeneration,
+                }
+            }
+            CommandInput::Target(target)
                 if self
                     .last_sequence
                     .is_some_and(|last| target.sequence <= last) =>
@@ -179,11 +262,11 @@ impl<const N: usize> ControlCore<N> {
                     reason: RejectionReason::Sequence,
                 }
             }
-            Some(target) if target.is_expired(now_ns) => CommandResult::Rejected {
+            CommandInput::Target(target) if target.is_expired(now_ns) => CommandResult::Rejected {
                 sequence: target.sequence,
                 reason: RejectionReason::Expired,
             },
-            Some(target) => {
+            CommandInput::Target(target) => {
                 self.last_sequence = Some(target.sequence);
                 self.active_target = Some(target);
                 CommandResult::Accepted {
@@ -222,7 +305,7 @@ impl<const N: usize> ControlCore<N> {
                 PositionApplication::MeasuredPositionHold
             }
         };
-        plant
+        let apply_disposition = plant
             .apply_positions(applied.positions_rad, application)
             .map_err(ControlError::Apply)?;
 
@@ -230,6 +313,9 @@ impl<const N: usize> ControlCore<N> {
             measured,
             command_result,
             applied,
+            apply_disposition,
+            runtime_generation: self.runtime_generation,
+            runtime_transition,
         })
     }
 
@@ -259,7 +345,8 @@ mod tests {
                     positions_rad: [0.1; ACTUATOR_COUNT],
                     sequence: 3,
                     timeline: 7,
-                    timestamp_ns: 100,
+                    source_timestamp_ns: 100,
+                    source_time_domain: SourceTimeDomain::HostMonotonic,
                     lifecycle: Lifecycle::Enabled,
                     health: PlantHealth::Healthy,
                 },
@@ -280,10 +367,10 @@ mod tests {
             &mut self,
             positions_rad: ActuatorPositions,
             application: PositionApplication,
-        ) -> Result<(), Self::Error> {
+        ) -> Result<ApplyDisposition, Self::Error> {
             self.applied = positions_rad;
             self.application = Some(application);
-            Ok(())
+            Ok(ApplyDisposition::Confirmed)
         }
     }
 
@@ -294,6 +381,7 @@ mod tests {
             timeline,
             issued_at_ns: 100,
             ttl_ns: 10,
+            runtime_generation: 0,
         }
     }
 
@@ -413,6 +501,71 @@ mod tests {
         );
         assert_eq!(plant.applied, [0.1; ACTUATOR_COUNT]);
         assert!(!tick.applied.expiry_transition);
+    }
+
+    #[test]
+    fn ingress_rejection_is_reported_without_replacing_the_active_target() {
+        let mut core = ControlCore::new();
+        let mut plant = TestPlant::new();
+        core.tick(&mut plant, Some(target(4, 7)), 105).unwrap();
+
+        let tick = core
+            .tick_ingress(
+                &mut plant,
+                CommandInput::Rejected {
+                    sequence: 5,
+                    reason: RejectionReason::Invalid,
+                },
+                106,
+            )
+            .unwrap();
+
+        assert_eq!(
+            tick.command_result,
+            CommandResult::Rejected {
+                sequence: 5,
+                reason: RejectionReason::Invalid,
+            }
+        );
+        assert_eq!(tick.applied.command, AppliedCommand::Target { sequence: 4 });
+    }
+
+    #[test]
+    fn runtime_restart_drops_old_authority_and_requires_new_generation() {
+        let mut core = ControlCore::new();
+        let mut plant = TestPlant::new();
+        core.tick(&mut plant, Some(target(4, 7)), 105).unwrap();
+
+        let transition = core
+            .tick_ingress(
+                &mut plant,
+                CommandInput::RuntimeStarted { generation: 9 },
+                106,
+            )
+            .unwrap();
+        assert!(transition.runtime_transition);
+        assert_eq!(transition.runtime_generation, 9);
+        assert!(matches!(
+            transition.applied.command,
+            AppliedCommand::MeasuredPositionHold { .. }
+        ));
+
+        let rejected = core.tick(&mut plant, Some(target(5, 7)), 107).unwrap();
+        assert_eq!(
+            rejected.command_result,
+            CommandResult::Rejected {
+                sequence: 5,
+                reason: RejectionReason::RuntimeGeneration,
+            }
+        );
+
+        let mut current = target(5, 7);
+        current.runtime_generation = 9;
+        let accepted = core.tick(&mut plant, Some(current), 108).unwrap();
+        assert_eq!(
+            accepted.command_result,
+            CommandResult::Accepted { sequence: 5 }
+        );
     }
 
     #[test]
