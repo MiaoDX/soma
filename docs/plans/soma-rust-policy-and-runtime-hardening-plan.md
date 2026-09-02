@@ -63,10 +63,10 @@ the default.
 Rust policy worker (non-RT, ONNX)
         or explicit Python reference worker
         -> bounded latest-value handoff
-        -> robot-runtime (non-RT authority/transport)
+        -> open-duck-runtime (fixed-profile non-RT transport)
         -> bounded local IPC
-        -> robot-rt (periodic admission/apply/evidence only)
-        -> fixed MuJoCo/native Plant
+        -> open-duck-rt (periodic admission/apply/evidence only)
+        -> fixed MuJoCo Plant
 ```
 
 The Python client remains an oracle, not a second control authority. Both

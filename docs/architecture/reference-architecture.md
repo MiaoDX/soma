@@ -352,6 +352,10 @@ Instance identifiers such as `robot_serial` must not change the shared product-m
 
 A policy should be deployed as a versioned `PolicyBundle`, not as an isolated model file.
 
+The current fixed Open Duck checkpoint, ABI, and external ONNX Runtime
+provisioning are simulation qualification evidence for this contract, not yet a
+signed or lifecycle-managed `PolicyBundle` implementation.
+
 A bundle includes:
 
 - model artifact;
@@ -441,6 +445,10 @@ The current reference architecture is a working thesis. Important questions stil
 - which safety responsibilities belong in the host versus dedicated safety hardware;
 - how much low-level control should be exposed to external research users;
 - OTA/recovery strategy across heterogeneous robot electronics;
-- the deferred policy/inference questions: observation-time alignment and action chunking, reopened with a representative policy workload — see [`policy-runtime-interface.md`](../deep-research/policy-runtime-interface.md) and `D-19`.
+- policy/inference questions beyond the fixed Duck qualification: action
+  chunking, shared inference/perception resource contention, and whether a
+  second policy workload justifies a common observation-alignment interface —
+  see [`policy-runtime-interface.md`](../deep-research/policy-runtime-interface.md)
+  and `D-19`.
 
 These questions should be resolved through Deep Research, benchmarks, ADRs, SIL/HIL tests, and eventually physical reference robots.

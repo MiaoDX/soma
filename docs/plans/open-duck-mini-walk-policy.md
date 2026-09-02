@@ -1,14 +1,15 @@
 # Open Duck Mini Walk Policy Plan
 
-> Status: Stage 4 headless acceptance complete. Optional Duck-specific
-> visualization and the post-acceptance D-04 architecture review are parked.
+> Status: Stage 4 headless acceptance and the post-acceptance D-04 Rust/Python
+> runtime comparison are complete. Optional Duck-specific visualization is
+> tracked separately.
 
 ## Plan Ledger
 
 - `status`: COMPLETE for the fixed headless Open Duck Mini policy path
 - `appetite`: gate-bounded; no calendar-duration estimate
 - `current_slice`: Stage 4 acceptance and regression closure complete
-- `next_action`: optional D-04 process-topology review; no policy retraining or
+- `next_action`: no required headless-policy work; no policy retraining or
   checkpoint replacement is indicated
 - `no_touch`: Reachy hardware probe and N0/N1 gates; Open Duck hardware;
   generic robot manifests; ROS 2; a third robot; camera, audio, antennas,
@@ -29,6 +30,11 @@ taking about 0.4 ms. The exception tests whether a newly trained policy can
 meet the existing asynchronous contract; it does not relax the gait floors,
 change the runtime contract, or qualify a model merely because training
 completes.
+
+The later D-04 follow-up preserves this original Python acceptance path as the
+oracle and makes the equivalent separate Rust ONNX worker the default. It does
+not change the fixed ABI, checkpoint, policy timing, or simulation-only support
+claim recorded by this plan.
 
 The pinned Playground commit `b9be205ac64488c23504ca42e5ec790337adeec3`
 has no committed lockfile. Its working training environment is reconstructed
@@ -438,26 +444,15 @@ technology; a runtime manifest; dynamic robot descriptions; generic sensor or
 observation interfaces; weakening Reachy semantics; or claiming stale-frame
 safety without source lineage.
 
-## Cross-Process Review Trigger
+## Cross-Process Review Outcome
 
-The first Duck implementation retains the existing Python policy -> loopback
-Zenoh -> Rust runtime -> bounded Unix datagram -> Rust RT topology. This is a
-deliberate isolation choice, not a claim that more processes are inherently
-safer or more reliable. After Stage 4 records inference latency, message age,
-drops, deadline expiry, process failure, and teardown evidence, run a focused
-architecture review comparing at least:
-
-- the current isolated Python policy process;
-- ONNX Runtime hosted by Rust in `robot-runtime`, with async/middleware work
-  still outside `robot-rt`;
-- one Rust process with isolated async runtime and periodic RT thread, using a
-  bounded latest-value handoff.
-
-The review must compare failure containment, scheduling jitter, stale-data
-proof, ownership and shutdown, dependency/runtime complexity, observability,
-and whether process isolation adds a demonstrated safety property. It must not
-move inference or async work into the periodic RT section. This is the D-04
-reversal trigger; it is not part of the Duck Stage 0-4 implementation.
+The Stage 4 Python policy -> loopback Zenoh -> Rust runtime -> bounded Unix
+datagram -> Rust RT topology was the acceptance baseline. The D-04 follow-up
+compared it with a Rust ONNX policy worker and with a merged-process option.
+It selected the separate Rust worker as the default, retained the Python worker
+as the oracle, and preserved separate `open-duck-runtime` and `open-duck-rt`
+processes. The measurements did not justify a merged or single-process
+topology. Reopen that choice only under the current D-04 reversal trigger.
 
 ## User-Review Gates
 
