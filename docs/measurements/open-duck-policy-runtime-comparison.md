@@ -7,21 +7,29 @@ times. Each cell is `mean [min, max]` across rollouts.
 
 | Metric | Unit | Rust | Python |
 | --- | --- | ---: | ---: |
-| Emitted targets | count | 381.800 [380.000, 383.000] | 384.600 [383.000, 386.000] |
-| Run max inference | ms | 0.318 [0.276, 0.365] | 0.434 [0.391, 0.455] |
-| Mean inference | ms | 0.157 [0.148, 0.166] | 0.201 [0.187, 0.210] |
-| Run max message age | ms | 20.077 [20.029, 20.121] | 21.331 [20.041, 23.380] |
-| Dropped states | count | 4.600 [3.000, 6.000] | 1.400 [0.000, 3.000] |
-| Runtime dropped targets | count | 0.600 [0.000, 1.000] | 0.000 [0.000, 0.000] |
-| Run min root height | m | 0.154 [0.150, 0.157] | 0.152 [0.150, 0.156] |
-| Run max absolute roll | rad | 0.092 [0.085, 0.097] | 0.086 [0.080, 0.092] |
-| Run max absolute pitch | rad | 0.115 [0.106, 0.120] | 0.117 [0.110, 0.125] |
+| Emitted targets | count | 385.600 [385.000, 386.000] | 384.800 [383.000, 386.000] |
+| Run max inference | ms | 0.289 [0.229, 0.314] | 0.402 [0.389, 0.411] |
+| Mean inference | ms | 0.147 [0.123, 0.168] | 0.179 [0.138, 0.206] |
+| Run max message age | ms | 20.483 [20.048, 22.198] | 20.089 [20.071, 20.112] |
+| Dropped states | count | 0.000 [0.000, 0.000] | 1.000 [0.000, 3.000] |
+| Runtime dropped targets | count | 0.000 [0.000, 0.000] | 0.000 [0.000, 0.000] |
+| Publisher matching wait | ms | 439.094 [423.152, 467.565] | 0.000 [0.000, 0.000] |
+| Run min root height | m | 0.150 [0.150, 0.150] | 0.153 [0.150, 0.157] |
+| Run max absolute roll | rad | 0.084 [0.084, 0.084] | 0.090 [0.080, 0.105] |
+| Run max absolute pitch | rad | 0.117 [0.117, 0.117] | 0.118 [0.110, 0.127] |
 
-Rust mean inference latency was 21.9% lower and its mean run-maximum inference
-latency was 26.6% lower than Python in this sample. End-to-end message age and
-motion envelopes were comparable. All runs applied targets and completed; two
-Rust runs and one Python run latched at least one rejection, which remains
-visible rather than being excluded from the comparison.
+Rust mean inference latency was 17.9% lower and its mean run-maximum inference
+latency was 28.1% lower than Python in this sample. End-to-end message age and
+motion envelopes were comparable. All runs applied targets and completed.
+
+All six attributable rejection counts were zero for both backends: decode,
+timeline, sequence, expired, invalid, and runtime generation. The Rust worker
+waited 423-468 ms for Zenoh to confirm a matching target subscriber before it
+reported ready. Before that readiness gate, 4 of 5 Rust runs produced 6 expired
+targets at ages 62-126 ms against the fixed 40 ms TTL, concentrated at early
+state sequences 11 and 31. Ten Rust qualification runs after the gate and this
+final 5-run Rust sample produced no rejection. This isolates and closes the
+startup publisher-matching race without changing TTL or admission semantics.
 
 This is a same-host qualification baseline, not a general language benchmark.
 It does not measure CPU, RSS, startup time, p50/p95/p99 latency, hardware

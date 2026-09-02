@@ -175,6 +175,7 @@ def main() -> None:
                     "max_inference_ns": 0, "dropped_states": 0,
                     "total_inference_ns": 0, "mean_inference_ns": 0,
                     "runtime_dropped_targets": 0,
+                    "publisher_matching_wait_ns": 0,
                     "rejection_counts": {name: 0 for name in REJECTION_NAMES},
                     "max_rejection_age_ns": {name: 0 for name in REJECTION_NAMES},
                     "last_rejection": {"reason": "none", "sequence": 0,

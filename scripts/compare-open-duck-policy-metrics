@@ -28,6 +28,7 @@ METRICS = {
     "max_message_age_ns": ("Run max message age", "ms", 1e-6),
     "dropped_states": ("Dropped states", "count", 1.0),
     "runtime_dropped_targets": ("Runtime dropped targets", "count", 1.0),
+    "publisher_matching_wait_ns": ("Publisher matching wait", "ms", 1e-6),
     "min_root_height_m": ("Run min root height", "m", 1.0),
     "max_abs_roll_rad": ("Run max absolute roll", "rad", 1.0),
     "max_abs_pitch_rad": ("Run max absolute pitch", "rad", 1.0),

@@ -25,9 +25,44 @@ use std::{
     path::PathBuf,
     time::{Duration, Instant},
 };
+use tokio::time::sleep;
+use zenoh::pubsub::Publisher;
 use zenoh::Config;
 
 const CHECKPOINT_SHA256: &str = "cb61453a8bcb547ccfdeb4f03ba0fa67ebcf767dcf4aa6e5c9a0d92b302f9b23";
+const MATCHING_TIMEOUT: Duration = Duration::from_secs(5);
+const MATCHING_POLL: Duration = Duration::from_millis(10);
+
+async fn wait_for_target_subscriber(publisher: &Publisher<'_>) -> Result<Duration, String> {
+    let started = Instant::now();
+    loop {
+        if publisher
+            .matching_status()
+            .await
+            .map_err(|error| format!("query target subscriber matching: {error}"))?
+            .matching()
+        {
+            return Ok(started.elapsed());
+        }
+        if started.elapsed() >= MATCHING_TIMEOUT {
+            return Err("Open Duck target publisher did not match the runtime subscriber".into());
+        }
+        sleep(MATCHING_POLL).await;
+    }
+}
+
+#[cfg(test)]
+mod readiness_tests {
+    use super::{MATCHING_POLL, MATCHING_TIMEOUT};
+    use std::time::Duration;
+
+    #[test]
+    fn matching_readiness_contract_is_bounded() {
+        assert!(MATCHING_TIMEOUT > MATCHING_POLL);
+        assert_eq!(MATCHING_POLL, Duration::from_millis(10));
+        assert_eq!(MATCHING_TIMEOUT, Duration::from_secs(5));
+    }
+}
 
 struct Args {
     checkpoint: PathBuf,
@@ -157,6 +192,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let zenoh = zenoh::open(Config::from_json5(r#"{mode:"client",connect:{endpoints:["tcp/127.0.0.1:7448"]},scouting:{multicast:{enabled:false}}}"#)?).await?;
     let subscriber = zenoh.declare_subscriber(OPEN_DUCK_STATE_KEY).await?;
     let publisher = zenoh.declare_publisher(OPEN_DUCK_TARGET_KEY).await?;
+    let publisher_matching_wait = wait_for_target_subscriber(&publisher).await?;
     if let Some(path) = &args.ready_file {
         fs::write(path, b"ready\n")?;
     }
@@ -251,6 +287,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     "mean_inference_ns": total_inference_ns / emitted.max(1),
                     "dropped_states": dropped,
                     "runtime_dropped_targets": state.runtime_dropped_targets,
+                    "publisher_matching_wait_ns": publisher_matching_wait.as_nanos() as u64,
                     "rejection_counts": rejection_values(&state.rejections.counts),
                     "max_rejection_age_ns": rejection_values(&state.rejections.max_age_ns),
                     "last_rejection": {

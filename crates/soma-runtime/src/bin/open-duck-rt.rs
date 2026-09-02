@@ -2,9 +2,8 @@ use soma_core::{ActuatorTarget, AppliedCommand, CommandResult, ControlCore};
 use soma_runtime::{
     bind_owned_datagram, monotonic_ns,
     open_duck::{
-        decode_target, encode_state, OpenDuckRejectionEvidence, OpenDuckState,
-        OPEN_DUCK_RT_SOCKET, OPEN_DUCK_RUNTIME_SOCKET, OPEN_DUCK_STATE_BYTES,
-        OPEN_DUCK_TARGET_BYTES,
+        decode_target, encode_state, OpenDuckRejectionEvidence, OpenDuckState, OPEN_DUCK_RT_SOCKET,
+        OPEN_DUCK_RUNTIME_SOCKET, OPEN_DUCK_STATE_BYTES, OPEN_DUCK_TARGET_BYTES,
     },
 };
 use soma_sim::{OpenDuckSimPlant, OPEN_DUCK_ACTUATOR_COUNT};

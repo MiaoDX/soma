@@ -21,6 +21,7 @@ def evidence(**changes):
         "max_message_age_ns": 20_000_000,
         "dropped_states": 2,
         "runtime_dropped_targets": 1,
+        "publisher_matching_wait_ns": 12_000_000,
         "min_root_height_m": 0.15,
         "max_abs_roll_rad": 0.1,
         "max_abs_pitch_rad": 0.12,
