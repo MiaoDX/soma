@@ -17,6 +17,65 @@ from soma_client.open_duck_policy import (
 )
 
 
+class _Tensor:
+    def __init__(self, shape):
+        self.shape = shape
+
+
+class _FakeSession:
+    def __init__(self, output, input_shape=(1, 101), output_shape=(1, 14)):
+        self.output = output
+        self.input_shape = input_shape
+        self.output_shape = output_shape
+
+    def get_inputs(self):
+        return [_Tensor(self.input_shape)]
+
+    def get_outputs(self):
+        return [_Tensor(self.output_shape)]
+
+    def run(self, _outputs, _feeds):
+        return [self.output]
+
+
+def _state():
+    return {"positions": np.zeros(14, np.float32), "velocities": np.zeros(14, np.float32),
+            "gyro": np.zeros(3, np.float32), "acceleration": np.zeros(3, np.float32),
+            "contacts": np.zeros(2, np.float32)}
+
+
+def test_policy_rejects_model_shape_and_nonfinite_action(monkeypatch, tmp_path):
+    import soma_client.open_duck_policy as module
+    monkeypatch.setattr(module.ort, "InferenceSession", lambda *args, **kwargs:
+                        _FakeSession(np.zeros((1, 14), np.float32), output_shape=(1, 13)))
+    with np.testing.assert_raises(ValueError):
+        Policy(tmp_path / "fake.onnx")
+    monkeypatch.setattr(module.ort, "InferenceSession", lambda *args, **kwargs:
+                        _FakeSession(np.full((1, 14), np.nan, np.float32)))
+    policy = Policy(tmp_path / "fake.onnx")
+    with np.testing.assert_raises(RuntimeError):
+        policy.infer(_state())
+
+
+def test_policy_rejects_nonfinite_state(monkeypatch, tmp_path):
+    import soma_client.open_duck_policy as module
+    monkeypatch.setattr(module.ort, "InferenceSession", lambda *args, **kwargs:
+                        _FakeSession(np.zeros((1, 14), np.float32)))
+    policy = Policy(tmp_path / "fake.onnx")
+    state = _state()
+    state["positions"][0] = np.nan
+    with np.testing.assert_raises(ValueError):
+        policy.infer(state)
+
+
+def test_target_payload_rejects_nonfinite_and_out_of_range_targets():
+    state = {"timeline": 1, "capture_ns": 2}
+    with np.testing.assert_raises(ValueError):
+        Policy.target_payload(1, state, np.full(14, np.nan, np.float32))
+    with np.testing.assert_raises(ValueError):
+        Policy.target_payload(1, state, np.full(14, 11.0, np.float32))
+
+
 def test_combined_state_decode_preserves_lineage_and_facts():
     payload = STATE.pack(11, 2, 90, 8, 7, 6, 5, 4, 3, *range(39))
     state = decode_state(payload)

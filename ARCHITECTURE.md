@@ -149,6 +149,16 @@ and a single Rust process that isolates async work from its periodic RT thread.
 No alternative may move async work, middleware, inference, or unbounded
 allocation into the periodic section.
 
+The fixed policy ABI is observation `[1, 101]` to action `[1, 14]`, with the
+named 14-actuator order and default pose defined by `soma_runtime::open_duck`.
+It uses a 27-tick phase, three-action history, 0.25 action scale, 5.24 rad/s
+slew limit, 40 ms target TTL, and checkpoint SHA-256
+`cb61453a8bcb547ccfdeb4f03ba0fa67ebcf767dcf4aa6e5c9a0d92b302f9b23`.
+Python validates this contract as the reference/oracle path. Rust now provides
+the equivalent fixed observation and target adapter outside RT; ONNX Runtime
+native provisioning remains an explicit deployment prerequisite and is not
+loaded by `robot-rt`.
+
 The Pages showcase reuses the pinned direct reference runner for one 12-second
 composite `vx`/`vy`/yaw command reel. It records complete generalized state and
 uses the pinned MJCF loader to reconstruct read-only Mesh3D geometry and body
