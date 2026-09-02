@@ -10,6 +10,11 @@ pub const OPEN_DUCK_POLICY_HZ: u32 = 50;
 pub const OPEN_DUCK_TARGET_BYTES: usize = 8 * 4 + 14 * 4;
 pub const OPEN_DUCK_STATE_FLOATS: usize = 14 + 14 + 3 + 3 + 2 + 3;
 pub const OPEN_DUCK_STATE_BYTES: usize = 8 * 8 + 4 + OPEN_DUCK_STATE_FLOATS * 4;
+pub const OPEN_DUCK_OBSERVATION: usize = 101;
+pub const OPEN_DUCK_ACTION: usize = 14;
+pub const OPEN_DUCK_GAIT_PHASE: usize = 27;
+pub const OPEN_DUCK_ACTION_SCALE: f32 = 0.25;
+pub const OPEN_DUCK_SLEW_RAD_S: f32 = 5.24;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct OpenDuckState {
@@ -167,6 +172,102 @@ pub struct OpenDuckTarget {
     pub ttl_ns: u64,
 }
 
+/// Fixed Open Duck policy adapter. Inference is injected so model/runtime
+/// initialization stays outside the periodic control path.
+#[derive(Clone, Debug)]
+pub struct OpenDuckPolicy {
+    previous: [f32; OPEN_DUCK_ACTUATORS],
+    history: [[f32; OPEN_DUCK_ACTUATORS]; 3],
+    phase_tick: usize,
+}
+
+impl Default for OpenDuckPolicy {
+    fn default() -> Self {
+        Self {
+            previous: OPEN_DUCK_DEFAULT_POSE,
+            history: [[0.0; 14]; 3],
+            phase_tick: 0,
+        }
+    }
+}
+
+pub const OPEN_DUCK_DEFAULT_POSE: [f32; OPEN_DUCK_ACTUATORS] = [
+    0.002, 0.053, -0.63, 1.368, -0.784, 0.0, 0.0, 0.0, 0.0, -0.003, -0.065, 0.635, 1.379, -0.796,
+];
+
+impl OpenDuckPolicy {
+    pub fn observation(
+        &self,
+        state: &OpenDuckState,
+        velocity_x: f32,
+    ) -> Option<[f32; OPEN_DUCK_OBSERVATION]> {
+        let mut out = [0.0; OPEN_DUCK_OBSERVATION];
+        let mut i = 0;
+        for &v in &state.gyro_rad_s {
+            out[i] = v;
+            i += 1;
+        }
+        for (j, &v) in state.acceleration_m_s2.iter().enumerate() {
+            out[i + j] = v + if j == 0 { 1.3 } else { 0.0 };
+        }
+        i += 3;
+        out[i..i + 7].copy_from_slice(&[velocity_x, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+        i += 7;
+        for (j, (&p, &d)) in state
+            .positions_rad
+            .iter()
+            .zip(OPEN_DUCK_DEFAULT_POSE.iter())
+            .enumerate()
+        {
+            out[i + j] = p - d;
+        }
+        i += 14;
+        for (j, &v) in state.velocities_rad_s.iter().enumerate() {
+            out[i + j] = v * 0.05;
+        }
+        i += 14;
+        for h in &self.history {
+            out[i..i + 14].copy_from_slice(h);
+            i += 14;
+        }
+        out[i..i + 14].copy_from_slice(&self.previous);
+        i += 14;
+        out[i..i + 2].copy_from_slice(&state.feet_contacts);
+        i += 2;
+        let phase = self.phase_tick as f32 / OPEN_DUCK_GAIT_PHASE as f32 * std::f32::consts::TAU;
+        out[i] = phase.cos();
+        out[i + 1] = phase.sin();
+        out.iter().all(|v| v.is_finite()).then_some(out)
+    }
+
+    pub fn apply_action(
+        &mut self,
+        action: [f32; OPEN_DUCK_ACTION],
+        now_ns: u64,
+        state: &OpenDuckState,
+    ) -> Option<OpenDuckTarget> {
+        if !action.iter().all(|v| v.is_finite()) {
+            return None;
+        }
+        let mut target = self.previous;
+        let max_delta = OPEN_DUCK_SLEW_RAD_S * 0.02;
+        for i in 0..14 {
+            target[i] = (OPEN_DUCK_DEFAULT_POSE[i] + action[i] * OPEN_DUCK_ACTION_SCALE)
+                .clamp(self.previous[i] - max_delta, self.previous[i] + max_delta);
+        }
+        self.history = [action, self.history[0], self.history[1]];
+        self.previous = target;
+        self.phase_tick = (self.phase_tick + 1) % OPEN_DUCK_GAIT_PHASE;
+        Some(OpenDuckTarget {
+            positions_rad: target,
+            sequence: state.sequence,
+            timeline: state.timeline,
+            capture_monotonic_ns: now_ns,
+            ttl_ns: 40_000_000,
+        })
+    }
+}
+
 impl OpenDuckTarget {
     pub fn valid_for(&self, now_ns: u64, timeline: u64, last_sequence: Option<u64>) -> bool {
         self.timeline == timeline
@@ -284,5 +385,40 @@ mod tests {
         state.feet_contacts[0] = f32::NAN;
         encode_state(&state, &mut bytes);
         assert!(decode_state(&bytes).is_none());
+    }
+
+    #[test]
+    fn policy_observation_is_fixed_and_action_slew_is_bounded() {
+        let state = OpenDuckState {
+            positions_rad: OPEN_DUCK_DEFAULT_POSE,
+            velocities_rad_s: [0.0; 14],
+            gyro_rad_s: [0.0; 3],
+            acceleration_m_s2: [0.0; 3],
+            feet_contacts: [0.0; 2],
+            root_height_m: 0.1,
+            root_roll_rad: 0.0,
+            root_pitch_rad: 0.0,
+            sequence: 4,
+            timeline: 2,
+            capture_monotonic_ns: 1,
+            requested_sequence: 0,
+            admitted_sequence: 0,
+            applied_sequence: 0,
+            message_age_ns: 0,
+            runtime_dropped_targets: 0,
+            flags: 0,
+        };
+        let mut policy = OpenDuckPolicy::default();
+        assert_eq!(
+            policy.observation(&state, 0.3).unwrap().len(),
+            OPEN_DUCK_OBSERVATION
+        );
+        let target = policy.apply_action([10.0; 14], 100, &state).unwrap();
+        assert!(target
+            .positions_rad
+            .iter()
+            .zip(OPEN_DUCK_DEFAULT_POSE)
+            .all(|(a, b)| (*a - b).abs() <= OPEN_DUCK_SLEW_RAD_S * 0.02 + 1e-6));
+        assert!(policy.apply_action([f32::NAN; 14], 101, &state).is_none());
     }
 }

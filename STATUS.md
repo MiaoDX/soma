@@ -23,6 +23,14 @@ live Pages link.
 The standalone native N0 probe is implemented and remains strictly read-only.
 No native Plant, bus worker, torque enable, or physical motion is implemented.
 
+The Rust runtime hardening slice now bounds RT ingress draining, converts
+malformed input to rejection evidence, and contains receiver/send failures.
+Open Duck's fixed 101-to-14 policy contract is shared by a Rust non-RT adapter
+and the Python oracle, with finite-value, range, lineage, slew, history, phase,
+TTL, and checkpoint checks. Native ONNX Runtime provisioning is still a
+deployment prerequisite; no inference dependency or model loading enters the
+periodic `robot-rt` path.
+
 ## Hardware Blocker And Interim Action
 
 N0 cannot run because no Reachy Mini Lite CH343 device (`1a86:55d3`) is

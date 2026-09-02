@@ -17,6 +17,14 @@ TARGET_KEY = "soma/open-duck-v2/target"
 STATE = struct.Struct("<8QI39f")
 TARGET = struct.Struct("<4Q14f")
 GAIT_PHASE_PERIOD = 27
+OBSERVATION_SHAPE = (1, 101)
+ACTION_SHAPE = (1, 14)
+ACTION_SCALE = np.float32(0.25)
+SLEW_RATE_RAD_S = np.float32(5.24)
+POLICY_PERIOD_S = np.float32(0.02)
+TARGET_TTL_NS = 40_000_000
+TARGET_ABS_LIMIT_RAD = np.float32(10.0)
+CHECKPOINT_SHA256 = "cb61453a8bcb547ccfdeb4f03ba0fa67ebcf767dcf4aa6e5c9a0d92b302f9b23"
 DEFAULT_POSE = np.array([
     0.002, 0.053, -0.63, 1.368, -0.784, 0.0, 0.0, 0.0, 0.0,
     -0.003, -0.065, 0.635, 1.379, -0.796,
@@ -68,8 +76,10 @@ class Policy:
         options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
         self.session = ort.InferenceSession(str(checkpoint), sess_options=options,
                                             providers=["CPUExecutionProvider"])
-        assert self.session.get_inputs()[0].shape == [1, 101]
-        assert self.session.get_outputs()[0].shape == [1, 14]
+        if tuple(self.session.get_inputs()[0].shape) != OBSERVATION_SHAPE:
+            raise ValueError(f"Open Duck observation ABI mismatch: {self.session.get_inputs()[0].shape}")
+        if tuple(self.session.get_outputs()[0].shape) != ACTION_SHAPE:
+            raise ValueError(f"Open Duck action ABI mismatch: {self.session.get_outputs()[0].shape}")
         self.velocity_x = velocity_x
         self.default = DEFAULT_POSE.copy()
         self.previous = DEFAULT_POSE.copy()
@@ -80,23 +90,38 @@ class Policy:
         self.last_action: np.ndarray | None = None
 
     def infer(self, state: dict[str, object]) -> np.ndarray:
-        positions = state["positions"]
-        assert isinstance(positions, np.ndarray)
+        required = ("positions", "velocities", "gyro", "acceleration", "contacts")
+        if any(key not in state for key in required):
+            raise ValueError("Open Duck state is missing required facts")
+        positions = np.asarray(state["positions"], np.float32)
+        velocities = np.asarray(state["velocities"], np.float32)
+        gyro = np.asarray(state["gyro"], np.float32)
+        contacts = np.asarray(state["contacts"], np.float32)
+        if (positions.shape, velocities.shape, gyro.shape, contacts.shape) != ((14,), (14,), (3,), (2,)):
+            raise ValueError("Open Duck state fact shape mismatch")
+        if not all(np.isfinite(values).all() for values in (positions, velocities, gyro, contacts)):
+            raise ValueError("Open Duck state contains non-finite values")
         acceleration = np.asarray(state["acceleration"], np.float32).copy()
+        if acceleration.shape != (3,) or not np.isfinite(acceleration).all():
+            raise ValueError("Open Duck acceleration shape or finite-value mismatch")
         acceleration[0] += 1.3
         command = np.array([self.velocity_x, 0, 0, 0, 0, 0, 0], np.float32)
-        observation = np.concatenate((state["gyro"], acceleration, command,
-            positions - self.default, np.asarray(state["velocities"]) * 0.05,
+        observation = np.concatenate((gyro, acceleration, command,
+            positions - self.default, velocities * 0.05,
             *self.history, self.previous, np.asarray(state["contacts"], np.float32),
             self.phase)).astype(np.float32)
-        action = self.session.run(None, {"obs": observation[None, :]})[0][0].astype(np.float32)
-        if observation.size != 101 or not np.isfinite(action).all():
+        if observation.shape != (101,) or not np.isfinite(observation).all():
             raise RuntimeError("invalid Open Duck policy observation or action")
+        raw = np.asarray(self.session.run(None, {"obs": observation[None, :]})[0])
+        if raw.shape != ACTION_SHAPE or not np.isfinite(raw).all():
+            raise RuntimeError("invalid Open Duck policy action")
+        action = raw[0].astype(np.float32)
         self.history = [action, *self.history[:2]]
         self.last_observation = observation.copy()
         self.last_action = action.copy()
-        proposed = self.default + action * 0.25
-        self.previous = np.clip(proposed, self.previous - 5.24 * 0.02, self.previous + 5.24 * 0.02)
+        proposed = self.default + action * ACTION_SCALE
+        self.previous = np.clip(proposed, self.previous - SLEW_RATE_RAD_S * POLICY_PERIOD_S,
+                                self.previous + SLEW_RATE_RAD_S * POLICY_PERIOD_S)
         self.phase_tick = (self.phase_tick + 1) % GAIT_PHASE_PERIOD
         self.phase = np.array([
             math.cos(self.phase_tick / GAIT_PHASE_PERIOD * 2 * math.pi),
@@ -106,8 +131,15 @@ class Policy:
 
     @staticmethod
     def target_payload(sequence: int, state: dict[str, object], positions: np.ndarray) -> bytes:
+        positions = np.asarray(positions, np.float32)
+        if positions.shape != (14,) or not np.isfinite(positions).all():
+            raise ValueError("Open Duck target shape or finite-value mismatch")
+        if np.any(np.abs(positions) > TARGET_ABS_LIMIT_RAD):
+            raise ValueError("Open Duck target is out of range")
+        if "timeline" not in state or "capture_ns" not in state:
+            raise ValueError("Open Duck target is missing lineage")
         return TARGET.pack(sequence, int(state["timeline"]), int(state["capture_ns"]),
-                           40_000_000, *positions)
+                           TARGET_TTL_NS, *positions)
 
 
 def main() -> None:

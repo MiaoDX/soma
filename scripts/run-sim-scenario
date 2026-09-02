@@ -51,7 +51,7 @@ sim_stack_start "$repo_root" "$visualize" scenario
 cd "$repo_root/python"
 if $visualize; then
   set +e
-  timeout 30 env UV_DEFAULT_INDEX=https://pypi.org/simple uv run python -m soma_client.scenario --visualize
+  timeout 30 env UV_DEFAULT_INDEX=https://pypi.org/simple uv run --frozen python -m soma_client.scenario --visualize
   scenario_status=$?
   set -e
   visualization_status=0
@@ -71,5 +71,5 @@ if $visualize; then
   fi
   exit "$visualization_status"
 else
-  timeout 15 env UV_DEFAULT_INDEX=https://pypi.org/simple uv run python -m soma_client.scenario
+  timeout 15 env UV_DEFAULT_INDEX=https://pypi.org/simple uv run --frozen python -m soma_client.scenario
 fi
