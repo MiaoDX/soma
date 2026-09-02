@@ -1,6 +1,6 @@
 # Soma Rust Policy And Runtime Hardening Plan
 
-> Status: PROPOSED. This plan is the unified execution unit for the identified
+> Status: COMPLETE. This plan is the unified execution unit for the identified
 > Soma runtime gaps and the policy-inference migration. It does not refactor
 > the community Micro Duck training repository.
 
@@ -41,6 +41,11 @@ Make Soma's fixed-profile control stack truthful and production-shaped:
 4. Record the fixed Duck `101 -> 14` ABI, ordering, history/phase, default
    pose, scale, slew, checksum, and finite-value rules in a durable ADR or
    equivalent D-04/D-19 update. Do not create a generic ABI.
+5. Pin `ort = 2.0.0-rc.11` with dynamic loading and provision native ONNX
+   Runtime `1.28.0` outside the repository. Development may use
+   `ORT_DYLIB_PATH`; provisioning downloads a platform release from the pinned
+   source and verifies its SHA-256. Native runtime binaries are not committed
+   or repeated in every Soma software release.
 
 If the backend cannot build and run reproducibly in the supported toolchain,
 stop after the spike and return for a new decision; do not silently make Python

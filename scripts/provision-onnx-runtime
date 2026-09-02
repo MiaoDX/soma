@@ -75,12 +75,12 @@ install_runtime() {
 
   local work_dir archive extracted
   work_dir=$(mktemp -d "${TMPDIR:-/tmp}/soma-onnxruntime.XXXXXX")
-  trap 'rm -rf "${work_dir}"' EXIT
+  trap '[[ -z ${work_dir:-} ]] || rm -rf -- "${work_dir}"' EXIT
   archive=${work_dir}/${ORT_ARCHIVE}
   extracted=${work_dir}/${ORT_ROOT}
 
   curl --fail --location --retry 3 --output "${archive}" "${ORT_RELEASE}/${ORT_ARCHIVE}"
-  printf '%s  %s\n' "${ORT_SHA256}" "${ORT_ARCHIVE}" | sha256sum --check --strict
+  (cd "${work_dir}" && printf '%s  %s\n' "${ORT_SHA256}" "${ORT_ARCHIVE}" | sha256sum --check --strict)
   tar --extract --gzip --file "${archive}" --directory "${work_dir}"
   [[ -d ${extracted} && -e ${extracted}/lib/libonnxruntime.so ]] || {
     echo "archive does not contain the expected ONNX Runtime library" >&2
