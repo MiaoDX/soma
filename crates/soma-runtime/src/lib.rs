@@ -235,6 +235,36 @@ pub fn encode_state_into(
     state.encode(payload)
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+pub struct TimingEvidence {
+    pub tick_count: u64,
+    pub tick_gap_ns: u64,
+    pub late_by_ns: u64,
+    pub max_work_duration_ns: u64,
+    pub ingress_drops: u64,
+    pub egress_drops: u64,
+    pub deadline_overruns: u64,
+}
+
+pub fn encode_state_into_with_timing(
+    state: &mut v1::ActuatorState,
+    tick: ControlTick<{ soma_core::ACTUATOR_COUNT }>,
+    state_age_ns: u64,
+    timing: TimingEvidence,
+    payload: &mut Vec<u8>,
+) -> Result<(), prost::EncodeError> {
+    update_state(state, tick, state_age_ns);
+    state.tick_count = timing.tick_count;
+    state.tick_gap_ns = timing.tick_gap_ns;
+    state.late_by_ns = timing.late_by_ns;
+    state.max_work_duration_ns = timing.max_work_duration_ns;
+    state.ingress_drops = timing.ingress_drops;
+    state.egress_drops = timing.egress_drops;
+    state.deadline_overruns = timing.deadline_overruns;
+    payload.clear();
+    state.encode(payload)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -343,6 +373,37 @@ mod tests {
             state.apply_disposition,
             v1::ApplyDisposition::Confirmed as i32
         );
+    }
+
+    #[test]
+    fn periodic_state_encoding_reports_timing_and_drop_evidence() {
+        let mut plant = soma_sim::ReachySimPlant::load(
+            soma_sim::REACHY_SCENE_PATH,
+            std::time::Duration::from_millis(20),
+        )
+        .unwrap();
+        let mut core = soma_core::ControlCore::new();
+        let tick = core.tick(&mut plant, None, monotonic_ns()).unwrap();
+        let mut state = v1::ActuatorState::default();
+        let mut payload = Vec::new();
+        let timing = TimingEvidence {
+            tick_count: 7,
+            tick_gap_ns: 20_100_000,
+            late_by_ns: 100_000,
+            max_work_duration_ns: 2_000_000,
+            ingress_drops: 3,
+            egress_drops: 4,
+            deadline_overruns: 1,
+        };
+        encode_state_into_with_timing(&mut state, tick, 0, timing, &mut payload).unwrap();
+        let decoded = v1::ActuatorState::decode(payload.as_slice()).unwrap();
+        assert_eq!(decoded.tick_count, 7);
+        assert_eq!(decoded.tick_gap_ns, 20_100_000);
+        assert_eq!(decoded.late_by_ns, 100_000);
+        assert_eq!(decoded.max_work_duration_ns, 2_000_000);
+        assert_eq!(decoded.ingress_drops, 3);
+        assert_eq!(decoded.egress_drops, 4);
+        assert_eq!(decoded.deadline_overruns, 1);
     }
 
     #[test]

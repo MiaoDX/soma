@@ -93,9 +93,10 @@ Add bounded counters/fields for tick count, gap, late-by, maximum work duration,
 ingress drops, egress drops, and deadline/overrun events. Evidence must be
 observable without making hard timing claims from simulation alone.
 
-Gate: injected overrun and receiver-stall tests prove the loop continues,
-reports evidence, and still reaches expiry/hold. Existing cadence and gait
-floors remain the acceptance criteria unless separately approved.
+Gate: timing evidence is encoded in `ActuatorState`; injected receiver-stall
+and policy-stall runs prove the loop continues, reports evidence, and reaches
+expiry/hold. Existing cadence and gait floors remain the acceptance criteria
+unless separately approved.
 
 ### C. Fixed policy ABI and Python oracle hardening
 

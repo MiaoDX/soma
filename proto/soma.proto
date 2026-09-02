@@ -98,4 +98,11 @@ message ActuatorState {
   uint64 runtime_generation = 16;
   bool runtime_transition = 17;
   Lifecycle lifecycle = 18;
+  uint64 tick_count = 19;
+  uint64 tick_gap_ns = 20;
+  uint64 late_by_ns = 21;
+  uint64 max_work_duration_ns = 22;
+  uint64 ingress_drops = 23;
+  uint64 egress_drops = 24;
+  uint64 deadline_overruns = 25;
 }
