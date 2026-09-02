@@ -669,6 +669,7 @@ mod tests {
                 timeline: 3,
                 issued_at_ns: 1,
                 ttl_ns: 250_000_000,
+                runtime_generation: 4,
             })),
         };
         let records = map_command(900, &request);
@@ -688,7 +689,8 @@ mod tests {
             positions_rad: vec![0.5; 9],
             sequence: 8,
             timeline: 3,
-            timestamp_ns: 10,
+            source_timestamp_ns: 10,
+            source_time_domain: v1::SourceTimeDomain::Simulation as i32,
             state_age_ns: 2_500_000,
             applied_source: v1::AppliedSource::MeasuredPositionHold as i32,
             applied_sequence: 7,
@@ -697,6 +699,11 @@ mod tests {
             rejection_reason: v1::RejectionReason::Timeline as i32,
             health: v1::PlantHealth::Healthy as i32,
             capture_monotonic_ns: 1_234,
+            apply_disposition: v1::ApplyDisposition::Confirmed as i32,
+            command_sequence: 9,
+            runtime_generation: 4,
+            runtime_transition: false,
+            lifecycle: v1::Lifecycle::Enabled as i32,
         };
         let records = map_state(&state_message);
         assert!(records.contains(&scalar(1_234, "state/age_ms", 2.5)));

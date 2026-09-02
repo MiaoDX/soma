@@ -13,8 +13,8 @@ use mujoco_rs::{
     wrappers::mj_visualization::MjvCamera,
 };
 use soma_core::{
-    ActuatorPositions, ActuatorState, Lifecycle, Plant, PlantHealth, PositionApplication,
-    ReachyActuatorState, ACTUATOR_COUNT,
+    ActuatorPositions, ActuatorState, ApplyDisposition, Lifecycle, Plant, PlantHealth,
+    PositionApplication, ReachyActuatorState, SourceTimeDomain, ACTUATOR_COUNT,
 };
 
 pub const OPEN_DUCK_ACTUATOR_COUNT: usize = 14;
@@ -468,7 +468,8 @@ impl Plant<OPEN_DUCK_ACTUATOR_COUNT> for OpenDuckSimPlant {
             positions_rad: self.positions(),
             sequence: self.sequence,
             timeline: self.timeline,
-            timestamp_ns: (self.data.time() * 1e9) as u64,
+            source_timestamp_ns: (self.data.time() * 1e9) as u64,
+            source_time_domain: SourceTimeDomain::Simulation,
             lifecycle: Lifecycle::Enabled,
             health: PlantHealth::Healthy,
         })
@@ -477,7 +478,7 @@ impl Plant<OPEN_DUCK_ACTUATOR_COUNT> for OpenDuckSimPlant {
         &mut self,
         positions_rad: [f32; OPEN_DUCK_ACTUATOR_COUNT],
         _application: PositionApplication,
-    ) -> Result<(), Self::Error> {
+    ) -> Result<ApplyDisposition, Self::Error> {
         for (i, value) in positions_rad.into_iter().enumerate() {
             if !value.is_finite() {
                 return Err(SimError::TargetOutOfRange {
@@ -489,7 +490,7 @@ impl Plant<OPEN_DUCK_ACTUATOR_COUNT> for OpenDuckSimPlant {
             }
             self.data.ctrl_mut()[i] = value as f64;
         }
-        Ok(())
+        Ok(ApplyDisposition::Submitted)
     }
 }
 
@@ -644,7 +645,8 @@ impl Plant<{ soma_core::ACTUATOR_COUNT }> for ReachySimPlant {
             positions_rad: self.positions(),
             sequence: self.sequence,
             timeline: self.timeline,
-            timestamp_ns: (self.data.time() * 1_000_000_000.0) as u64,
+            source_timestamp_ns: (self.data.time() * 1_000_000_000.0) as u64,
+            source_time_domain: SourceTimeDomain::Simulation,
             lifecycle: Lifecycle::Enabled,
             health: PlantHealth::Healthy,
         })
@@ -654,12 +656,12 @@ impl Plant<{ soma_core::ACTUATOR_COUNT }> for ReachySimPlant {
         &mut self,
         positions_rad: ActuatorPositions,
         application: PositionApplication,
-    ) -> Result<(), Self::Error> {
+    ) -> Result<ApplyDisposition, Self::Error> {
         let applied = self.positions_for_application(positions_rad, application)?;
         self.data
             .ctrl_mut()
             .copy_from_slice(&applied.map(f64::from));
-        Ok(())
+        Ok(ApplyDisposition::Submitted)
     }
 }
 
@@ -758,7 +760,7 @@ mod tests {
         }
         assert!(observed_foot_contact);
         let after = plant.read_state().unwrap();
-        assert!(after.timestamp_ns > before.timestamp_ns);
+        assert!(after.source_timestamp_ns > before.source_timestamp_ns);
         plant.reset();
         assert_eq!(plant.read_state().unwrap().timeline, before.timeline + 1);
     }
@@ -775,6 +777,7 @@ mod tests {
             timeline,
             issued_at_ns: 0,
             ttl_ns: 1_000_000_000,
+            runtime_generation: 0,
         };
         let tick = core.tick(&mut plant, Some(target), 1).unwrap();
         assert_eq!(
@@ -784,7 +787,7 @@ mod tests {
         for _ in 0..10 {
             plant.advance_physics_step();
         }
-        assert!(plant.read_state().unwrap().timestamp_ns >= 20_000_000);
+        assert!(plant.read_state().unwrap().source_timestamp_ns >= 20_000_000);
     }
 
     #[test]
@@ -799,6 +802,7 @@ mod tests {
             timeline: initial.timeline,
             issued_at_ns: 0,
             ttl_ns: 10,
+            runtime_generation: 0,
         };
         let mut core = ControlCore::new();
         core.tick(&mut plant, Some(command), 9).unwrap();
@@ -865,6 +869,7 @@ mod tests {
             timeline: initial.timeline,
             issued_at_ns: 100,
             ttl_ns: 10,
+            runtime_generation: 0,
         };
         let mut core = ControlCore::new();
         core.tick(&mut plant, Some(command), 105).unwrap();

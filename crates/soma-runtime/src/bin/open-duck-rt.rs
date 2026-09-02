@@ -41,6 +41,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         timeline: target.timeline,
                         issued_at_ns: target.capture_monotonic_ns,
                         ttl_ns: target.ttl_ns,
+                        runtime_generation: 0,
                     });
                 } else {
                     rejection_latched = true;

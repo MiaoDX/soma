@@ -106,11 +106,23 @@ def main() -> None:
                 )
                 assert accepted.health == soma_pb2.PLANT_HEALTH_HEALTHY
                 assert accepted.state_age_ns > 0
+                assert accepted.source_time_domain == soma_pb2.SOURCE_TIME_DOMAIN_SIMULATION
+                assert accepted.lifecycle == soma_pb2.LIFECYCLE_ENABLED
+                assert accepted.apply_disposition == soma_pb2.APPLY_DISPOSITION_SUBMITTED
+                assert accepted.runtime_generation > 0
                 wait_for(states, lambda state: abs(state.positions_rad[0] - start_yaw) > 0.01)
                 pace(args.visualize, 2.0)
                 held = wait_for(states, lambda state: state.expiry_transition)
                 assert held.applied_source == soma_pb2.APPLIED_SOURCE_MEASURED_POSITION_HOLD
                 pace(args.visualize, 1.0)
+
+                session.put(COMMAND_KEY, b"\xff")
+                wait_for(
+                    states,
+                    lambda state: state.command_disposition
+                    == soma_pb2.COMMAND_DISPOSITION_REJECTED
+                    and state.rejection_reason == soma_pb2.REJECTION_REASON_INVALID,
+                )
 
             session.put(
                 COMMAND_KEY,
@@ -137,7 +149,8 @@ def main() -> None:
 
             print(
                 f"scenario passed: timeline {old_timeline} -> {reset.timeline}, "
-                f"yaw delta > 0.01 rad, TTL -> measured hold, old timeline rejected"
+                "yaw delta > 0.01 rad, TTL -> measured hold, invalid ingress and "
+                "old timeline rejected"
             )
 
 

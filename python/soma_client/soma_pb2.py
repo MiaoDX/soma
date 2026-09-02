@@ -24,25 +24,35 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\nsoma.proto\x12\x07soma.v1\"q\n\x0e\x41\x63tuatorTarget\x12\x15\n\rpositions_rad\x18\x01 \x03(\x02\x12\x10\n\x08sequence\x18\x02 \x01(\x04\x12\x10\n\x08timeline\x18\x03 \x01(\x04\x12\x14\n\x0cissued_at_ns\x18\x04 \x01(\x04\x12\x0e\n\x06ttl_ns\x18\x05 \x01(\x04\"R\n\tRtRequest\x12)\n\x06target\x18\x01 \x01(\x0b\x32\x17.soma.v1.ActuatorTargetH\x00\x12\x0f\n\x05reset\x18\x02 \x01(\x08H\x00\x42\t\n\x07request\"\x8d\x03\n\rActuatorState\x12\x15\n\rpositions_rad\x18\x01 \x03(\x02\x12\x10\n\x08sequence\x18\x02 \x01(\x04\x12\x10\n\x08timeline\x18\x03 \x01(\x04\x12\x14\n\x0ctimestamp_ns\x18\x04 \x01(\x04\x12\x14\n\x0cstate_age_ns\x18\x05 \x01(\x04\x12.\n\x0e\x61pplied_source\x18\x06 \x01(\x0e\x32\x16.soma.v1.AppliedSource\x12\x18\n\x10\x61pplied_sequence\x18\x07 \x01(\x04\x12\x19\n\x11\x65xpiry_transition\x18\x08 \x01(\x08\x12\x38\n\x13\x63ommand_disposition\x18\t \x01(\x0e\x32\x1b.soma.v1.CommandDisposition\x12\x32\n\x10rejection_reason\x18\n \x01(\x0e\x32\x18.soma.v1.RejectionReason\x12$\n\x06health\x18\x0b \x01(\x0e\x32\x14.soma.v1.PlantHealth\x12\x1c\n\x14\x63\x61pture_monotonic_ns\x18\x0c \x01(\x04*u\n\rAppliedSource\x12\x1e\n\x1a\x41PPLIED_SOURCE_UNSPECIFIED\x10\x00\x12\x19\n\x15\x41PPLIED_SOURCE_TARGET\x10\x01\x12)\n%APPLIED_SOURCE_MEASURED_POSITION_HOLD\x10\x02*\xa1\x01\n\x12\x43ommandDisposition\x12#\n\x1f\x43OMMAND_DISPOSITION_UNSPECIFIED\x10\x00\x12\"\n\x1e\x43OMMAND_DISPOSITION_NO_COMMAND\x10\x01\x12 \n\x1c\x43OMMAND_DISPOSITION_ACCEPTED\x10\x02\x12 \n\x1c\x43OMMAND_DISPOSITION_REJECTED\x10\x03*\x8f\x01\n\x0fRejectionReason\x12 \n\x1cREJECTION_REASON_UNSPECIFIED\x10\x00\x12\x1d\n\x19REJECTION_REASON_TIMELINE\x10\x01\x12\x1d\n\x19REJECTION_REASON_SEQUENCE\x10\x02\x12\x1c\n\x18REJECTION_REASON_EXPIRED\x10\x03*\xb2\x01\n\x0bPlantHealth\x12\x1c\n\x18PLANT_HEALTH_UNSPECIFIED\x10\x00\x12\x18\n\x14PLANT_HEALTH_HEALTHY\x10\x01\x12\x1c\n\x18PLANT_HEALTH_STALE_STATE\x10\x02\x12$\n PLANT_HEALTH_COMMUNICATION_FAULT\x10\x03\x12\'\n#PLANT_HEALTH_CONFIGURATION_MISMATCH\x10\x04\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\nsoma.proto\x12\x07soma.v1\"\x8d\x01\n\x0e\x41\x63tuatorTarget\x12\x15\n\rpositions_rad\x18\x01 \x03(\x02\x12\x10\n\x08sequence\x18\x02 \x01(\x04\x12\x10\n\x08timeline\x18\x03 \x01(\x04\x12\x14\n\x0cissued_at_ns\x18\x04 \x01(\x04\x12\x0e\n\x06ttl_ns\x18\x05 \x01(\x04\x12\x1a\n\x12runtime_generation\x18\x06 \x01(\x04\"\xbe\x01\n\tRtRequest\x12)\n\x06target\x18\x01 \x01(\x0b\x32\x17.soma.v1.ActuatorTargetH\x00\x12\x0f\n\x05reset\x18\x02 \x01(\x08H\x00\x12\x36\n\x11ingress_rejection\x18\x03 \x01(\x0b\x32\x19.soma.v1.IngressRejectionH\x00\x12\x32\n\x0fruntime_started\x18\x04 \x01(\x0b\x32\x17.soma.v1.RuntimeStartedH\x00\x42\t\n\x07request\"$\n\x0eRuntimeStarted\x12\x12\n\ngeneration\x18\x01 \x01(\x04\"N\n\x10IngressRejection\x12\x10\n\x08sequence\x18\x01 \x01(\x04\x12(\n\x06reason\x18\x02 \x01(\x0e\x32\x18.soma.v1.RejectionReason\"\xfa\x04\n\rActuatorState\x12\x15\n\rpositions_rad\x18\x01 \x03(\x02\x12\x10\n\x08sequence\x18\x02 \x01(\x04\x12\x10\n\x08timeline\x18\x03 \x01(\x04\x12\x1b\n\x13source_timestamp_ns\x18\x04 \x01(\x04\x12\x14\n\x0cstate_age_ns\x18\x05 \x01(\x04\x12.\n\x0e\x61pplied_source\x18\x06 \x01(\x0e\x32\x16.soma.v1.AppliedSource\x12\x18\n\x10\x61pplied_sequence\x18\x07 \x01(\x04\x12\x19\n\x11\x65xpiry_transition\x18\x08 \x01(\x08\x12\x38\n\x13\x63ommand_disposition\x18\t \x01(\x0e\x32\x1b.soma.v1.CommandDisposition\x12\x32\n\x10rejection_reason\x18\n \x01(\x0e\x32\x18.soma.v1.RejectionReason\x12$\n\x06health\x18\x0b \x01(\x0e\x32\x14.soma.v1.PlantHealth\x12\x1c\n\x14\x63\x61pture_monotonic_ns\x18\x0c \x01(\x04\x12\x34\n\x11\x61pply_disposition\x18\r \x01(\x0e\x32\x19.soma.v1.ApplyDisposition\x12\x18\n\x10\x63ommand_sequence\x18\x0e \x01(\x04\x12\x35\n\x12source_time_domain\x18\x0f \x01(\x0e\x32\x19.soma.v1.SourceTimeDomain\x12\x1a\n\x12runtime_generation\x18\x10 \x01(\x04\x12\x1a\n\x12runtime_transition\x18\x11 \x01(\x08\x12%\n\tlifecycle\x18\x12 \x01(\x0e\x32\x12.soma.v1.Lifecycle*u\n\rAppliedSource\x12\x1e\n\x1a\x41PPLIED_SOURCE_UNSPECIFIED\x10\x00\x12\x19\n\x15\x41PPLIED_SOURCE_TARGET\x10\x01\x12)\n%APPLIED_SOURCE_MEASURED_POSITION_HOLD\x10\x02*\xa1\x01\n\x12\x43ommandDisposition\x12#\n\x1f\x43OMMAND_DISPOSITION_UNSPECIFIED\x10\x00\x12\"\n\x1e\x43OMMAND_DISPOSITION_NO_COMMAND\x10\x01\x12 \n\x1c\x43OMMAND_DISPOSITION_ACCEPTED\x10\x02\x12 \n\x1c\x43OMMAND_DISPOSITION_REJECTED\x10\x03*\xd6\x01\n\x0fRejectionReason\x12 \n\x1cREJECTION_REASON_UNSPECIFIED\x10\x00\x12\x1d\n\x19REJECTION_REASON_TIMELINE\x10\x01\x12\x1d\n\x19REJECTION_REASON_SEQUENCE\x10\x02\x12\x1c\n\x18REJECTION_REASON_EXPIRED\x10\x03\x12\x1c\n\x18REJECTION_REASON_INVALID\x10\x04\x12\'\n#REJECTION_REASON_RUNTIME_GENERATION\x10\x05*w\n\x10\x41pplyDisposition\x12!\n\x1d\x41PPLY_DISPOSITION_UNSPECIFIED\x10\x00\x12\x1f\n\x1b\x41PPLY_DISPOSITION_SUBMITTED\x10\x01\x12\x1f\n\x1b\x41PPLY_DISPOSITION_CONFIRMED\x10\x02*\xb2\x01\n\x0bPlantHealth\x12\x1c\n\x18PLANT_HEALTH_UNSPECIFIED\x10\x00\x12\x18\n\x14PLANT_HEALTH_HEALTHY\x10\x01\x12\x1c\n\x18PLANT_HEALTH_STALE_STATE\x10\x02\x12$\n PLANT_HEALTH_COMMUNICATION_FAULT\x10\x03\x12\'\n#PLANT_HEALTH_CONFIGURATION_MISMATCH\x10\x04*\x9f\x01\n\x10SourceTimeDomain\x12\"\n\x1eSOURCE_TIME_DOMAIN_UNSPECIFIED\x10\x00\x12!\n\x1dSOURCE_TIME_DOMAIN_SIMULATION\x10\x01\x12%\n!SOURCE_TIME_DOMAIN_HOST_MONOTONIC\x10\x02\x12\x1d\n\x19SOURCE_TIME_DOMAIN_DEVICE\x10\x03*l\n\tLifecycle\x12\x19\n\x15LIFECYCLE_UNSPECIFIED\x10\x00\x12\x16\n\x12LIFECYCLE_DISABLED\x10\x01\x12\x15\n\x11LIFECYCLE_ENABLED\x10\x02\x12\x15\n\x11LIFECYCLE_STOPPED\x10\x03\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'soma_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_APPLIEDSOURCE']._serialized_start=622
-  _globals['_APPLIEDSOURCE']._serialized_end=739
-  _globals['_COMMANDDISPOSITION']._serialized_start=742
-  _globals['_COMMANDDISPOSITION']._serialized_end=903
-  _globals['_REJECTIONREASON']._serialized_start=906
-  _globals['_REJECTIONREASON']._serialized_end=1049
-  _globals['_PLANTHEALTH']._serialized_start=1052
-  _globals['_PLANTHEALTH']._serialized_end=1230
-  _globals['_ACTUATORTARGET']._serialized_start=23
-  _globals['_ACTUATORTARGET']._serialized_end=136
-  _globals['_RTREQUEST']._serialized_start=138
-  _globals['_RTREQUEST']._serialized_end=220
-  _globals['_ACTUATORSTATE']._serialized_start=223
-  _globals['_ACTUATORSTATE']._serialized_end=620
+  _globals['_APPLIEDSOURCE']._serialized_start=1115
+  _globals['_APPLIEDSOURCE']._serialized_end=1232
+  _globals['_COMMANDDISPOSITION']._serialized_start=1235
+  _globals['_COMMANDDISPOSITION']._serialized_end=1396
+  _globals['_REJECTIONREASON']._serialized_start=1399
+  _globals['_REJECTIONREASON']._serialized_end=1613
+  _globals['_APPLYDISPOSITION']._serialized_start=1615
+  _globals['_APPLYDISPOSITION']._serialized_end=1734
+  _globals['_PLANTHEALTH']._serialized_start=1737
+  _globals['_PLANTHEALTH']._serialized_end=1915
+  _globals['_SOURCETIMEDOMAIN']._serialized_start=1918
+  _globals['_SOURCETIMEDOMAIN']._serialized_end=2077
+  _globals['_LIFECYCLE']._serialized_start=2079
+  _globals['_LIFECYCLE']._serialized_end=2187
+  _globals['_ACTUATORTARGET']._serialized_start=24
+  _globals['_ACTUATORTARGET']._serialized_end=165
+  _globals['_RTREQUEST']._serialized_start=168
+  _globals['_RTREQUEST']._serialized_end=358
+  _globals['_RUNTIMESTARTED']._serialized_start=360
+  _globals['_RUNTIMESTARTED']._serialized_end=396
+  _globals['_INGRESSREJECTION']._serialized_start=398
+  _globals['_INGRESSREJECTION']._serialized_end=476
+  _globals['_ACTUATORSTATE']._serialized_start=479
+  _globals['_ACTUATORSTATE']._serialized_end=1113
 # @@protoc_insertion_point(module_scope)

@@ -374,6 +374,14 @@ to hide behind the Rust language choice.
 
 ### Reachy Mini Lite versus Open Duck Mini
 
+Terminology correction: Open Duck Mini is not MicroDuck. Open Duck Mini v2 is
+the `apirrone/Open_Duck_Mini` hardware/research project, with training and
+reference inference in `apirrone/Open_Duck_Playground`. MicroDuck is the later
+Pollen Robotics Alpha Duck product stack in `pollen-robotics/microduck`; it has
+different hardware, fifteen servos, and a Rust `robotd` product architecture.
+See the focused [Open Duck and MicroDuck case study](open-duck-and-microduck.md)
+for source pins and implementation comparison.
+
 These robots should not be treated as interchangeable candidates. Reachy is a
 commercially purchasable, expressive head robot with a maintained daemon, SDK,
 MuJoCo backend, camera/audio stack, and a public motor-controller layer. Open
