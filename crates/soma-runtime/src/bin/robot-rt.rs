@@ -6,8 +6,8 @@ use prost::Message;
 use soma_core::{CommandInput, ControlCore, RejectionReason};
 use soma_protocol::v1::{self, rt_request};
 use soma_runtime::{
-    bind_owned_datagram, decode_target, encode_state_into, monotonic_ns, BestEffortDatagram,
-    MAX_MESSAGE_SIZE, RT_SOCKET, RUNTIME_SOCKET,
+    bind_owned_datagram, decode_target, encode_state_into_with_timing, monotonic_ns,
+    BestEffortDatagram, TimingEvidence, MAX_MESSAGE_SIZE, RT_SOCKET, RUNTIME_SOCKET,
 };
 use soma_sim::{ReachySimPlant, REACHY_SCENE_PATH};
 
@@ -41,8 +41,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
     let mut payload = Vec::with_capacity(MAX_MESSAGE_SIZE);
-    let mut _ingress_drops = 0_u64;
-    let mut _egress_drops = 0_u64;
+    let mut timing = TimingEvidence::default();
+    let mut previous_tick_start = Instant::now();
 
     loop {
         let mut drained = 0;
@@ -92,15 +92,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 Err(error) if error.kind() == ErrorKind::WouldBlock => break,
                 Err(_) => {
-                    _egress_drops += 1;
+                    timing.ingress_drops = timing.ingress_drops.saturating_add(1);
                     break;
                 }
             }
         }
         if drained == MAX_INGRESS_PER_TICK {
-            _ingress_drops = _ingress_drops.saturating_add(1);
+            timing.ingress_drops = timing.ingress_drops.saturating_add(1);
         }
 
+        let tick_start = Instant::now();
+        timing.tick_gap_ns = tick_start.duration_since(previous_tick_start).as_nanos() as u64;
+        timing.late_by_ns = tick_start.saturating_duration_since(next_tick).as_nanos() as u64;
+        previous_tick_start = tick_start;
         let now_ns = monotonic_ns();
         let tick = core
             .tick_ingress(
@@ -114,14 +118,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let snapshot = plant.snapshot(monotonic_ns()).encode();
             observation_socket.try_send(&snapshot);
         }
-        encode_state_into(&mut state, tick, 0, &mut payload)?;
+        let work_duration_ns = tick_start.elapsed().as_nanos() as u64;
+        timing.max_work_duration_ns = timing.max_work_duration_ns.max(work_duration_ns);
+        if work_duration_ns > CONTROL_PERIOD.as_nanos() as u64 {
+            timing.deadline_overruns = timing.deadline_overruns.saturating_add(1);
+        }
+        timing.tick_count = timing.tick_count.saturating_add(1);
+        encode_state_into_with_timing(&mut state, tick, 0, timing, &mut payload)?;
         match socket.send_to(&payload, RUNTIME_SOCKET) {
             Ok(_) => {}
             Err(error) if matches!(error.kind(), ErrorKind::NotFound | ErrorKind::WouldBlock) => {
-                _egress_drops = _egress_drops.saturating_add(1);
+                timing.egress_drops = timing.egress_drops.saturating_add(1);
             }
             Err(_) => {
-                _egress_drops = _egress_drops.saturating_add(1);
+                timing.egress_drops = timing.egress_drops.saturating_add(1);
             }
         }
 
