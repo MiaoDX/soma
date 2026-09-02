@@ -24,6 +24,15 @@ def evidence(**changes):
         "min_root_height_m": 0.15,
         "max_abs_roll_rad": 0.1,
         "max_abs_pitch_rad": 0.12,
+        "rejection_counts": {
+            "decode": 0, "timeline": 0, "sequence": 0, "expired": 0,
+            "invalid": 0, "runtime_generation": 0,
+        },
+        "max_rejection_age_ns": {
+            "decode": 0, "timeline": 0, "sequence": 0, "expired": 0,
+            "invalid": 0, "runtime_generation": 0,
+        },
+        "last_rejection": {"reason": "none", "sequence": 0, "age_ns": 0, "ttl_ns": 0},
     }
     value.update(changes)
     return value
@@ -52,6 +61,7 @@ def test_parser_accepts_one_clean_process_result():
         (runner_output(backend="python"), "does not match"),
         (runner_output(applied=False), "never reported applied control"),
         (runner_output(max_inference_ns=float("nan")), "must be finite"),
+        (runner_output(rejection_counts={"expired": 1}), "unknown rejection reasons"),
     ],
 )
 def test_parser_rejects_untrustworthy_results(payload, message):
@@ -89,12 +99,24 @@ def test_aggregation_preserves_raw_runs_and_summarizes_run_peaks(tmp_path):
 def test_aggregation_surfaces_rejected_runs(tmp_path):
     case = tmp_path / "case.md"
     case.write_text("frozen case\n")
-    runs = [evidence(), evidence(rejected=True)]
+    rejected = evidence(rejected=True)
+    rejected["rejection_counts"]["expired"] = 2
+    rejected["max_rejection_age_ns"]["expired"] = 43_000_000
+    rejected["last_rejection"] = {
+        "reason": "expired", "sequence": 91, "age_ns": 42_000_000, "ttl_ns": 40_000_000,
+    }
+    runs = [evidence(), rejected]
 
     report = METRICS["build_report"](case, ["rust"], {"rust": runs})
 
     assert report["results"]["rust"]["rejected_run_count"] == 1
-    assert "rejected runs = `1`" in METRICS["render_markdown"](report)
+    attribution = report["results"]["rust"]["rejection_attribution"]
+    assert attribution["counts"]["expired"] == 2
+    assert attribution["worst_age_ns"]["expired"] == 43_000_000
+    assert attribution["last_events"] == [rejected["last_rejection"]]
+    markdown = METRICS["render_markdown"](report)
+    assert "| `expired` | 2 | 43.000 |" in markdown
+    assert "rejected runs = `1`" in markdown
 
 
 def test_single_backend_report_omits_relative_claim(tmp_path):

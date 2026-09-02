@@ -14,8 +14,9 @@ import zenoh
 
 STATE_KEY = "soma/open-duck-v2/state"
 TARGET_KEY = "soma/open-duck-v2/target"
-STATE = struct.Struct("<8QI39f")
+STATE = struct.Struct("<23QII39f")
 TARGET = struct.Struct("<4Q14f")
+REJECTION_NAMES = ("decode", "timeline", "sequence", "expired", "invalid", "runtime_generation")
 GAIT_PHASE_PERIOD = 27
 OBSERVATION_SHAPE = (1, 101)
 ACTION_SHAPE = (1, 14)
@@ -33,12 +34,19 @@ DEFAULT_POSE = np.array([
 
 def decode_state(payload: bytes) -> dict[str, object]:
     values = STATE.unpack(payload)
-    facts = values[9:]
+    facts = values[25:]
+    reason = ("none", *REJECTION_NAMES)[values[23]] if values[23] <= 6 else "unknown"
     return {
         "sequence": values[0], "timeline": values[1], "capture_ns": values[2],
         "requested": values[3], "admitted": values[4], "applied": values[5],
         "message_age_ns": values[6], "runtime_dropped_targets": values[7],
-        "flags": values[8],
+        "rejection_counts": dict(zip(REJECTION_NAMES, values[8:14])),
+        "max_rejection_age_ns": dict(zip(REJECTION_NAMES, values[14:20])),
+        "last_rejection": {
+            "reason": reason, "sequence": values[20], "age_ns": values[21],
+            "ttl_ns": values[22],
+        },
+        "flags": values[24],
         "positions": np.asarray(facts[:14], dtype=np.float32),
         "velocities": np.asarray(facts[14:28], dtype=np.float32),
         "gyro": np.asarray(facts[28:31], dtype=np.float32),
@@ -166,7 +174,11 @@ def main() -> None:
                     "last_state_sequence": 0, "max_state_sequence_gap": 0,
                     "max_inference_ns": 0, "dropped_states": 0,
                     "total_inference_ns": 0, "mean_inference_ns": 0,
-                    "runtime_dropped_targets": 0}
+                    "runtime_dropped_targets": 0,
+                    "rejection_counts": {name: 0 for name in REJECTION_NAMES},
+                    "max_rejection_age_ns": {name: 0 for name in REJECTION_NAMES},
+                    "last_rejection": {"reason": "none", "sequence": 0,
+                                       "age_ns": 0, "ttl_ns": 0}}
         while True:
             state = decode_state(latest.get(timeout=5))
             evidence["states"] += 1
@@ -182,7 +194,18 @@ def main() -> None:
             evidence["last_state_sequence"] = sequence
             evidence["applied"] |= bool(int(state["flags"]) & 1)
             evidence["expiry"] |= bool(int(state["flags"]) & 4)
-            evidence["rejected"] |= bool(int(state["flags"]) & 8)
+            evidence["rejected"] |= bool(int(state["flags"]) & 8) or any(
+                state["rejection_counts"].values())
+            evidence["rejection_counts"] = {
+                name: max(evidence["rejection_counts"][name], state["rejection_counts"][name])
+                for name in REJECTION_NAMES
+            }
+            evidence["max_rejection_age_ns"] = {
+                name: max(evidence["max_rejection_age_ns"][name], state["max_rejection_age_ns"][name])
+                for name in REJECTION_NAMES
+            }
+            if state["last_rejection"]["reason"] != "none":
+                evidence["last_rejection"] = state["last_rejection"]
             evidence["max_message_age_ns"] = max(evidence["max_message_age_ns"], int(state["message_age_ns"]))
             evidence["last_requested"] = int(state["requested"])
             evidence["last_admitted"] = int(state["admitted"])

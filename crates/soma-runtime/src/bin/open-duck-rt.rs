@@ -2,8 +2,9 @@ use soma_core::{ActuatorTarget, AppliedCommand, CommandResult, ControlCore};
 use soma_runtime::{
     bind_owned_datagram, monotonic_ns,
     open_duck::{
-        decode_target, encode_state, OpenDuckState, OPEN_DUCK_RT_SOCKET, OPEN_DUCK_RUNTIME_SOCKET,
-        OPEN_DUCK_STATE_BYTES, OPEN_DUCK_TARGET_BYTES,
+        decode_target, encode_state, OpenDuckRejectionEvidence, OpenDuckState,
+        OPEN_DUCK_RT_SOCKET, OPEN_DUCK_RUNTIME_SOCKET, OPEN_DUCK_STATE_BYTES,
+        OPEN_DUCK_TARGET_BYTES,
     },
 };
 use soma_sim::{OpenDuckSimPlant, OPEN_DUCK_ACTUATOR_COUNT};
@@ -27,6 +28,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut admitted_sequence = 0;
     let mut admitted_capture_ns = 0;
     let mut pending_capture_ns = 0;
+    let mut pending_ttl_ns = 0;
+    let mut rejection_evidence = OpenDuckRejectionEvidence::default();
     let mut rejection_latched = false;
     let mut expiry_latched = false;
     loop {
@@ -35,6 +38,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if let Some(target) = decode_target(&bytes[..size]) {
                     requested_sequence = target.sequence;
                     pending_capture_ns = target.capture_monotonic_ns;
+                    pending_ttl_ns = target.ttl_ns;
                     pending = Some(ActuatorTarget {
                         positions_rad: target.positions_rad,
                         sequence: target.sequence,
@@ -44,6 +48,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         runtime_generation: 0,
                     });
                 } else {
+                    rejection_evidence.record_decode_failure();
                     rejection_latched = true;
                 }
             }
@@ -60,7 +65,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             admitted_sequence = sequence;
             admitted_capture_ns = pending_capture_ns;
         }
-        if matches!(tick.command_result, CommandResult::Rejected { .. }) {
+        if let CommandResult::Rejected { sequence, reason } = tick.command_result {
+            rejection_evidence.record_control(
+                reason,
+                sequence,
+                now.saturating_sub(pending_capture_ns),
+                pending_ttl_ns,
+            );
             rejection_latched = true;
         }
         expiry_latched |= tick.applied.expiry_transition;
@@ -96,6 +107,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     now.saturating_sub(admitted_capture_ns)
                 },
                 runtime_dropped_targets: 0,
+                rejections: rejection_evidence,
                 flags,
             };
             encode_state(&state, &mut state_bytes);

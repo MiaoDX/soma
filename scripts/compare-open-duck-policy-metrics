@@ -19,6 +19,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CASE = ROOT / "docs/status/active/open-duck-stage0-case.md"
 DEFAULT_BACKENDS = ("rust", "python")
+REJECTION_NAMES = ("decode", "timeline", "sequence", "expired", "invalid", "runtime_generation")
 
 METRICS = {
     "emitted": ("Emitted targets", "count", 1.0),
@@ -38,6 +39,9 @@ REQUIRED_EVIDENCE = {
     "applied",
     "expiry",
     "rejected",
+    "rejection_counts",
+    "max_rejection_age_ns",
+    "last_rejection",
 }
 
 
@@ -70,6 +74,19 @@ def parse_run_output(stdout: str, expected_backend: str) -> dict[str, Any]:
             raise ValueError(f"policy runner evidence {name} must be finite and numeric")
         if value < 0:
             raise ValueError(f"policy runner evidence {name} must be non-negative")
+    for field in ("rejection_counts", "max_rejection_age_ns"):
+        values = evidence[field]
+        if not isinstance(values, dict) or set(values) != set(REJECTION_NAMES):
+            raise ValueError(f"policy runner evidence {field} has unknown rejection reasons")
+        if any(isinstance(value, bool) or not isinstance(value, int) or value < 0
+               for value in values.values()):
+            raise ValueError(f"policy runner evidence {field} must contain non-negative integers")
+    last = evidence["last_rejection"]
+    if (not isinstance(last, dict) or set(last) != {"reason", "sequence", "age_ns", "ttl_ns"}
+            or last["reason"] not in {"none", *REJECTION_NAMES}
+            or any(isinstance(last[name], bool) or not isinstance(last[name], int) or last[name] < 0
+                   for name in ("sequence", "age_ns", "ttl_ns"))):
+        raise ValueError("policy runner evidence last_rejection is invalid")
     return evidence
 
 
@@ -80,10 +97,25 @@ def summarize_runs(runs: list[dict[str, Any]]) -> dict[str, Any]:
     for name in METRICS:
         values = [float(run[name]) for run in runs]
         summary[name] = {"min": min(values), "mean": fmean(values), "max": max(values)}
+    rejection_attribution = {
+        "counts": {
+            name: sum(run["rejection_counts"][name] for run in runs)
+            for name in REJECTION_NAMES
+        },
+        "worst_age_ns": {
+            name: max(run["max_rejection_age_ns"][name] for run in runs)
+            for name in REJECTION_NAMES
+        },
+        "last_events": [
+            run["last_rejection"] for run in runs
+            if run["last_rejection"]["reason"] != "none"
+        ],
+    }
     return {
         "run_count": len(runs),
         "all_applied": all(run["applied"] is True for run in runs),
         "rejected_run_count": sum(run["rejected"] is True for run in runs),
+        "rejection_attribution": rejection_attribution,
         "summary": summary,
         "runs": runs,
     }
@@ -103,6 +135,12 @@ def build_report(
         "metric_contract": {
             name: {"label": label, "unit": unit, "run_value": name}
             for name, (label, unit, _) in METRICS.items()
+        },
+        "rejection_contract": {
+            "reasons": list(REJECTION_NAMES),
+            "counts": "sum of RT-attributed rejection counts across independent runs",
+            "worst_age_ns": "maximum rejected target age observed for each reason",
+            "last_events": "last attributed rejection context from each rejected run",
         },
         "results": {
             backend: summarize_runs(runs_by_backend[backend]) for backend in backends
@@ -156,6 +194,29 @@ def render_markdown(report: dict[str, Any]) -> str:
             "(negative is lower). This benchmark does not measure CPU, RSS, startup time, "
             "or p50/p95/p99 inference latency.",
         ])
+
+    lines.extend([
+        "",
+        "## Rejection Attribution",
+        "",
+        "Counts are summed across runs. Worst age is the maximum rejected target age for "
+        "that cause; decode failures have no target age and report zero.",
+        "",
+        f"| Reason | " + " | ".join(
+            f"{backend.capitalize()} count | {backend.capitalize()} worst age (ms)"
+            for backend in backends
+        ) + " |",
+        "| --- | " + " | ".join("---: | ---:" for _ in backends) + " |",
+    ])
+    for reason in REJECTION_NAMES:
+        cells = []
+        for backend in backends:
+            attribution = report["results"][backend]["rejection_attribution"]
+            cells.extend([
+                str(attribution["counts"][reason]),
+                f"{attribution['worst_age_ns'][reason] / 1e6:.3f}",
+            ])
+        lines.append(f"| `{reason}` | " + " | ".join(cells) + " |")
 
     lines.extend(["", "## Run Validity", ""])
     for backend in backends:

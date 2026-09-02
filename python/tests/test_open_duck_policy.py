@@ -78,13 +78,24 @@ def test_target_payload_rejects_nonfinite_and_out_of_range_targets():
 
 
 def test_combined_state_decode_preserves_lineage_and_facts():
-    payload = STATE.pack(11, 2, 90, 8, 7, 6, 5, 4, 3, *range(39))
+    payload = STATE.pack(
+        11, 2, 90, 8, 7, 6, 5, 4,
+        1, 2, 3, 4, 5, 6,
+        10, 20, 30, 40, 50, 60,
+        99, 41, 40, 4, 3,
+        *range(39),
+    )
     state = decode_state(payload)
     assert (state["sequence"], state["timeline"], state["applied"]) == (11, 2, 6)
     np.testing.assert_array_equal(state["positions"], np.arange(14, dtype=np.float32))
     np.testing.assert_array_equal(state["contacts"], np.array([34, 35], np.float32))
     assert state["runtime_dropped_targets"] == 4
-    assert struct.calcsize("<8QI39f") == len(payload)
+    assert state["rejection_counts"]["expired"] == 4
+    assert state["max_rejection_age_ns"]["runtime_generation"] == 60
+    assert state["last_rejection"] == {
+        "reason": "expired", "sequence": 99, "age_ns": 41, "ttl_ns": 40,
+    }
+    assert struct.calcsize("<23QII39f") == len(payload)
 
 
 def test_target_keeps_original_capture_deadline_lineage():

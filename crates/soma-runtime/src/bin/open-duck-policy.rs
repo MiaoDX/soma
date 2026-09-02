@@ -6,9 +6,20 @@ use ort::{
 };
 use sha2::{Digest, Sha256};
 use soma_runtime::open_duck::{
-    decode_state, encode_target, OpenDuckPolicy, OPEN_DUCK_OBSERVATION, OPEN_DUCK_STATE_KEY,
-    OPEN_DUCK_TARGET_BYTES, OPEN_DUCK_TARGET_KEY,
+    decode_state, encode_target, OpenDuckPolicy, OPEN_DUCK_OBSERVATION, OPEN_DUCK_REJECTION_KINDS,
+    OPEN_DUCK_STATE_KEY, OPEN_DUCK_TARGET_BYTES, OPEN_DUCK_TARGET_KEY,
 };
+
+fn rejection_values(values: &[u64; OPEN_DUCK_REJECTION_KINDS]) -> serde_json::Value {
+    serde_json::json!({
+        "decode": values[0],
+        "timeline": values[1],
+        "sequence": values[2],
+        "expired": values[3],
+        "invalid": values[4],
+        "runtime_generation": values[5],
+    })
+}
 use std::{
     env, fs,
     path::PathBuf,
@@ -186,7 +197,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         last_state_sequence = state.sequence;
         applied |= state.flags & 1 != 0;
         expiry |= state.flags & 4 != 0;
-        rejected |= state.flags & 8 != 0;
+        rejected |= state.flags & 8 != 0 || state.rejections.counts.iter().any(|count| *count > 0);
         max_message_age_ns = max_message_age_ns.max(state.message_age_ns);
         min_root_height_m = min_root_height_m.min(state.root_height_m);
         max_abs_roll_rad = max_abs_roll_rad.max(state.root_roll_rad.abs());
@@ -218,33 +229,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 "complete"
             };
             println!(
-                concat!(
-                "{{\"status\":\"{}\",\"emitted\":{},\"states\":{},\"applied\":{},\"expiry\":{},",
-                "\"rejected\":{},\"max_message_age_ns\":{},\"last_requested\":{},",
-                "\"last_admitted\":{},\"last_applied\":{},\"min_root_height_m\":{},",
-                "\"max_abs_roll_rad\":{},\"max_abs_pitch_rad\":{},\"first_state_sequence\":{},",
-                "\"last_state_sequence\":{},\"max_state_sequence_gap\":{},\"max_inference_ns\":{},",
-                "\"mean_inference_ns\":{},\"dropped_states\":{},\"runtime_dropped_targets\":{}}}"),
-                status,
-                emitted,
-                states,
-                applied,
-                expiry,
-                rejected,
-                max_message_age_ns,
-                state.requested_sequence,
-                state.admitted_sequence,
-                state.applied_sequence,
-                min_root_height_m,
-                max_abs_roll_rad,
-                max_abs_pitch_rad,
-                first_state_sequence,
-                last_state_sequence,
-                max_state_sequence_gap,
-                max_inference_ns,
-                total_inference_ns / emitted.max(1),
-                dropped,
-                state.runtime_dropped_targets
+                "{}",
+                serde_json::json!({
+                    "status": status,
+                    "emitted": emitted,
+                    "states": states,
+                    "applied": applied,
+                    "expiry": expiry,
+                    "rejected": rejected,
+                    "max_message_age_ns": max_message_age_ns,
+                    "last_requested": state.requested_sequence,
+                    "last_admitted": state.admitted_sequence,
+                    "last_applied": state.applied_sequence,
+                    "min_root_height_m": min_root_height_m,
+                    "max_abs_roll_rad": max_abs_roll_rad,
+                    "max_abs_pitch_rad": max_abs_pitch_rad,
+                    "first_state_sequence": first_state_sequence,
+                    "last_state_sequence": last_state_sequence,
+                    "max_state_sequence_gap": max_state_sequence_gap,
+                    "max_inference_ns": max_inference_ns,
+                    "mean_inference_ns": total_inference_ns / emitted.max(1),
+                    "dropped_states": dropped,
+                    "runtime_dropped_targets": state.runtime_dropped_targets,
+                    "rejection_counts": rejection_values(&state.rejections.counts),
+                    "max_rejection_age_ns": rejection_values(&state.rejections.max_age_ns),
+                    "last_rejection": {
+                        "reason": state.rejections.last_reason.name(),
+                        "sequence": state.rejections.last_sequence,
+                        "age_ns": state.rejections.last_age_ns,
+                        "ttl_ns": state.rejections.last_ttl_ns,
+                    },
+                })
             );
             return Ok(());
         }
