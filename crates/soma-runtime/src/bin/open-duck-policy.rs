@@ -5,12 +5,9 @@ use ort::{
     value::{TensorRef, ValueType},
 };
 use sha2::{Digest, Sha256};
-use soma_runtime::{
-    monotonic_ns,
-    open_duck::{
-        decode_state, encode_target, OpenDuckPolicy, OPEN_DUCK_OBSERVATION, OPEN_DUCK_STATE_KEY,
-        OPEN_DUCK_TARGET_BYTES, OPEN_DUCK_TARGET_KEY,
-    },
+use soma_runtime::open_duck::{
+    decode_state, encode_target, OpenDuckPolicy, OPEN_DUCK_OBSERVATION, OPEN_DUCK_STATE_KEY,
+    OPEN_DUCK_TARGET_BYTES, OPEN_DUCK_TARGET_KEY,
 };
 use std::{
     env, fs,
@@ -27,6 +24,7 @@ struct Args {
     ready_file: Option<PathBuf>,
     vx: f32,
     stall_after: Option<u64>,
+    parity_fixture: Option<PathBuf>,
 }
 
 fn args() -> Result<Args, String> {
@@ -35,6 +33,7 @@ fn args() -> Result<Args, String> {
     let mut ready_file = None;
     let mut vx = 0.3;
     let mut stall_after = None;
+    let mut parity_fixture = None;
     let mut it = env::args().skip(1);
     while let Some(arg) = it.next() {
         let mut value = || it.next().ok_or_else(|| format!("missing value for {arg}"));
@@ -44,6 +43,7 @@ fn args() -> Result<Args, String> {
             "--ready-file" => ready_file = Some(PathBuf::from(value()?)),
             "--vx" => vx = value()?.parse().map_err(|_| "invalid vx")?,
             "--stall-after" => stall_after = Some(value()?.parse().map_err(|_| "invalid stall-after")?),
+            "--parity-fixture" => parity_fixture = Some(PathBuf::from(value()?)),
             "-h" | "--help" => return Err("usage: open-duck-policy --checkpoint PATH [--duration SEC] [--ready-file PATH] [--vx N] [--stall-after N]".into()),
             other => return Err(format!("unknown argument {other}")),
         }
@@ -54,6 +54,7 @@ fn args() -> Result<Args, String> {
         ready_file,
         vx,
         stall_after,
+        parity_fixture,
     })
 }
 
@@ -124,6 +125,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
     infer(&mut session, &[0.0; OPEN_DUCK_OBSERVATION])
         .map_err(|e| format!("Open Duck model warm-up failed: {e}"))?;
+    if let Some(path) = &args.parity_fixture {
+        let fixture: serde_json::Value = serde_json::from_slice(&fs::read(path)?)?;
+        let values = fixture["observation"]
+            .as_array()
+            .ok_or("parity fixture is missing observation")?;
+        let observation: [f32; OPEN_DUCK_OBSERVATION] = values
+            .iter()
+            .map(|value| value.as_f64().map(|value| value as f32))
+            .collect::<Option<Vec<_>>>()
+            .ok_or("parity fixture observation is not numeric")?
+            .try_into()
+            .map_err(|_| "parity fixture observation width mismatch")?;
+        println!(
+            "{}",
+            serde_json::to_string(&infer(&mut session, &observation)?)?
+        );
+        return Ok(());
+    }
     let zenoh = zenoh::open(Config::from_json5(r#"{mode:"client",connect:{endpoints:["tcp/127.0.0.1:7448"]},scouting:{multicast:{enabled:false}}}"#)?).await?;
     let subscriber = zenoh.declare_subscriber(OPEN_DUCK_STATE_KEY).await?;
     let publisher = zenoh.declare_publisher(OPEN_DUCK_TARGET_KEY).await?;
@@ -146,6 +165,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut last_state_sequence = 0_u64;
     let mut max_state_sequence_gap = 0_u64;
     let mut max_inference_ns = 0_u64;
+    let mut total_inference_ns = 0_u64;
     let mut payload = [0_u8; OPEN_DUCK_TARGET_BYTES];
     loop {
         let sample = subscriber.recv_async().await?;
@@ -177,9 +197,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 .ok_or("invalid policy observation")?;
             let inference_started = Instant::now();
             let action = infer(&mut session, &observation)?;
-            max_inference_ns = max_inference_ns.max(inference_started.elapsed().as_nanos() as u64);
+            let inference_ns = inference_started.elapsed().as_nanos() as u64;
+            max_inference_ns = max_inference_ns.max(inference_ns);
+            total_inference_ns = total_inference_ns.saturating_add(inference_ns);
             let target = policy
-                .apply_action(action, monotonic_ns(), &state)
+                .apply_action(action, &state)
                 .ok_or("invalid policy target")?;
             encode_target(&target, &mut payload);
             publisher.put(payload.to_vec()).await?;
@@ -202,7 +224,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 "\"last_admitted\":{},\"last_applied\":{},\"min_root_height_m\":{},",
                 "\"max_abs_roll_rad\":{},\"max_abs_pitch_rad\":{},\"first_state_sequence\":{},",
                 "\"last_state_sequence\":{},\"max_state_sequence_gap\":{},\"max_inference_ns\":{},",
-                "\"dropped_states\":{},\"runtime_dropped_targets\":{}}}"),
+                "\"mean_inference_ns\":{},\"dropped_states\":{},\"runtime_dropped_targets\":{}}}"),
                 status,
                 emitted,
                 states,
@@ -220,6 +242,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 last_state_sequence,
                 max_state_sequence_gap,
                 max_inference_ns,
+                total_inference_ns / emitted.max(1),
                 dropped,
                 state.runtime_dropped_targets
             );

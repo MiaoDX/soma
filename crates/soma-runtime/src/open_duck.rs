@@ -179,6 +179,7 @@ pub struct OpenDuckPolicy {
     previous: [f32; OPEN_DUCK_ACTUATORS],
     history: [[f32; OPEN_DUCK_ACTUATORS]; 3],
     phase_tick: usize,
+    phase: [f32; 2],
 }
 
 impl Default for OpenDuckPolicy {
@@ -187,6 +188,7 @@ impl Default for OpenDuckPolicy {
             previous: OPEN_DUCK_DEFAULT_POSE,
             history: [[0.0; 14]; 3],
             phase_tick: 0,
+            phase: [0.0; 2],
         }
     }
 }
@@ -234,16 +236,13 @@ impl OpenDuckPolicy {
         i += 14;
         out[i..i + 2].copy_from_slice(&state.feet_contacts);
         i += 2;
-        let phase = self.phase_tick as f32 / OPEN_DUCK_GAIT_PHASE as f32 * std::f32::consts::TAU;
-        out[i] = phase.cos();
-        out[i + 1] = phase.sin();
+        out[i..i + 2].copy_from_slice(&self.phase);
         out.iter().all(|v| v.is_finite()).then_some(out)
     }
 
     pub fn apply_action(
         &mut self,
         action: [f32; OPEN_DUCK_ACTION],
-        now_ns: u64,
         state: &OpenDuckState,
     ) -> Option<OpenDuckTarget> {
         if !action.iter().all(|v| v.is_finite()) {
@@ -258,11 +257,13 @@ impl OpenDuckPolicy {
         self.history = [action, self.history[0], self.history[1]];
         self.previous = target;
         self.phase_tick = (self.phase_tick + 1) % OPEN_DUCK_GAIT_PHASE;
+        let phase = self.phase_tick as f32 / OPEN_DUCK_GAIT_PHASE as f32 * std::f32::consts::TAU;
+        self.phase = [phase.cos(), phase.sin()];
         Some(OpenDuckTarget {
             positions_rad: target,
             sequence: state.sequence,
             timeline: state.timeline,
-            capture_monotonic_ns: now_ns,
+            capture_monotonic_ns: state.capture_monotonic_ns,
             ttl_ns: 40_000_000,
         })
     }
@@ -413,12 +414,80 @@ mod tests {
             policy.observation(&state, 0.3).unwrap().len(),
             OPEN_DUCK_OBSERVATION
         );
-        let target = policy.apply_action([10.0; 14], 100, &state).unwrap();
+        let target = policy.apply_action([10.0; 14], &state).unwrap();
         assert!(target
             .positions_rad
             .iter()
             .zip(OPEN_DUCK_DEFAULT_POSE)
             .all(|(a, b)| (*a - b).abs() <= OPEN_DUCK_SLEW_RAD_S * 0.02 + 1e-6));
-        assert!(policy.apply_action([f32::NAN; 14], 101, &state).is_none());
+        assert!(policy.apply_action([f32::NAN; 14], &state).is_none());
+    }
+
+    #[test]
+    fn policy_phase_and_history_match_python_oracle_ordering() {
+        let state = OpenDuckState {
+            positions_rad: OPEN_DUCK_DEFAULT_POSE,
+            velocities_rad_s: [0.0; 14],
+            gyro_rad_s: [0.0; 3],
+            acceleration_m_s2: [0.0; 3],
+            feet_contacts: [0.0; 2],
+            root_height_m: 0.1,
+            root_roll_rad: 0.0,
+            root_pitch_rad: 0.0,
+            sequence: 4,
+            timeline: 2,
+            capture_monotonic_ns: 1,
+            requested_sequence: 0,
+            admitted_sequence: 0,
+            applied_sequence: 0,
+            message_age_ns: 0,
+            runtime_dropped_targets: 0,
+            flags: 0,
+        };
+        let mut policy = OpenDuckPolicy::default();
+
+        let first = policy.observation(&state, 0.3).unwrap();
+        assert_eq!(&first[41..83], &[0.0; 42]);
+        assert_eq!(&first[99..101], &[0.0, 0.0]);
+
+        let action = std::array::from_fn(|i| i as f32 / 100.0);
+        let target = policy.apply_action(action, &state).unwrap();
+        let second = policy.observation(&state, 0.3).unwrap();
+        assert_eq!(&second[41..55], &action);
+        assert_eq!(&second[55..83], &[0.0; 28]);
+        assert_eq!(&second[83..97], &target.positions_rad);
+        let phase = std::f32::consts::TAU / OPEN_DUCK_GAIT_PHASE as f32;
+        assert!((second[99] - phase.cos()).abs() < 1e-6);
+        assert!((second[100] - phase.sin()).abs() < 1e-6);
+    }
+
+    #[test]
+    fn policy_target_preserves_originating_state_capture_time() {
+        let state = OpenDuckState {
+            positions_rad: OPEN_DUCK_DEFAULT_POSE,
+            velocities_rad_s: [0.0; 14],
+            gyro_rad_s: [0.0; 3],
+            acceleration_m_s2: [0.0; 3],
+            feet_contacts: [0.0; 2],
+            root_height_m: 0.1,
+            root_roll_rad: 0.0,
+            root_pitch_rad: 0.0,
+            sequence: 4,
+            timeline: 2,
+            capture_monotonic_ns: 123_456,
+            requested_sequence: 0,
+            admitted_sequence: 0,
+            applied_sequence: 0,
+            message_age_ns: 0,
+            runtime_dropped_targets: 0,
+            flags: 0,
+        };
+
+        let target = OpenDuckPolicy::default()
+            .apply_action([0.0; OPEN_DUCK_ACTION], &state)
+            .unwrap();
+        assert_eq!(target.capture_monotonic_ns, state.capture_monotonic_ns);
+        assert!(target.valid_for(123_456 + target.ttl_ns - 1, state.timeline, None));
+        assert!(!target.valid_for(123_456 + target.ttl_ns, state.timeline, None));
     }
 }

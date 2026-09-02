@@ -165,6 +165,7 @@ def main() -> None:
                     "max_abs_pitch_rad": 0.0, "first_state_sequence": 0,
                     "last_state_sequence": 0, "max_state_sequence_gap": 0,
                     "max_inference_ns": 0, "dropped_states": 0,
+                    "total_inference_ns": 0, "mean_inference_ns": 0,
                     "runtime_dropped_targets": 0}
         while True:
             state = decode_state(latest.get(timeout=5))
@@ -198,9 +199,11 @@ def main() -> None:
                     continue
             inference_started = time.monotonic_ns()
             target = policy.infer(state)
-            evidence["max_inference_ns"] = max(
-                evidence["max_inference_ns"], time.monotonic_ns() - inference_started)
+            inference_ns = time.monotonic_ns() - inference_started
+            evidence["max_inference_ns"] = max(evidence["max_inference_ns"], inference_ns)
+            evidence["total_inference_ns"] += inference_ns
             emitted += 1
+            evidence["mean_inference_ns"] = evidence["total_inference_ns"] // emitted
             payload = policy.target_payload(int(state["sequence"]), state, target)
             session.put(TARGET_KEY, payload)
             if (args.duration is not None and time.monotonic() - started >= args.duration

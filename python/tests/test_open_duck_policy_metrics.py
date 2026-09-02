@@ -17,6 +17,7 @@ def evidence(**changes):
         "expiry": False,
         "rejected": False,
         "max_inference_ns": 400_000,
+        "mean_inference_ns": 250_000,
         "max_message_age_ns": 20_000_000,
         "dropped_states": 2,
         "runtime_dropped_targets": 1,
@@ -81,6 +82,7 @@ def test_aggregation_preserves_raw_runs_and_summarizes_run_peaks(tmp_path):
     assert "Each cell is `mean [min, max]`" in markdown
     assert "| Run max inference | ms | 0.300 [0.200, 0.400] | 0.600 [0.500, 0.700] |" in markdown
     assert "`-50.0%` versus Python" in markdown
+    assert "mean inference latency" in markdown
     assert "does not measure CPU, RSS, startup time" in markdown
 
 

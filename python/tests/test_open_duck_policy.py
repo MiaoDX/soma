@@ -1,6 +1,7 @@
 import json
 import os
 import struct
+import subprocess
 from types import SimpleNamespace
 from pathlib import Path
 
@@ -130,6 +131,19 @@ def test_first_policy_tick_matches_frozen_reference_fixture():
     fixture = json.loads((Path(__file__).parent / "fixtures/open_duck_first_tick.json").read_text())
     np.testing.assert_allclose(policy.last_observation, fixture["observation"], atol=1e-5, rtol=0)
     np.testing.assert_allclose(policy.last_action, fixture["action"], atol=1e-5, rtol=0)
+
+
+def test_rust_onnx_action_matches_python_golden_fixture():
+    root = Path(__file__).resolve().parents[2]
+    runtime = subprocess.run(
+        [str(root / "target/debug/open-duck-policy"),
+         "--checkpoint", str(root / "crates/soma-sim/assets/open-duck-mini-v2/BEST_WALK_ONNX.onnx"),
+         "--parity-fixture", str(Path(__file__).parent / "fixtures/open_duck_first_tick.json")],
+        env={**os.environ, "ORT_DYLIB_PATH": os.environ["ORT_DYLIB_PATH"]},
+        check=True, capture_output=True, text=True,
+    )
+    fixture = json.loads((Path(__file__).parent / "fixtures/open_duck_first_tick.json").read_text())
+    np.testing.assert_allclose(json.loads(runtime.stdout), fixture["action"], atol=1e-5, rtol=0)
 
 
 def test_policy_uses_contacts_and_wraps_the_official_gait_period():

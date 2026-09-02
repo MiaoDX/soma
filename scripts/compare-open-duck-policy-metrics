@@ -23,6 +23,7 @@ DEFAULT_BACKENDS = ("rust", "python")
 METRICS = {
     "emitted": ("Emitted targets", "count", 1.0),
     "max_inference_ns": ("Run max inference", "ms", 1e-6),
+    "mean_inference_ns": ("Mean inference", "ms", 1e-6),
     "max_message_age_ns": ("Run max message age", "ms", 1e-6),
     "dropped_states": ("Dropped states", "count", 1.0),
     "runtime_dropped_targets": ("Runtime dropped targets", "count", 1.0),
@@ -123,7 +124,8 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"Frozen case: `{report['case']}` (`{report['case_sha256']}`).",
         "",
         "Each cell is `mean [min, max]` across independent process rollouts. "
-        "Inference and message-age values are per-run maxima, not latency distributions.",
+        "Run-max inference and message-age values are per-run maxima; mean inference is the "
+        "per-run arithmetic mean. These are not latency distributions.",
         "",
         f"| Metric | Unit | {columns} |",
         f"| --- | --- | {separator} |",
@@ -142,11 +144,15 @@ def render_markdown(report: dict[str, Any]) -> str:
         rust = report["results"]["rust"]["summary"]["max_inference_ns"]["mean"]
         python = report["results"]["python"]["summary"]["max_inference_ns"]["mean"]
         relative = (rust / python - 1.0) * 100.0 if python else math.nan
+        rust_mean = report["results"]["rust"]["summary"]["mean_inference_ns"]["mean"]
+        python_mean = report["results"]["python"]["summary"]["mean_inference_ns"]["mean"]
+        relative_mean = (rust_mean / python_mean - 1.0) * 100.0 if python_mean else math.nan
         lines.extend([
             "",
             "## Direct Comparison",
             "",
             f"Rust's mean run-maximum inference latency is `{relative:+.1f}%` versus Python "
+            f"and mean inference latency is `{relative_mean:+.1f}%` versus Python "
             "(negative is lower). This benchmark does not measure CPU, RSS, startup time, "
             "or p50/p95/p99 inference latency.",
         ])

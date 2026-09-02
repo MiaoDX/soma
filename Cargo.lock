@@ -6426,6 +6426,7 @@ dependencies = [
  "ort",
  "prost",
  "rerun",
+ "serde_json",
  "sha2",
  "soma-core",
  "soma-protocol",
