@@ -4,7 +4,6 @@ import argparse, hashlib, json, math, os, signal, subprocess, sys, time, tomllib
 from pathlib import Path
 import mujoco
 import numpy as np
-import onnxruntime as ort
 
 GAIT_PHASE_PERIOD = 27
 SHOWCASE_DURATION_S = 12.0
@@ -66,6 +65,10 @@ def showcase_command(time_s: float) -> tuple[float, float, float]:
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("mode", choices=["reference", "policy", "stall"])
+    p.add_argument(
+        "--backend", choices=["rust", "python"], default="rust",
+        help="policy process implementation (Rust is the deployment default; Python is the explicit oracle)",
+    )
     p.add_argument("--case", default=str(ROOT / "docs/status/active/open-duck-stage0-case.md"))
     p.add_argument("--repeat", type=int, default=1)
     p.add_argument("--checkpoint", type=Path, default=BUNDLE / "BEST_WALK_ONNX.onnx")
@@ -84,6 +87,9 @@ def main():
         run_process_mode(args)
         return
     model_file = BUNDLE / "xmls/scene_flat_terrain.xml"
+    # The Python ONNX dependency is needed only for the in-process reference
+    # path. Rust process runs use the separately provisioned native runtime.
+    import onnxruntime as ort
     # MuJoCo resolves mesh includes relative to the scene XML directory.
     os.chdir(model_file.parent)
     model = mujoco.MjModel.from_xml_path(model_file.name)
@@ -241,13 +247,28 @@ def run_process_mode(args):
         if not Path("/tmp/soma-open-duck-runtime.sock").exists():
             errors = [proc.stderr.read().decode(errors="replace") if proc.stderr else "" for proc in procs]
             raise SystemExit("Open Duck runtime/RT did not become ready: " + "\n".join(errors))
-        policy_python = ROOT / "python/.venv/bin/python"
         duration = "2" if args.mode == "stall" else "8"
-        policy = [str(policy_python), "-m", "soma_client.open_duck_policy", "--duration", duration,
-                  "--checkpoint", str(args.checkpoint.resolve()), "--ready-file", str(ready_file),
-                  "--vx", str(args.vx)]
+        if args.backend == "rust":
+            policy_executable = ROOT / "target/debug/open-duck-policy"
+            if not policy_executable.is_file():
+                raise SystemExit(
+                    f"Rust Open Duck policy worker is not built: {policy_executable}; "
+                    "build it or use --backend python for the explicit oracle"
+                )
+            policy = [str(policy_executable), "--duration", duration,
+                      "--checkpoint", str(args.checkpoint.resolve()), "--ready-file", str(ready_file),
+                      "--vx", str(args.vx)]
+            policy_cwd = ROOT
+            policy_env = env
+        else:
+            policy_python = ROOT / "python/.venv/bin/python"
+            policy = [str(policy_python), "-m", "soma_client.open_duck_policy", "--duration", duration,
+                      "--checkpoint", str(args.checkpoint.resolve()), "--ready-file", str(ready_file),
+                      "--vx", str(args.vx)]
+            policy_cwd = ROOT / "python"
+            policy_env = {**env, "PYTHONPATH": "."}
         if args.mode == "stall": policy += ["--stall-after", "1"]
-        proc = subprocess.Popen(policy, cwd=ROOT / "python", env={**env, "PYTHONPATH": "."},
+        proc = subprocess.Popen(policy, cwd=policy_cwd, env=policy_env,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         procs.append(proc)
         deadline = time.monotonic() + 5.0
@@ -280,7 +301,8 @@ def run_process_mode(args):
                 raise SystemExit(f"Open Duck process rollout violated root-height floor: {evidence}")
             if evidence["max_abs_roll_rad"] > 0.8 or evidence["max_abs_pitch_rad"] > 0.8:
                 raise SystemExit("Open Duck process rollout violated roll/pitch envelope")
-        print(json.dumps({"mode": args.mode, "process_path": True, "evidence": evidence}))
+        print(json.dumps({"mode": args.mode, "backend": args.backend,
+                          "process_path": True, "evidence": evidence}))
     finally:
         owned_pids = {str(proc.pid) for proc in procs}
         for proc in procs:
