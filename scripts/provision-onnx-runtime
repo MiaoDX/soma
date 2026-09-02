@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Provision the external ONNX Runtime shared library used by the Rust policy
+# worker. The native runtime is intentionally kept outside the repository.
+
+readonly ORT_VERSION="1.28.0"
+readonly ORT_RELEASE="https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}"
+
+case "$(uname -s):$(uname -m)" in
+  Linux:x86_64)
+    readonly ORT_ARCHIVE="onnxruntime-linux-x64-${ORT_VERSION}.tgz"
+    readonly ORT_ROOT="onnxruntime-linux-x64-${ORT_VERSION}"
+    readonly ORT_SHA256="a3e1b79d7bb1bf09696ce675f49e4064e6c81f6202b8225624fff0e93f8d6407"
+    ;;
+  Linux:aarch64|Linux:arm64)
+    readonly ORT_ARCHIVE="onnxruntime-linux-aarch64-${ORT_VERSION}.tgz"
+    readonly ORT_ROOT="onnxruntime-linux-aarch64-${ORT_VERSION}"
+    readonly ORT_SHA256="e15ff8b5d85afe6c144d97c6fd432254bf76a219daaf17658087d6ecb3e8f0bb"
+    ;;
+  *)
+    echo "unsupported platform: $(uname -s)/$(uname -m) (Linux x86_64 or aarch64 required)" >&2
+    exit 2
+    ;;
+esac
+
+cache_root=${SOMA_ORT_CACHE_ROOT:-${XDG_CACHE_HOME:-${HOME}/.cache}/soma/onnxruntime}
+prefix=${SOMA_ORT_PREFIX:-${cache_root}/${ORT_VERSION}/$(uname -m)}
+library_path=${prefix}/lib/libonnxruntime.so
+marker_path=${prefix}/.archive.sha256
+
+usage() {
+  cat <<EOF
+Usage: $0 [--check | --print-env | --install]
+
+Provision ONNX Runtime ${ORT_VERSION} outside the Soma repository.
+  --check       verify an existing installation (default)
+  --print-env   print the ORT_DYLIB_PATH export for an existing installation
+  --install     download, verify, and atomically install the runtime
+
+Override the destination with SOMA_ORT_PREFIX. The archive URL and SHA-256 are
+fixed in this script; ORT_DYLIB_PATH is the only runtime discovery setting.
+EOF
+}
+
+check_install() {
+  if [[ ! -f ${marker_path} || ! -e ${library_path} ]]; then
+    echo "ONNX Runtime ${ORT_VERSION} is not provisioned at ${prefix}" >&2
+    return 1
+  fi
+  grep -Fqx "${ORT_SHA256}  ${ORT_ARCHIVE}" "${marker_path}" || {
+    echo "ONNX Runtime archive checksum marker mismatch at ${marker_path}" >&2
+    return 1
+  }
+  [[ -f ${prefix}/VERSION_NUMBER ]] || {
+    echo "ONNX Runtime installation is missing VERSION_NUMBER: ${prefix}" >&2
+    return 1
+  }
+  grep -Fqx "${ORT_VERSION}" "${prefix}/VERSION_NUMBER" || {
+    echo "ONNX Runtime version mismatch in ${prefix}/VERSION_NUMBER" >&2
+    return 1
+  }
+  printf '%s\n' "${library_path}"
+}
+
+install_runtime() {
+  if [[ -e ${prefix} ]]; then
+    check_install >/dev/null && {
+      echo "ONNX Runtime ${ORT_VERSION} already provisioned at ${prefix}"
+      return 0
+    }
+    echo "refusing to overwrite incomplete installation: ${prefix}" >&2
+    exit 1
+  fi
+
+  local work_dir archive extracted
+  work_dir=$(mktemp -d "${TMPDIR:-/tmp}/soma-onnxruntime.XXXXXX")
+  trap 'rm -rf "${work_dir}"' EXIT
+  archive=${work_dir}/${ORT_ARCHIVE}
+  extracted=${work_dir}/${ORT_ROOT}
+
+  curl --fail --location --retry 3 --output "${archive}" "${ORT_RELEASE}/${ORT_ARCHIVE}"
+  printf '%s  %s\n' "${ORT_SHA256}" "${ORT_ARCHIVE}" | sha256sum --check --strict
+  tar --extract --gzip --file "${archive}" --directory "${work_dir}"
+  [[ -d ${extracted} && -e ${extracted}/lib/libonnxruntime.so ]] || {
+    echo "archive does not contain the expected ONNX Runtime library" >&2
+    exit 1
+  }
+  grep -Fqx "${ORT_VERSION}" "${extracted}/VERSION_NUMBER" || {
+    echo "archive version does not match ${ORT_VERSION}" >&2
+    exit 1
+  }
+  mkdir -p "$(dirname "${prefix}")"
+  mv "${extracted}" "${prefix}"
+  printf '%s  %s\n' "${ORT_SHA256}" "${ORT_ARCHIVE}" >"${marker_path}"
+  echo "provisioned ONNX Runtime ${ORT_VERSION} at ${prefix}"
+  echo "export ORT_DYLIB_PATH=${library_path}"
+}
+
+command=${1:---check}
+case "${command}" in
+  --check) check_install ;;
+  --print-env) check_install >/dev/null && printf 'export ORT_DYLIB_PATH=%q\n' "${library_path}" ;;
+  --install) install_runtime ;;
+  -h|--help) usage ;;
+  *) usage >&2; exit 2 ;;
+esac

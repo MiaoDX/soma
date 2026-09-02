@@ -301,7 +301,8 @@ def run_process_mode(args):
                 raise SystemExit(f"Open Duck process rollout violated root-height floor: {evidence}")
             if evidence["max_abs_roll_rad"] > 0.8 or evidence["max_abs_pitch_rad"] > 0.8:
                 raise SystemExit("Open Duck process rollout violated roll/pitch envelope")
-        print(json.dumps({"mode": args.mode, "process_path": True, "evidence": evidence}))
+        print(json.dumps({"mode": args.mode, "backend": args.backend,
+                          "process_path": True, "evidence": evidence}))
     finally:
         owned_pids = {str(proc.pid) for proc in procs}
         for proc in procs:
