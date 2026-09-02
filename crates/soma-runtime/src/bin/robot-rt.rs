@@ -83,6 +83,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             pending = CommandInput::RuntimeStarted {
                                 generation: started.generation,
                             };
+                            // Lifecycle authority must be observed by ControlCore before
+                            // a later target from the same datagram burst is admitted.
+                            break;
                         }
                         _ => {}
                     }
