@@ -1,6 +1,8 @@
 # Soma Rust Policy And Runtime Hardening Plan
 
-> Status: COMPLETE. This plan is the unified execution unit for the identified
+> Status: COMPLETE. Runtime/product, cross-language parity, and reusable
+> metrics-report gates pass.
+> This plan is the unified execution unit for the identified
 > Soma runtime gaps and the policy-inference migration. It does not refactor
 > the community Micro Duck training repository.
 
@@ -46,6 +48,10 @@ Make Soma's fixed-profile control stack truthful and production-shaped:
    `ORT_DYLIB_PATH`; provisioning downloads a platform release from the pinned
    source and verifies its SHA-256. Native runtime binaries are not committed
    or repeated in every Soma software release.
+6. Treat a matched target subscriber as part of Rust policy-worker readiness.
+   The worker waits with a bounded timeout before signaling ready, so the RT
+   producer cannot start while early target publications are still unroutable.
+   Preserve the fixed target TTL and admission semantics.
 
 If the backend cannot build and run reproducibly in the supported toolchain,
 stop after the spike and return for a new decision; do not silently make Python
@@ -132,6 +138,11 @@ Update `ARCHITECTURE.md`, `STATUS.md`, D-04/D-19 references, and the durable ABI
 decision with the measured topology, explicit Python role, dependency/runtime
 provisioning, and residual limitations. Keep the old Open Duck acceptance plan
 as historical evidence; do not duplicate its ledger.
+
+The representative Rust/Python comparison is recorded in
+`docs/measurements/open-duck-policy-runtime-comparison.md`; reproducible raw
+evidence and regenerated reports come from
+`scripts/compare-open-duck-policy-metrics`.
 
 ## Verification
 

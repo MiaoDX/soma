@@ -1,5 +1,7 @@
 //! Experimental Open Duck transport contract; intentionally separate from soma.v1.
 
+use soma_core::RejectionReason;
+
 pub const OPEN_DUCK_RUNTIME_SOCKET: &str = "/tmp/soma-open-duck-runtime.sock";
 pub const OPEN_DUCK_RT_SOCKET: &str = "/tmp/soma-open-duck-rt.sock";
 pub const OPEN_DUCK_STATE_KEY: &str = "soma/open-duck-v2/state";
@@ -9,7 +11,10 @@ pub const OPEN_DUCK_PHYSICS_HZ: u32 = 500;
 pub const OPEN_DUCK_POLICY_HZ: u32 = 50;
 pub const OPEN_DUCK_TARGET_BYTES: usize = 8 * 4 + 14 * 4;
 pub const OPEN_DUCK_STATE_FLOATS: usize = 14 + 14 + 3 + 3 + 2 + 3;
-pub const OPEN_DUCK_STATE_BYTES: usize = 8 * 8 + 4 + OPEN_DUCK_STATE_FLOATS * 4;
+pub const OPEN_DUCK_REJECTION_KINDS: usize = 6;
+const OPEN_DUCK_STATE_U64S: usize = 23;
+const OPEN_DUCK_STATE_FLOAT_OFFSET: usize = OPEN_DUCK_STATE_U64S * 8 + 8;
+pub const OPEN_DUCK_STATE_BYTES: usize = OPEN_DUCK_STATE_FLOAT_OFFSET + OPEN_DUCK_STATE_FLOATS * 4;
 pub const OPEN_DUCK_OBSERVATION: usize = 101;
 pub const OPEN_DUCK_ACTION: usize = 14;
 pub const OPEN_DUCK_GAIT_PHASE: usize = 27;
@@ -34,11 +39,122 @@ pub struct OpenDuckState {
     pub applied_sequence: u64,
     pub message_age_ns: u64,
     pub runtime_dropped_targets: u64,
+    pub rejections: OpenDuckRejectionEvidence,
     pub flags: u32,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[repr(u32)]
+pub enum OpenDuckRejectionReason {
+    #[default]
+    None = 0,
+    Decode = 1,
+    Timeline = 2,
+    Sequence = 3,
+    Expired = 4,
+    Invalid = 5,
+    RuntimeGeneration = 6,
+}
+
+impl OpenDuckRejectionReason {
+    pub const NAMES: [&'static str; OPEN_DUCK_REJECTION_KINDS] = [
+        "decode",
+        "timeline",
+        "sequence",
+        "expired",
+        "invalid",
+        "runtime_generation",
+    ];
+
+    pub fn from_control(reason: RejectionReason) -> Self {
+        match reason {
+            RejectionReason::Timeline => Self::Timeline,
+            RejectionReason::Sequence => Self::Sequence,
+            RejectionReason::Expired => Self::Expired,
+            RejectionReason::Invalid => Self::Invalid,
+            RejectionReason::RuntimeGeneration => Self::RuntimeGeneration,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Decode => "decode",
+            Self::Timeline => "timeline",
+            Self::Sequence => "sequence",
+            Self::Expired => "expired",
+            Self::Invalid => "invalid",
+            Self::RuntimeGeneration => "runtime_generation",
+        }
+    }
+
+    fn index(self) -> Option<usize> {
+        (self != Self::None).then_some(self as usize - 1)
+    }
+}
+
+impl TryFrom<u32> for OpenDuckRejectionReason {
+    type Error = ();
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::None),
+            1 => Ok(Self::Decode),
+            2 => Ok(Self::Timeline),
+            3 => Ok(Self::Sequence),
+            4 => Ok(Self::Expired),
+            5 => Ok(Self::Invalid),
+            6 => Ok(Self::RuntimeGeneration),
+            _ => Err(()),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct OpenDuckRejectionEvidence {
+    pub counts: [u64; OPEN_DUCK_REJECTION_KINDS],
+    pub max_age_ns: [u64; OPEN_DUCK_REJECTION_KINDS],
+    pub last_reason: OpenDuckRejectionReason,
+    pub last_sequence: u64,
+    pub last_age_ns: u64,
+    pub last_ttl_ns: u64,
+}
+
+impl OpenDuckRejectionEvidence {
+    pub fn record_decode_failure(&mut self) {
+        self.record(OpenDuckRejectionReason::Decode, 0, 0, 0);
+    }
+
+    pub fn record_control(
+        &mut self,
+        reason: RejectionReason,
+        sequence: u64,
+        age_ns: u64,
+        ttl_ns: u64,
+    ) {
+        self.record(
+            OpenDuckRejectionReason::from_control(reason),
+            sequence,
+            age_ns,
+            ttl_ns,
+        );
+    }
+
+    fn record(&mut self, reason: OpenDuckRejectionReason, sequence: u64, age_ns: u64, ttl_ns: u64) {
+        let index = reason
+            .index()
+            .expect("a rejection reason must be attributable");
+        self.counts[index] = self.counts[index].saturating_add(1);
+        self.max_age_ns[index] = self.max_age_ns[index].max(age_ns);
+        self.last_reason = reason;
+        self.last_sequence = sequence;
+        self.last_age_ns = age_ns;
+        self.last_ttl_ns = ttl_ns;
+    }
+}
+
 pub fn encode_state(state: &OpenDuckState, out: &mut [u8; OPEN_DUCK_STATE_BYTES]) {
-    for (i, value) in [
+    let values = [
         state.sequence,
         state.timeline,
         state.capture_monotonic_ns,
@@ -49,11 +165,18 @@ pub fn encode_state(state: &OpenDuckState, out: &mut [u8; OPEN_DUCK_STATE_BYTES]
         state.runtime_dropped_targets,
     ]
     .into_iter()
-    .enumerate()
-    {
+    .chain(state.rejections.counts)
+    .chain(state.rejections.max_age_ns)
+    .chain([
+        state.rejections.last_sequence,
+        state.rejections.last_age_ns,
+        state.rejections.last_ttl_ns,
+    ]);
+    for (i, value) in values.enumerate() {
         out[i * 8..i * 8 + 8].copy_from_slice(&value.to_le_bytes());
     }
-    out[64..68].copy_from_slice(&state.flags.to_le_bytes());
+    out[184..188].copy_from_slice(&(state.rejections.last_reason as u32).to_le_bytes());
+    out[188..192].copy_from_slice(&state.flags.to_le_bytes());
     let values = state
         .positions_rad
         .iter()
@@ -67,7 +190,8 @@ pub fn encode_state(state: &OpenDuckState, out: &mut [u8; OPEN_DUCK_STATE_BYTES]
         &state.root_pitch_rad,
     ]);
     for (i, value) in values.enumerate() {
-        out[68 + i * 4..72 + i * 4].copy_from_slice(&value.to_le_bytes());
+        let offset = OPEN_DUCK_STATE_FLOAT_OFFSET + i * 4;
+        out[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
     }
 }
 
@@ -82,7 +206,10 @@ pub fn decode_state(bytes: &[u8]) -> Option<OpenDuckState> {
     };
     let f32_at = |index| {
         Some(f32::from_le_bytes(
-            bytes[68 + index * 4..72 + index * 4].try_into().ok()?,
+            bytes[OPEN_DUCK_STATE_FLOAT_OFFSET + index * 4
+                ..OPEN_DUCK_STATE_FLOAT_OFFSET + index * 4 + 4]
+                .try_into()
+                .ok()?,
         ))
     };
     let positions_rad = std::array::from_fn(|i| f32_at(i).unwrap());
@@ -110,7 +237,18 @@ pub fn decode_state(bytes: &[u8]) -> Option<OpenDuckState> {
         applied_sequence: u64_at(40)?,
         message_age_ns: u64_at(48)?,
         runtime_dropped_targets: u64_at(56)?,
-        flags: u32::from_le_bytes(bytes[64..68].try_into().ok()?),
+        rejections: OpenDuckRejectionEvidence {
+            counts: std::array::from_fn(|i| u64_at((8 + i) * 8).unwrap()),
+            max_age_ns: std::array::from_fn(|i| u64_at((14 + i) * 8).unwrap()),
+            last_sequence: u64_at(160)?,
+            last_age_ns: u64_at(168)?,
+            last_ttl_ns: u64_at(176)?,
+            last_reason: OpenDuckRejectionReason::try_from(u32::from_le_bytes(
+                bytes[184..188].try_into().ok()?,
+            ))
+            .ok()?,
+        },
+        flags: u32::from_le_bytes(bytes[188..192].try_into().ok()?),
     };
     let finite = state
         .positions_rad
@@ -179,6 +317,7 @@ pub struct OpenDuckPolicy {
     previous: [f32; OPEN_DUCK_ACTUATORS],
     history: [[f32; OPEN_DUCK_ACTUATORS]; 3],
     phase_tick: usize,
+    phase: [f32; 2],
 }
 
 impl Default for OpenDuckPolicy {
@@ -187,6 +326,7 @@ impl Default for OpenDuckPolicy {
             previous: OPEN_DUCK_DEFAULT_POSE,
             history: [[0.0; 14]; 3],
             phase_tick: 0,
+            phase: [0.0; 2],
         }
     }
 }
@@ -234,16 +374,13 @@ impl OpenDuckPolicy {
         i += 14;
         out[i..i + 2].copy_from_slice(&state.feet_contacts);
         i += 2;
-        let phase = self.phase_tick as f32 / OPEN_DUCK_GAIT_PHASE as f32 * std::f32::consts::TAU;
-        out[i] = phase.cos();
-        out[i + 1] = phase.sin();
+        out[i..i + 2].copy_from_slice(&self.phase);
         out.iter().all(|v| v.is_finite()).then_some(out)
     }
 
     pub fn apply_action(
         &mut self,
         action: [f32; OPEN_DUCK_ACTION],
-        now_ns: u64,
         state: &OpenDuckState,
     ) -> Option<OpenDuckTarget> {
         if !action.iter().all(|v| v.is_finite()) {
@@ -258,11 +395,13 @@ impl OpenDuckPolicy {
         self.history = [action, self.history[0], self.history[1]];
         self.previous = target;
         self.phase_tick = (self.phase_tick + 1) % OPEN_DUCK_GAIT_PHASE;
+        let phase = self.phase_tick as f32 / OPEN_DUCK_GAIT_PHASE as f32 * std::f32::consts::TAU;
+        self.phase = [phase.cos(), phase.sin()];
         Some(OpenDuckTarget {
             positions_rad: target,
             sequence: state.sequence,
             timeline: state.timeline,
-            capture_monotonic_ns: now_ns,
+            capture_monotonic_ns: state.capture_monotonic_ns,
             ttl_ns: 40_000_000,
         })
     }
@@ -356,6 +495,14 @@ mod tests {
 
     #[test]
     fn combined_state_codec_preserves_lineage_and_rejects_non_finite_facts() {
+        let rejections = OpenDuckRejectionEvidence {
+            counts: [1, 2, 3, 4, 5, 6],
+            max_age_ns: [10, 20, 30, 40, 50, 60],
+            last_reason: OpenDuckRejectionReason::Expired,
+            last_sequence: 99,
+            last_age_ns: 41,
+            last_ttl_ns: 40,
+        };
         let mut state = OpenDuckState {
             positions_rad: [1.0; 14],
             velocities_rad_s: [2.0; 14],
@@ -373,6 +520,7 @@ mod tests {
             applied_sequence: 6,
             message_age_ns: 5,
             runtime_dropped_targets: 4,
+            rejections,
             flags: 3,
         };
         let mut bytes = [0; OPEN_DUCK_STATE_BYTES];
@@ -385,6 +533,22 @@ mod tests {
         state.feet_contacts[0] = f32::NAN;
         encode_state(&state, &mut bytes);
         assert!(decode_state(&bytes).is_none());
+    }
+
+    #[test]
+    fn rejection_evidence_attributes_decode_and_control_failures() {
+        let mut evidence = OpenDuckRejectionEvidence::default();
+        evidence.record_decode_failure();
+        evidence.record_control(RejectionReason::Expired, 17, 42, 40);
+        evidence.record_control(RejectionReason::Expired, 18, 39, 40);
+        evidence.record_control(RejectionReason::Sequence, 18, 7, 40);
+
+        assert_eq!(evidence.counts, [1, 0, 1, 2, 0, 0]);
+        assert_eq!(evidence.max_age_ns, [0, 0, 7, 42, 0, 0]);
+        assert_eq!(evidence.last_reason, OpenDuckRejectionReason::Sequence);
+        assert_eq!(evidence.last_sequence, 18);
+        assert_eq!(evidence.last_age_ns, 7);
+        assert_eq!(evidence.last_ttl_ns, 40);
     }
 
     #[test]
@@ -406,6 +570,7 @@ mod tests {
             applied_sequence: 0,
             message_age_ns: 0,
             runtime_dropped_targets: 0,
+            rejections: OpenDuckRejectionEvidence::default(),
             flags: 0,
         };
         let mut policy = OpenDuckPolicy::default();
@@ -413,12 +578,82 @@ mod tests {
             policy.observation(&state, 0.3).unwrap().len(),
             OPEN_DUCK_OBSERVATION
         );
-        let target = policy.apply_action([10.0; 14], 100, &state).unwrap();
+        let target = policy.apply_action([10.0; 14], &state).unwrap();
         assert!(target
             .positions_rad
             .iter()
             .zip(OPEN_DUCK_DEFAULT_POSE)
             .all(|(a, b)| (*a - b).abs() <= OPEN_DUCK_SLEW_RAD_S * 0.02 + 1e-6));
-        assert!(policy.apply_action([f32::NAN; 14], 101, &state).is_none());
+        assert!(policy.apply_action([f32::NAN; 14], &state).is_none());
+    }
+
+    #[test]
+    fn policy_phase_and_history_match_python_oracle_ordering() {
+        let state = OpenDuckState {
+            positions_rad: OPEN_DUCK_DEFAULT_POSE,
+            velocities_rad_s: [0.0; 14],
+            gyro_rad_s: [0.0; 3],
+            acceleration_m_s2: [0.0; 3],
+            feet_contacts: [0.0; 2],
+            root_height_m: 0.1,
+            root_roll_rad: 0.0,
+            root_pitch_rad: 0.0,
+            sequence: 4,
+            timeline: 2,
+            capture_monotonic_ns: 1,
+            requested_sequence: 0,
+            admitted_sequence: 0,
+            applied_sequence: 0,
+            message_age_ns: 0,
+            runtime_dropped_targets: 0,
+            rejections: OpenDuckRejectionEvidence::default(),
+            flags: 0,
+        };
+        let mut policy = OpenDuckPolicy::default();
+
+        let first = policy.observation(&state, 0.3).unwrap();
+        assert_eq!(&first[41..83], &[0.0; 42]);
+        assert_eq!(&first[99..101], &[0.0, 0.0]);
+
+        let action = std::array::from_fn(|i| i as f32 / 100.0);
+        let target = policy.apply_action(action, &state).unwrap();
+        let second = policy.observation(&state, 0.3).unwrap();
+        assert_eq!(&second[41..55], &action);
+        assert_eq!(&second[55..83], &[0.0; 28]);
+        assert_eq!(&second[83..97], &target.positions_rad);
+        let phase = std::f32::consts::TAU / OPEN_DUCK_GAIT_PHASE as f32;
+        assert!((second[99] - phase.cos()).abs() < 1e-6);
+        assert!((second[100] - phase.sin()).abs() < 1e-6);
+    }
+
+    #[test]
+    fn policy_target_preserves_originating_state_capture_time() {
+        let state = OpenDuckState {
+            positions_rad: OPEN_DUCK_DEFAULT_POSE,
+            velocities_rad_s: [0.0; 14],
+            gyro_rad_s: [0.0; 3],
+            acceleration_m_s2: [0.0; 3],
+            feet_contacts: [0.0; 2],
+            root_height_m: 0.1,
+            root_roll_rad: 0.0,
+            root_pitch_rad: 0.0,
+            sequence: 4,
+            timeline: 2,
+            capture_monotonic_ns: 123_456,
+            requested_sequence: 0,
+            admitted_sequence: 0,
+            applied_sequence: 0,
+            message_age_ns: 0,
+            runtime_dropped_targets: 0,
+            rejections: OpenDuckRejectionEvidence::default(),
+            flags: 0,
+        };
+
+        let target = OpenDuckPolicy::default()
+            .apply_action([0.0; OPEN_DUCK_ACTION], &state)
+            .unwrap();
+        assert_eq!(target.capture_monotonic_ns, state.capture_monotonic_ns);
+        assert!(target.valid_for(123_456 + target.ttl_ns - 1, state.timeline, None));
+        assert!(!target.valid_for(123_456 + target.ttl_ns, state.timeline, None));
     }
 }

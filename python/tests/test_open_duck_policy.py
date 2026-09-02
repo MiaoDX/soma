@@ -1,6 +1,7 @@
 import json
 import os
 import struct
+import subprocess
 from types import SimpleNamespace
 from pathlib import Path
 
@@ -77,13 +78,24 @@ def test_target_payload_rejects_nonfinite_and_out_of_range_targets():
 
 
 def test_combined_state_decode_preserves_lineage_and_facts():
-    payload = STATE.pack(11, 2, 90, 8, 7, 6, 5, 4, 3, *range(39))
+    payload = STATE.pack(
+        11, 2, 90, 8, 7, 6, 5, 4,
+        1, 2, 3, 4, 5, 6,
+        10, 20, 30, 40, 50, 60,
+        99, 41, 40, 4, 3,
+        *range(39),
+    )
     state = decode_state(payload)
     assert (state["sequence"], state["timeline"], state["applied"]) == (11, 2, 6)
     np.testing.assert_array_equal(state["positions"], np.arange(14, dtype=np.float32))
     np.testing.assert_array_equal(state["contacts"], np.array([34, 35], np.float32))
     assert state["runtime_dropped_targets"] == 4
-    assert struct.calcsize("<8QI39f") == len(payload)
+    assert state["rejection_counts"]["expired"] == 4
+    assert state["max_rejection_age_ns"]["runtime_generation"] == 60
+    assert state["last_rejection"] == {
+        "reason": "expired", "sequence": 99, "age_ns": 41, "ttl_ns": 40,
+    }
+    assert struct.calcsize("<23QII39f") == len(payload)
 
 
 def test_target_keeps_original_capture_deadline_lineage():
@@ -130,6 +142,19 @@ def test_first_policy_tick_matches_frozen_reference_fixture():
     fixture = json.loads((Path(__file__).parent / "fixtures/open_duck_first_tick.json").read_text())
     np.testing.assert_allclose(policy.last_observation, fixture["observation"], atol=1e-5, rtol=0)
     np.testing.assert_allclose(policy.last_action, fixture["action"], atol=1e-5, rtol=0)
+
+
+def test_rust_onnx_action_matches_python_golden_fixture():
+    root = Path(__file__).resolve().parents[2]
+    runtime = subprocess.run(
+        [str(root / "target/debug/open-duck-policy"),
+         "--checkpoint", str(root / "crates/soma-sim/assets/open-duck-mini-v2/BEST_WALK_ONNX.onnx"),
+         "--parity-fixture", str(Path(__file__).parent / "fixtures/open_duck_first_tick.json")],
+        env={**os.environ, "ORT_DYLIB_PATH": os.environ["ORT_DYLIB_PATH"]},
+        check=True, capture_output=True, text=True,
+    )
+    fixture = json.loads((Path(__file__).parent / "fixtures/open_duck_first_tick.json").read_text())
+    np.testing.assert_allclose(json.loads(runtime.stdout), fixture["action"], atol=1e-5, rtol=0)
 
 
 def test_policy_uses_contacts_and_wraps_the_official_gait_period():
